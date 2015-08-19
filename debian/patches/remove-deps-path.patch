@@ -1,0 +1,193 @@
+From: Luca Bruno <lucab@debian.org>
+Description: Fix relative paths in build dependencies
+Bug: https://github.com/rust-lang/cargo/issues/1863
+Forwarded: not-needed
+--- a/deps/advapi32-sys-0.1.1/Cargo.toml
++++ b/deps/advapi32-sys-0.1.1/Cargo.toml
+@@ -15,6 +15,6 @@
+ name = "advapi32"
+ 
+ [dependencies]
+-winapi = { version = "*", path = "../.." }
++winapi = { version = "*" }
+ [build-dependencies]
+-winapi-build = { version = "*", path = "../../build" }
++winapi-build = { version = "*" }
+--- a/deps/curl-0.2.10/Cargo.toml
++++ b/deps/curl-0.2.10/Cargo.toml
+@@ -11,7 +11,7 @@
+ url = "0.2.0"
+ log = "0.3.0"
+ libc = "0.1"
+-curl-sys = { path = "curl-sys", version = "0.1.0" }
++curl-sys = { version = "0.1.0" }
+ 
+ [dev-dependencies]
+ env_logger = "0.3.0"
+--- a/deps/encoding-0.2.32/Cargo.toml
++++ b/deps/encoding-0.2.32/Cargo.toml
+@@ -24,23 +24,18 @@
+ 
+ [dependencies.encoding-index-singlebyte]
+ version = "~1.20141219.5"
+-path = "src/index/singlebyte"
+ 
+ [dependencies.encoding-index-korean]
+ version = "~1.20141219.5"
+-path = "src/index/korean"
+ 
+ [dependencies.encoding-index-japanese]
+ version = "~1.20141219.5"
+-path = "src/index/japanese"
+ 
+ [dependencies.encoding-index-simpchinese]
+ version = "~1.20141219.5"
+-path = "src/index/simpchinese"
+ 
+ [dependencies.encoding-index-tradchinese]
+ version = "~1.20141219.5"
+-path = "src/index/tradchinese"
+ 
+ [dev-dependencies]
+ getopts = "*" # for examples
+--- a/deps/encoding-index-japanese-1.20141219.5/Cargo.toml
++++ b/deps/encoding-index-japanese-1.20141219.5/Cargo.toml
+@@ -15,4 +15,3 @@
+ [dependencies.encoding_index_tests]
+ # TODO consider using dev-dependencies instead (Cargo issue #860)
+ version = "0.1.4"
+-path = "../tests"
+--- a/deps/encoding-index-korean-1.20141219.5/Cargo.toml
++++ b/deps/encoding-index-korean-1.20141219.5/Cargo.toml
+@@ -15,4 +15,3 @@
+ [dependencies.encoding_index_tests]
+ # TODO consider using dev-dependencies instead (Cargo issue #860)
+ version = "0.1.4"
+-path = "../tests"
+--- a/deps/encoding-index-simpchinese-1.20141219.5/Cargo.toml
++++ b/deps/encoding-index-simpchinese-1.20141219.5/Cargo.toml
+@@ -15,4 +15,3 @@
+ [dependencies.encoding_index_tests]
+ # TODO consider using dev-dependencies instead (Cargo issue #860)
+ version = "0.1.4"
+-path = "../tests"
+--- a/deps/encoding-index-singlebyte-1.20141219.5/Cargo.toml
++++ b/deps/encoding-index-singlebyte-1.20141219.5/Cargo.toml
+@@ -15,4 +15,3 @@
+ [dependencies.encoding_index_tests]
+ # TODO consider using dev-dependencies instead (Cargo issue #860)
+ version = "0.1.4"
+-path = "../tests"
+--- a/deps/encoding-index-tradchinese-1.20141219.5/Cargo.toml
++++ b/deps/encoding-index-tradchinese-1.20141219.5/Cargo.toml
+@@ -15,4 +15,3 @@
+ [dependencies.encoding_index_tests]
+ # TODO consider using dev-dependencies instead (Cargo issue #860)
+ version = "0.1.4"
+-path = "../tests"
+--- a/deps/env_logger-0.3.1/Cargo.toml
++++ b/deps/env_logger-0.3.1/Cargo.toml
+@@ -13,7 +13,6 @@
+ 
+ [dependencies.log]
+ version = "0.3"
+-path = ".."
+ 
+ [dependencies]
+ regex = "0.1"
+--- a/deps/flate2-0.2.7/Cargo.toml
++++ b/deps/flate2-0.2.7/Cargo.toml
+@@ -17,7 +17,7 @@
+ 
+ [dependencies]
+ libc = "0.1"
+-miniz-sys = { path = "miniz-sys", version = "0.1" }
++miniz-sys = { version = "0.1" }
+ 
+ [dev-dependencies]
+ rand = "0.3"
+--- a/deps/git2-0.2.12/Cargo.toml
++++ b/deps/git2-0.2.12/Cargo.toml
+@@ -19,7 +19,7 @@
+ url = "0.2"
+ bitflags = "0.1"
+ libc = "0.1"
+-libgit2-sys = { path = "libgit2-sys", version = "0.2.3" }
++libgit2-sys = { version = "0.2.3" }
+ 
+ [dev-dependencies]
+ docopt = "0.6"
+--- a/deps/git2-curl-0.2.4/Cargo.toml
++++ b/deps/git2-curl-0.2.4/Cargo.toml
+@@ -19,7 +19,6 @@
+ log = "0.3"
+ 
+ [dependencies.git2]
+-path = ".."
+ version = "0.2"
+ 
+ [dev-dependencies]
+--- a/deps/kernel32-sys-0.1.2/Cargo.toml
++++ b/deps/kernel32-sys-0.1.2/Cargo.toml
+@@ -15,6 +15,6 @@
+ name = "kernel32"
+ 
+ [dependencies]
+-winapi = { version = "*", path = "../.." }
++winapi = { version = "*" }
+ [build-dependencies]
+-winapi-build = { version = "*", path = "../../build" }
++winapi-build = { version = "*" }
+--- a/deps/regex-0.1.38/Cargo.toml
++++ b/deps/regex-0.1.38/Cargo.toml
+@@ -32,7 +32,7 @@
+ [dependencies]
+ aho-corasick = "0.2"
+ memchr = "0.1"
+-regex-syntax = { path = "regex-syntax", version = "0.1" }
++regex-syntax = { version = "0.1" }
+ 
+ [dev-dependencies]
+ rand = "0.3"
+--- a/deps/winapi-0.1.23/Cargo.toml
++++ b/deps/winapi-0.1.23/Cargo.toml
+@@ -13,21 +13,21 @@
+ libc = "*"
+ 
+ [dev-dependencies]
+-advapi32-sys = { version = "*", path = "lib/advapi32-sys" }
+-crypt32-sys = { version = "*", path = "lib/crypt32-sys" }
+-d3d9-sys = { version = "*", path = "lib/d3d9-sys" }
+-dbghelp-sys = { version = "*", path = "lib/dbghelp-sys" }
+-dwmapi-sys = { version = "*", path = "lib/dwmapi-sys" }
+-gdi32-sys = { version = "*", path = "lib/gdi32-sys" }
+-kernel32-sys = { version = "*", path = "lib/kernel32-sys" }
+-ktmw32-sys = { version = "*", path = "lib/ktmw32-sys" }
+-mpr-sys = { version = "*", path = "lib/mpr-sys" }
+-ole32-sys = { version = "*", path = "lib/ole32-sys" }
+-opengl32-sys = { version = "*", path = "lib/opengl32-sys" }
+-psapi-sys = { version = "*", path = "lib/psapi-sys" }
+-secur32-sys = { version = "*", path = "lib/secur32-sys" }
+-shell32-sys = { version = "*", path = "lib/shell32-sys" }
+-user32-sys = { version = "*", path = "lib/user32-sys" }
+-uuid-sys = { version = "*", path = "lib/uuid-sys" }
+-winhttp-sys = { version = "*", path = "lib/winhttp-sys" }
+-winmm-sys = { version = "*", path = "lib/winmm-sys" }
++advapi32-sys = { version = "*" }
++crypt32-sys = { version = "*" }
++d3d9-sys = { version = "*" }
++dbghelp-sys = { version = "*" }
++dwmapi-sys = { version = "*" }
++gdi32-sys = { version = "*" }
++kernel32-sys = { version = "*" }
++ktmw32-sys = { version = "*" }
++mpr-sys = { version = "*" }
++ole32-sys = { version = "*" }
++opengl32-sys = { version = "*" }
++psapi-sys = { version = "*" }
++secur32-sys = { version = "*" }
++shell32-sys = { version = "*" }
++user32-sys = { version = "*" }
++uuid-sys = { version = "*" }
++winhttp-sys = { version = "*" }
++winmm-sys = { version = "*" }

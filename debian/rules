@@ -1,0 +1,77 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/pkg-info.mk
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/buildflags.mk
+RUSTFLAGS = -C link-args="$(LDFLAGS)"
+export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
+
+rust_cpu = $(subst i586,i686,$(1))
+DEB_HOST_RUST_TYPE := $(call rust_cpu,$(DEB_HOST_GNU_CPU))-unknown-$(DEB_HOST_GNU_SYSTEM)
+DEB_TARGET_RUST_TYPE := $(call rust_cpu,$(DEB_TARGET_GNU_CPU))-unknown-$(DEB_TARGET_GNU_SYSTEM)
+
+# Cargo looks for config in and writes cache to $CARGO_HOME/
+export CARGO_HOME = $(CURDIR)/debian/tmp/cargo-home
+export GIT_AUTHOR_NAME="deb-build"
+export GIT_AUTHOR_EMAIL="<>"
+export GIT_COMMITTER_NAME="$(GIT_AUTHOR_NAME)"
+export GIT_COMMITTER_EMAIL="$(GIT_AUTHOR_EMAIL)"
+
+DEB_DESTDIR := $(CURDIR)/debian/tmp
+INDEXDIR := $(CURDIR)/index
+DEPSDIR := $(CURDIR)/deps
+
+%:
+	dh $@ --with bash-completion
+
+override_dh_auto_configure:
+	# crates index location must be an absolute URL
+	sed -i.bak 's|--TOPDIR--|$(CURDIR)|' .cargo/config
+
+override_dh_auto_build:
+	# Bootstrap cargo stage0
+	./debian/bootstrap.py \
+		--no-clean \
+		--no-clone \
+		--crate-index $(INDEXDIR)/ \
+		--cargo-root $(CURDIR)/ \
+		--target-dir $(DEPSDIR)/ \
+		--host=$(DEB_HOST_RUST_TYPE) \
+		--target=$(DEB_TARGET_RUST_TYPE)
+	ln -s $(DEPSDIR)/cargo-* $(DEPSDIR)/cargo-stage0
+	# Walkaround - see https://github.com/rust-lang/cargo/issues/1423)
+	tar -czf quilt-pc.tar.gz .pc
+	$(RM) -r .pc
+	# Walkaround - crates index must be a git repo
+	cd $(INDEXDIR) && git init && git add . && git commit -m "Dummy commit"
+	# Configure to build cargo using the just-built stage0
+	./configure \
+		--prefix=/usr \
+		--disable-debug \
+		--enable-optimize \
+		--local-rust-root=/usr \
+		--local-cargo=$(CURDIR)/deps/cargo-stage0
+	# Build final cargo binary and docs
+	$(MAKE)
+	$(MAKE) doc
+	# Restore from walkarounds
+	-tar -xaf quilt-pc.tar.gz && $(RM) -r quilt-pc.tar.gz
+	-$(RM) -r $(INDEXDIR)/.git
+
+override_dh_auto_clean:
+	-tar -xaf quilt-pc.tar.gz && $(RM) -r quilt-pc.tar.gz
+	-mv .cargo/config.bak .cargo/config
+	-$(RM) -r $(CURDIR)/deps/*.rlib \
+			$(CURDIR)/deps/build_script* \
+			$(CURDIR)/deps/cargo* \
+			$(CURDIR)/deps/*.o \
+			$(CURDIR)/target/
+	-$(RM) -r $(INDEXDIR)/.git
+	dh_auto_clean
+
+override_dh_auto_install:
+	# We pick stuff directly from target/
+
+override_dh_auto_test:
+	# we don't run tests at the moment
+

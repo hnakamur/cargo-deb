@@ -1,0 +1,6 @@
+cargo (0.3.0-0~exp1) experimental; urgency=low
+
+  * Team upload.
+  * Initial Debian release. (Closes: #786432)
+
+ -- Luca Bruno <lucab@debian.org>  Tue, 11 Aug 2015 20:15:54 +0200

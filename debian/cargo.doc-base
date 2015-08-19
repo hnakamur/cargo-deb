@@ -1,0 +1,8 @@
+Document: cargo-rustdoc
+Title: Cargo RustDoc
+Abstract: The Cargo guide
+Section: Programming/Rust
+
+Format: HTML
+Index: /usr/share/doc/cargo/doc/index.html
+Files: /usr/share/doc/cargo/doc/*.html

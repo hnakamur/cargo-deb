@@ -1,0 +1,34 @@
+Current packaging of cargo is highly non-standard due to the
+fact that both the language (Rust) and its package manager (Cargo)
+are young projects with a high rate of changes.
+
+Debian has not yet a packaging policy nor a clear vision on how to
+package dependencies modules ("crates") in a working and reusable.
+Moreover, the current approach to modules and registry by cargo is
+biased towards an "always-online" use.
+
+For these reasons, we currently resort to several workarounds to
+build cargo:
+ 1. we use a custom script (debian/bootstrap.py) to build a local
+    stage0, instead of downloading/embedding a snapshotted binary.
+ 2. we embed a copy of crates.io-index, to avoid downloading the
+    registry from github.
+ 3. we embed all dependencies crates, because cargo needs external 
+    modules but we are still not sure about how they will be packaged
+    in Debian.
+ 4. we generate a .cargo/config at build-time, to override paths and
+    registry.
+ 5. we create a temporary git repository at build-time for the 
+    registry, as this is needed by cargo.
+  
+As such, the original source is composed by three tarballs:
+ * cargo source
+ * crates.io-index registry (under index/)
+ * dependencies crates (under deps/), stripped of unused embedded
+   C libraries
+
+In the next future, we will try to get rid of this complex setup
+as much as possible. For the moment, we want to ship rustc+cargo
+first and postpone handling of third-party crates and apps.
+
+ -- Luca Bruno <lucab@debian.org>  Tue, 11 Aug 2015 22:57:36 +0200
