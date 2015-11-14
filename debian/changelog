@@ -1,3 +1,13 @@
+cargo (0.3.0-1) unstable; urgency=medium
+
+  * Team upload.
+  * First upload to unstable.
+  * Update gbp.conf according to git repo structure.
+  * patches: downgrade missing_docs lints to simple warnings
+    to avoid build failures on newer rustc.
+
+ -- Luca Bruno <lucab@debian.org>  Sat, 14 Nov 2015 17:29:15 +0100
+
 cargo (0.3.0-0~exp1) experimental; urgency=low
 
   * Team upload.
