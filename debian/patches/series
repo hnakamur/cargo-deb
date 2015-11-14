@@ -1,3 +1,4 @@
+relax-doc-lint.patch
 add-paths-override.patch
 remove-deps-path.patch
 remove-cargo-devdeps.patch
