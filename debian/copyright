@@ -5,6 +5,7 @@ Source: https://github.com/rust-lang/cargo
 Files: *
 Copyright: 2014 The Rust Project Developers
 License: MIT-License or Apache-2.0
+Comment:
  Licensed under the Apache License, Version 2.0 <LICENSE-APACHE
  or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
  license <LICENSE-MIT or http://opensource.org/licenses/MIT>,
@@ -41,8 +42,7 @@ Comment:
  same MIT/Apache-2.0 dual-license. See https://github.com/rust-lang.
  Exceptions are noted below.
 
-Files:
-       deps/advapi32-sys-*
+Files: deps/advapi32-sys-*
        deps/kernel32-*
        deps/winapi-*
 Copyright: 2015 Peter Atashian <retep998@gmail.com>
@@ -85,8 +85,7 @@ Copyright: 2015 Alex Crichton <alex@alexcrichton.com>
 License: MIT-License
 Comment: see https://github.com/sfackler/rust-openssl
 
-Files:
-       deps/libz-sys-*
+Files: deps/libz-sys-*
        deps/libgit2-sys-*
        deps/libssh2-sys-*
        deps/miniz-sys-*
