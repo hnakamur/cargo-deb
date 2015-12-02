@@ -110,13 +110,13 @@ GRAPH = None
 CRATES_INDEX = 'git://github.com/rust-lang/crates.io-index.git'
 CARGO_REPO = 'git://github.com/rust-lang/cargo.git'
 CRATE_API_DL = 'https://crates.io/api/v1/crates/%s/%s/download'
-SV_RANGE = re.compile('^(?P<op>(?:\<|\>|=|\<=|\>=|\^|\~))?'
+SV_RANGE = re.compile('^(?P<op>(?:\<=|\>=|=|\<|\>|\^|\~))?\s*'
                       '(?P<major>(?:\*|0|[1-9][0-9]*))'
                       '(\.(?P<minor>(?:\*|0|[1-9][0-9]*)))?'
                       '(\.(?P<patch>(?:\*|0|[1-9][0-9]*)))?'
                       '(\-(?P<prerelease>[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?'
                       '(\+(?P<build>[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$')
-SEMVER = re.compile('^(?P<major>(?:0|[1-9][0-9]*))'
+SEMVER = re.compile('^\s*(?P<major>(?:0|[1-9][0-9]*))'
                     '(\.(?P<minor>(?:0|[1-9][0-9]*)))?'
                     '(\.(?P<patch>(?:0|[1-9][0-9]*)))?'
                     '(\-(?P<prerelease>[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?'
@@ -273,6 +273,9 @@ class Semver(dict):
 
     def __hash__(self):
         return hash(str(self))
+
+    def as_range(self):
+        return SemverRange('=%s' % self)
 
     def parts(self):
         major, minor, patch, prerelease, build = self.parts_raw()
@@ -594,29 +597,58 @@ class Runner(object):
         if type(self._cmd) is not list:
             self._cmd = [self._cmd]
         self._env = e
-        self._output = []
+        self._stdout = []
+        self._stderr = []
         self._returncode = 0
         self._cwd = cwd
 
     def __call__(self, c, e):
         cmd = self._cmd + c
         env = dict(self._env, **e)
-        #dbg(' env: %s' % e)
-        dbg(' '.join(cmd))
+        #dbg(' env: %s' % env)
+        #dbg(' cwd: %s' % self._cwd)
+        envstr = ''
+        for k,v in env.iteritems():
+            envstr += ' %s="%s"' % (k, v)
+        if self._cwd is not None:
+            dbg('cd %s && %s %s' % (self._cwd, envstr, ' '.join(cmd)))
+        else:
+            dbg('%s %s' % (envstr, ' '.join(cmd)))
 
         proc = subprocess.Popen(cmd, env=env, \
-                                stdout=subprocess.PIPE, cwd=self._cwd)
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                                cwd=self._cwd)
+        out, err = proc.communicate()
+
+        for lo in out.split('\n'):
+            if len(lo) > 0:
+                self._stdout.append(lo)
+                #dbg('out: %s' % lo)
+
+        for le in err.split('\n'):
+            if len(le) > 0:
+                self._stderr.append(le)
+                dbg(le)
+
+        """
         while proc.poll() is None:
-            l = proc.stdout.readline().rstrip('\n')
-            if len(l) > 0:
-                self._output.append(l)
-                dbg(l)
+            lo = proc.stdout.readline().rstrip('\n')
+            le = proc.stderr.readline().rstrip('\n')
+            if len(lo) > 0:
+                self._stdout.append(lo)
+                dbg(lo)
                 sys.stdout.flush()
+            if len(le) > 0:
+                self._stderr.append(le)
+                dbg('err: %s', le)
+                sys.stdout.flush()
+        """
         self._returncode = proc.wait()
-        return self._output
+        #dbg(' ret: %s' % self._returncode)
+        return self._stdout
 
     def output(self):
-        return self._output
+        return self._stdout
 
     def returncode(self):
         return self._returncode
@@ -630,6 +662,9 @@ class RustcRunner(Runner):
 class BuildScriptRunner(Runner):
 
     def __call__(self, c, e):
+        #dbg('XXX Running build script:');
+        #dbg(' env: %s' % e)
+        #dbg(' '.join(self._cmd + c))
         super(BuildScriptRunner, self).__call__(c, e)
 
         # parse the output for cargo: lines
@@ -645,13 +680,16 @@ class BuildScriptRunner(Runner):
             v = pieces['value']
 
             if k == 'rustc-link-lib':
+                #dbg('YYYYYY: adding -l %s' % v)
                 cmd += ['-l', v]
             elif k == 'rustc-link-search':
+                #dbg("adding link search path: %s" % v)
                 cmd += ['-L', v]
             elif k == 'rustc-cfg':
                 cmd += ['--cfg', v]
                 env['CARGO_FEATURE_%s' % v.upper().replace('-','_')] = 1
             else:
+                #dbg("env[%s] = %s" % (k, v));
                 denv[k] = v
         return (cmd, env, denv)
 
@@ -671,9 +709,13 @@ class Crate(object):
         self._refs = []
         self._env = {}
         self._dep_env = {}
+        self._extra_flags = []
 
     def name(self):
         return self._crate
+
+    def dep_info(self):
+        return self._dep_info
 
     def version(self):
         return self._version
@@ -727,20 +769,33 @@ class Crate(object):
 
                 svr = SemverRange(d['req'])
                 print ''
+                deps = []
                 dbg('Looking up info for %s %s' % (d['name'], str(svr)))
                 if d.get('local', None) is None:
-                    name, ver, deps, ftrs, cksum = crate_info_from_index(idir, d['name'], svr)
-                    cdir = dl_and_check_crate(tdir, name, ver, cksum)
-                    _, tver, tdeps, build = crate_info_from_toml(cdir)
-                    deps += tdeps
+                    # go through crates first to see if the is satisfied already
+                    dcrate = find_crate_by_name_and_semver(d['name'], svr)
+                    if dcrate is not None:
+                        #import pdb; pdb.set_trace()
+                        svr = dcrate.version().as_range()
+                    name, ver, ideps, ftrs, cksum = crate_info_from_index(idir, d['name'], svr)
+                    if dcrate is None:
+                        cdir = dl_and_check_crate(tdir, name, ver, cksum)
+                        _, tver, tdeps, build = crate_info_from_toml(cdir)
+                        deps += ideps
+                        deps += tdeps
+                    else:
+                        dbg('Found crate already satisfying %s %s' % (d['name'], str(svr)))
+                        deps += dcrate.dep_info()
                 else:
                     cdir = d['path']
-                    name, ver, deps, build = crate_info_from_toml(cdir)
+                    name, ver, ideps, build = crate_info_from_toml(cdir)
+                    deps += ideps
 
                 try:
-                    dcrate = Crate(name, ver, deps, cdir, build)
-                    if CRATES.has_key(str(dcrate)):
-                        dcrate = CRATES[str(dcrate)]
+                    if dcrate is None:
+                        dcrate = Crate(name, ver, deps, cdir, build)
+                        if CRATES.has_key(str(dcrate)):
+                            dcrate = CRATES[str(dcrate)]
                     UNRESOLVED.append(dcrate)
                     if graph is not None:
                         print >> graph, '"%s" -> "%s";' % (str(self), str(dcrate))
@@ -794,23 +849,27 @@ class Crate(object):
         output = os.path.join(out_dir, 'lib%s%s.rlib' % (output_name, extra_filename))
 
         if BUILT.has_key(str(self)):
-            return ({'name':self.name(), 'lib':output}, self._env)
+            return ({'name':self.name(), 'lib':output}, self._env, self._extra_flags)
 
         externs = []
+        extra_flags = []
         for dep,info in self._deps.iteritems():
             if CRATES.has_key(dep):
-                extern, env = CRATES[dep].build(self, out_dir, info['features'])
+                extern, env, extra_flags = CRATES[dep].build(self, out_dir, info['features'])
                 externs.append(extern)
                 self._dep_env[CRATES[dep].name()] = env
+                self._extra_flags += extra_flags
 
         if os.path.isfile(output):
             print ''
             dbg('Skipping %s, already built (needed by: %s)' % (str(self), str(by)))
             BUILT[str(self)] = str(by)
-            return ({'name':self.name(), 'lib':output}, self._env)
+            return ({'name':self.name(), 'lib':output}, self._env, self._extra_flags)
 
         # build the environment for subcommands
-        env = dict(os.environ)
+        tenv = dict(os.environ)
+        env = {}
+        env['PATH'] = tenv['PATH']
         env['OUT_DIR'] = out_dir
         env['TARGET'] = TARGET
         env['HOST'] = HOST
@@ -864,20 +923,21 @@ class Crate(object):
 
             cmd.append('--out-dir')
             cmd.append('%s' % out_dir)
+            cmd.append('--emit=dep-info,link')
+            cmd.append('--target')
+            cmd.append(TARGET)
             cmd.append('-L')
             cmd.append('%s' % out_dir)
             cmd.append('-L')
             cmd.append('%s/lib' % out_dir)
 
+
+            # add in the flags from dependencies
+            cmd += self._extra_flags
+
             for e in externs:
                 cmd.append('--extern')
                 cmd.append('%s=%s' % (e['name'].replace('-','_'), e['lib']))
-
-            # add in the native libraries to link to
-            if b['type'] != 'build_script':
-                for l in b.get('links', []):
-                    cmd.append('-l')
-                    cmd.append(l)
 
             # get the pkg key name
             match = BNAME.match(b['name'])
@@ -912,13 +972,13 @@ class Crate(object):
             for k,v in e2.iteritems():
                 self._env['DEP_%s_%s' % (key.upper(), k.upper())] = v
 
-            #dbg(' cmd: %s' % bcmd)
-            #dbg(' env: %s' % benv)
-            #dbg('denv: %s' % self._env)
+            #dbg('XXX  cmd: %s' % bcmd)
+            #dbg('XXX  env: %s' % benv)
+            #dbg('XXX denv: %s' % self._env)
             #print ''
 
         BUILT[str(self)] = str(by)
-        return ({'name':self.name(), 'lib':output}, self._env)
+        return ({'name':self.name(), 'lib':output}, self._env, bcmd)
 
 @idnt
 def dl_crate(url, depth=0):
@@ -945,33 +1005,28 @@ def dl_crate(url, depth=0):
 @idnt
 def dl_and_check_crate(tdir, name, ver, cksum):
     global CRATES
-    try:
-        cname = '%s-%s' % (name, ver)
-        cdir = os.path.join(tdir, cname)
-        if CRATES.has_key(cname):
-            dbg('skipping %s...already downloaded' % cname)
-            return cdir
+    cname = '%s-%s' % (name, ver)
+    cdir = os.path.join(tdir, cname)
+    if CRATES.has_key(cname):
+        dbg('skipping %s...already downloaded' % cname)
+        return cdir
 
-        if not os.path.isdir(cdir):
-            dbg('Downloading %s source to %s' % (cname, cdir))
-            dl = CRATE_API_DL % (name, ver)
-            buf = dl_crate(dl)
-            if (cksum is not None):
-                h = hashlib.sha256()
-                h.update(buf)
-                if h.hexdigest() == cksum:
-                    dbg('Checksum is good...%s' % cksum)
-                else:
-                    dbg('Checksum is BAD (%s != %s)' % (h.hexdigest(), cksum))
+    if not os.path.isdir(cdir):
+        dbg('Downloading %s source to %s' % (cname, cdir))
+        dl = CRATE_API_DL % (name, ver)
+        buf = dl_crate(dl)
+        if (cksum is not None):
+            h = hashlib.sha256()
+            h.update(buf)
+            if h.hexdigest() == cksum:
+                dbg('Checksum is good...%s' % cksum)
+            else:
+                dbg('Checksum is BAD (%s != %s)' % (h.hexdigest(), cksum))
 
-            fbuf = cStringIO.StringIO(buf)
-            with tarfile.open(fileobj=fbuf) as tf:
-                dbg('unpacking result to %s...' % cdir)
-                tf.extractall(path=tdir)
-
-    except Exception, e:
-        self._dir = None
-        raise e
+        fbuf = cStringIO.StringIO(buf)
+        with tarfile.open(fileobj=fbuf) as tf:
+            dbg('unpacking result to %s...' % cdir)
+            tf.extractall(path=tdir)
 
     return cdir
 
@@ -1078,11 +1133,13 @@ def crate_info_from_toml(cdir):
                     if v.get('version', None) is None:
                         deps.append({'name':k, 'path':os.path.join(cdir, v['path']), 'local':True, 'req':0})
                     else:
+                        opts = v.get('optional',False)
                         ftrs = v.get('features',[])
-                        deps.append({'name':k, 'path': v['path'], 'req':v['version'], 'features':ftrs})
+                        deps.append({'name':k, 'path': v['path'], 'req':v['version'], 'features':ftrs, 'optional':opts})
                 else:
+                    opts = v.get('optional',False)
                     ftrs = v.get('features',[])
-                    deps.append({'name':k, 'req':v['version'], 'features':ftrs})
+                    deps.append({'name':k, 'req':v['version'], 'features':ftrs, 'optional':opts})
 
             return (name, ver, deps, build)
 
@@ -1135,6 +1192,17 @@ def crate_info_from_index(idir, name, svr):
 
     return (name, ver, deps, ftrs, cksum)
 
+def find_crate_by_name_and_semver(name, svr):
+    global CRATES
+    global UNRESOLVED
+    for c in CRATES.itervalues():
+        if c.name() == name and svr.compare(c.version()):
+            return c
+    for c in UNRESOLVED:
+        if c.name() == name and svr.compare(c.version()):
+            return c
+    return None
+
 def args_parser():
     parser = argparse.ArgumentParser(description='Cargo Bootstrap Tool')
     parser.add_argument('--cargo-root', type=str,  default=os.getcwd(),
@@ -1151,6 +1219,8 @@ def args_parser():
                         help="run semver parsing tests")
     parser.add_argument('--no-clone', action='store_true',
                         help="skip cloning crates index, --target-dir must point to an existing clone of the crates index")
+    parser.add_argument('--no-git', action='store_true',
+                        help="don't assume that the crates index and cargo root are git repos; implies --no-clone")
     parser.add_argument('--no-clean', action='store_true',
                         help="don't delete the target dir and crate index")
     parser.add_argument('--download', action='store_true',
@@ -1191,17 +1261,18 @@ if __name__ == "__main__":
 
         TARGET = args.target
         HOST = args.host
-        index = open_or_clone_repo(args.crate_index, CRATES_INDEX, args.no_clone)
-        cargo = open_or_clone_repo(args.cargo_root, CARGO_REPO, args.no_clone)
 
-# TODO(lucab): also check for config.json and Cargo.toml before aborting
-#        if index is None:
-#            raise RuntimeError('You must have a local clone of the crates index ' \
-#                               'or omit --no-clone to allow this script to clone ' \
-#                               'it for you.')
-#        if cargo is None:
-#            raise RuntimeError('You must have a local clone of the cargo repo '\
-#                               'so that this script can read the cargo toml file.')
+        if not args.no_git:
+            index = open_or_clone_repo(args.crate_index, CRATES_INDEX, args.no_clone)
+            cargo = open_or_clone_repo(args.cargo_root, CARGO_REPO, args.no_clone)
+
+            if index is None:
+                raise RuntimeError('You must have a local clone of the crates index, ' \
+                                   'omit --no-clone to allow this script to clone it for ' \
+                                   'you, or pass --no-git to bypass this check.')
+            if cargo is None:
+                raise RuntimeError('You must have a local clone of the cargo repo ' \
+                                   'so that this script can read the cargo toml file.')
 
         if TARGET is None:
             raise RuntimeError('You must specify the target triple of this machine')
