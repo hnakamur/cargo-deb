@@ -11,67 +11,62 @@ DEB_HOST_RUST_TYPE := $(call rust_cpu,$(DEB_HOST_GNU_CPU))-unknown-$(DEB_HOST_GN
 DEB_TARGET_RUST_TYPE := $(call rust_cpu,$(DEB_TARGET_GNU_CPU))-unknown-$(DEB_TARGET_GNU_SYSTEM)
 
 # Cargo looks for config in and writes cache to $CARGO_HOME/
-export CARGO_HOME = $(CURDIR)/debian/tmp/cargo-home
-export GIT_AUTHOR_NAME="deb-build"
-export GIT_AUTHOR_EMAIL="<>"
-export GIT_COMMITTER_NAME="$(GIT_AUTHOR_NAME)"
-export GIT_COMMITTER_EMAIL="$(GIT_AUTHOR_EMAIL)"
+export CARGO_HOME = $(CURDIR)/.cargohome
 
 DEB_DESTDIR := $(CURDIR)/debian/tmp
-INDEXDIR := $(CURDIR)/index
+VENDORDIR := $(CURDIR)/vendor
+INDEXDIR := $(CURDIR)/vendor/index
 DEPSDIR := $(CURDIR)/deps
 
 %:
 	dh $@ --with bash-completion
 
 override_dh_auto_configure:
-	# crates index location must be an absolute URL
-	sed -i.bak 's|--TOPDIR--|$(CURDIR)|' .cargo/config
+	# Prepare a fake registry by packing all deps
+	./debian/cargo-vendor-pack.py
 
 override_dh_auto_build:
 	# Bootstrap cargo stage0
 	./debian/bootstrap.py \
 		--no-clean \
 		--no-clone \
+		--no-git \
 		--crate-index $(INDEXDIR)/ \
 		--cargo-root $(CURDIR)/ \
 		--target-dir $(DEPSDIR)/ \
 		--host=$(DEB_HOST_RUST_TYPE) \
 		--target=$(DEB_TARGET_RUST_TYPE)
-	ln -s $(DEPSDIR)/cargo-* $(DEPSDIR)/cargo-stage0
-	# Walkaround - see https://github.com/rust-lang/cargo/issues/1423)
-	tar -czf quilt-pc.tar.gz .pc
-	$(RM) -r .pc
-	# Walkaround - crates index must be a git repo
-	cd $(INDEXDIR) && git init && git add . && git commit -m "Dummy commit"
+	# Workaround for https://github.com/rust-lang/cargo/issues/1423
+	mv $(DEPSDIR) $(CURDIR)/.deps
+	ln -s `find  $(CURDIR)/.deps -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
 	# Configure to build cargo using the just-built stage0
 	./configure \
 		--prefix=/usr \
 		--disable-debug \
 		--enable-optimize \
 		--local-rust-root=/usr \
-		--local-cargo=$(CURDIR)/deps/cargo-stage0
+		--local-cargo=$(CURDIR)/cargo-stage0
 	# Build final cargo binary and docs
 	$(MAKE)
 	$(MAKE) doc
-	# Restore from walkarounds
-	-tar -xaf quilt-pc.tar.gz && $(RM) -r quilt-pc.tar.gz
-	-$(RM) -r $(INDEXDIR)/.git
+	# Restore from workarounds
+	mv $(CURDIR)/.deps $(DEPSDIR)
 
 override_dh_auto_clean:
-	-tar -xaf quilt-pc.tar.gz && $(RM) -r quilt-pc.tar.gz
-	-mv .cargo/config.bak .cargo/config
+	-mv $(CURDIR)/.deps $(DEPSDIR)
 	-$(RM) -r $(CURDIR)/deps/*.rlib \
 			$(CURDIR)/deps/build_script* \
 			$(CURDIR)/deps/cargo* \
 			$(CURDIR)/deps/*.o \
-			$(CURDIR)/target/
-	-$(RM) -r $(INDEXDIR)/.git
+			$(CURDIR)/target/ \
+			$(CURDIR)/cargo-stage0 \
+			$(CARGO_HOME) \
+			$(VENDORDIR)
 	dh_auto_clean
 
 override_dh_auto_install:
 	# We pick stuff directly from target/
 
 override_dh_auto_test:
-	# we don't run tests at the moment
+	# we don't run tests at the moment due to too many deps
 
