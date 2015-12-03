@@ -1,0 +1,3 @@
+- sketch trait simplification, with ::new, and with (0...10).rand()
+- emphasise float gotcha
+- handwave docs
