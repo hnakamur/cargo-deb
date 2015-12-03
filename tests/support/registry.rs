@@ -55,17 +55,23 @@ pub fn mock_archive(name: &str, version: &str, deps: &[(&str, &str, &str)]) {
     }
     let p = project(name)
         .file("Cargo.toml", &manifest)
-        .file("src/lib.rs", "");
+        .file("src/lib.rs", "")
+        .file("src/main.rs", &format!("\
+            extern crate {};
+            fn main() {{}}
+        ", name));
     p.build();
 
     let dst = mock_archive_dst(name, version);
     fs::create_dir_all(dst.parent().unwrap()).unwrap();
     let f = File::create(&dst).unwrap();
     let a = Archive::new(GzEncoder::new(f, Default));
-    a.append(&format!("{}-{}/Cargo.toml", name, version),
-             &mut File::open(&p.root().join("Cargo.toml")).unwrap()).unwrap();
-    a.append(&format!("{}-{}/src/lib.rs", name, version),
-             &mut File::open(&p.root().join("src/lib.rs")).unwrap()).unwrap();
+    a.append_file(&format!("{}-{}/Cargo.toml", name, version),
+                  &mut File::open(&p.root().join("Cargo.toml")).unwrap()).unwrap();
+    a.append_file(&format!("{}-{}/src/lib.rs", name, version),
+                  &mut File::open(&p.root().join("src/lib.rs")).unwrap()).unwrap();
+    a.append_file(&format!("{}-{}/src/main.rs", name, version),
+                  &mut File::open(&p.root().join("src/main.rs")).unwrap()).unwrap();
     a.finish().unwrap();
 }
 
@@ -117,6 +123,7 @@ pub fn publish(file: &str, line: &str) {
                 &[&parent]).unwrap();
 }
 
+#[allow(deprecated)] // connect => join in 1.3
 pub fn pkg(name: &str, vers: &str, deps: &[(&str, &str, &str)], cksum: &str,
            yanked: bool) -> String {
     let deps = deps.iter().map(|&(a, b, c)| dep(a, b, c)).collect::<Vec<String>>();

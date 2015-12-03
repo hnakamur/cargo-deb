@@ -7,13 +7,15 @@ use cargo::util::{CliResult, CliError, Config};
 
 #[derive(RustcDecodable)]
 struct Options {
-    flag_package: Option<String>,
+    flag_package: Vec<String>,
     flag_jobs: Option<u32>,
     flag_features: Vec<String>,
     flag_no_default_features: bool,
     flag_target: Option<String>,
     flag_manifest_path: Option<String>,
     flag_verbose: bool,
+    flag_quiet: bool,
+    flag_color: Option<String>,
     flag_release: bool,
     flag_lib: bool,
     flag_bin: Vec<String>,
@@ -29,20 +31,22 @@ Usage:
     cargo build [options]
 
 Options:
-    -h, --help               Print this message
-    -p SPEC, --package SPEC  Package to build
-    -j N, --jobs N           The number of jobs to run in parallel
-    --lib                    Build only this package's library
-    --bin NAME               Build only the specified binary
-    --example NAME           Build only the specified example
-    --test NAME              Build only the specified test
-    --bench NAME             Build only the specified benchmark
-    --release                Build artifacts in release mode, with optimizations
-    --features FEATURES      Space-separated list of features to also build
-    --no-default-features    Do not build the `default` feature
-    --target TRIPLE          Build for the target triple
-    --manifest-path PATH     Path to the manifest to compile
-    -v, --verbose            Use verbose output
+    -h, --help                   Print this message
+    -p SPEC, --package SPEC ...  Package to build
+    -j N, --jobs N               The number of jobs to run in parallel
+    --lib                        Build only this package's library
+    --bin NAME                   Build only the specified binary
+    --example NAME               Build only the specified example
+    --test NAME                  Build only the specified test target
+    --bench NAME                 Build only the specified benchmark target
+    --release                    Build artifacts in release mode, with optimizations
+    --features FEATURES          Space-separated list of features to also build
+    --no-default-features        Do not build the `default` feature
+    --target TRIPLE              Build for the target triple
+    --manifest-path PATH         Path to the manifest to compile
+    -v, --verbose                Use verbose output
+    -q, --quiet                  No output printed to stdout
+    --color WHEN                 Coloring: auto, always, never
 
 If the --package argument is given, then SPEC is a package id specification
 which indicates which package should be built. If it is not given, then the
@@ -57,7 +61,8 @@ the --release flag will use the `release` profile instead.
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     debug!("executing; cmd=cargo-build; args={:?}",
            env::args().collect::<Vec<_>>());
-    config.shell().set_verbose(options.flag_verbose);
+    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
+    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
 
     let root = try!(find_root_manifest_for_cwd(options.flag_manifest_path));
 
@@ -67,7 +72,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         target: options.flag_target.as_ref().map(|t| &t[..]),
         features: &options.flag_features,
         no_default_features: options.flag_no_default_features,
-        spec: options.flag_package.as_ref().map(|s| &s[..]),
+        spec: &options.flag_package,
         exec_engine: None,
         mode: ops::CompileMode::Build,
         release: options.flag_release,

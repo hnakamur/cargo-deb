@@ -96,7 +96,7 @@
 //! each of which has many sub-folders with two letters. At the end of all these
 //! are the actual crate files themselves.
 //!
-//! The purpose of this layou tis to hopefully cut down on `ls` sizes as well as
+//! The purpose of this layout is to hopefully cut down on `ls` sizes as well as
 //! efficient lookup based on the crate name itself.
 //!
 //! ## Crate files
@@ -172,10 +172,10 @@ use tar::Archive;
 use url::Url;
 
 use core::{Source, SourceId, PackageId, Package, Summary, Registry};
-use core::dependency::{Dependency, Kind};
+use core::dependency::{Dependency, DependencyInner, Kind};
 use sources::{PathSource, git};
 use util::{CargoResult, Config, internal, ChainError, ToUrl, human};
-use util::{hex, Sha256};
+use util::{hex, Sha256, paths};
 use ops;
 
 static DEFAULT: &'static str = "https://github.com/rust-lang/crates.io-index";
@@ -187,7 +187,7 @@ pub struct RegistrySource<'cfg> {
     src_path: PathBuf,
     config: &'cfg Config,
     handle: Option<http::Handle>,
-    sources: Vec<PathSource<'cfg>>,
+    sources: HashMap<PackageId, PathSource<'cfg>>,
     hashes: HashMap<(String, String), String>, // (name, vers) => cksum
     cache: HashMap<String, Vec<(Summary, bool)>>,
     updated: bool,
@@ -239,7 +239,7 @@ impl<'cfg> RegistrySource<'cfg> {
             config: config,
             source_id: source_id.clone(),
             handle: None,
-            sources: Vec::new(),
+            sources: HashMap::new(),
             hashes: HashMap::new(),
             cache: HashMap::new(),
             updated: false,
@@ -265,9 +265,7 @@ impl<'cfg> RegistrySource<'cfg> {
     ///
     /// This requires that the index has been at least checked out.
     pub fn config(&self) -> CargoResult<RegistryConfig> {
-        let mut f = try!(File::open(&self.checkout_path.join("config.json")));
-        let mut contents = String::new();
-        try!(f.read_to_string(&mut contents));
+        let contents = try!(paths::read(&self.checkout_path.join("config.json")));
         let config = try!(json::decode(&contents));
         Ok(config)
     }
@@ -331,7 +329,7 @@ impl<'cfg> RegistrySource<'cfg> {
                                      pkg)))
         }
 
-        try!(try!(File::create(&dst)).write_all(resp.get_body()));
+        try!(paths::write(&dst, resp.get_body()));
         Ok(dst)
     }
 
@@ -368,7 +366,7 @@ impl<'cfg> RegistrySource<'cfg> {
     }
 
     /// Parse the on-disk metadata for the package provided
-    fn summaries(&mut self, name: &str) -> CargoResult<&Vec<(Summary, bool)>> {
+    pub fn summaries(&mut self, name: &str) -> CargoResult<&Vec<(Summary, bool)>> {
         if self.cache.contains_key(name) {
             return Ok(self.cache.get(name).unwrap());
         }
@@ -430,19 +428,27 @@ impl<'cfg> RegistrySource<'cfg> {
             name, req, features, optional, default_features, target, kind
         } = dep;
 
-        let dep = try!(Dependency::parse(&name, Some(&req),
-                                         &self.source_id));
+        let dep = try!(DependencyInner::parse(&name, Some(&req),
+                                              &self.source_id));
         let kind = match kind.as_ref().map(|s| &s[..]).unwrap_or("") {
             "dev" => Kind::Development,
             "build" => Kind::Build,
             _ => Kind::Normal,
         };
 
+        // Unfortunately older versions of cargo and/or the registry ended up
+        // publishing lots of entries where the features array contained the
+        // empty feature, "", inside. This confuses the resolution process much
+        // later on and these features aren't actually valid, so filter them all
+        // out here.
+        let features = features.into_iter().filter(|s| !s.is_empty()).collect();
+
         Ok(dep.set_optional(optional)
               .set_default_features(default_features)
               .set_features(features)
               .set_only_for_platform(target)
-              .set_kind(kind))
+              .set_kind(kind)
+              .into_dependency())
     }
 
     /// Actually perform network operations to update the registry
@@ -514,7 +520,7 @@ impl<'cfg> Registry for RegistrySource<'cfg> {
 impl<'cfg> Source for RegistrySource<'cfg> {
     fn update(&mut self) -> CargoResult<()> {
         // If we have an imprecise version then we don't know what we're going
-        // to look for, so we always atempt to perform an update here.
+        // to look for, so we always attempt to perform an update here.
         //
         // If we have a precise version, then we'll update lazily during the
         // querying phase. Note that precise in this case is only
@@ -531,6 +537,7 @@ impl<'cfg> Source for RegistrySource<'cfg> {
         let url = try!(config.dl.to_url().map_err(internal));
         for package in packages.iter() {
             if self.source_id != *package.source_id() { continue }
+            if self.sources.contains_key(package) { continue }
 
             let mut url = url.clone();
             url.path_mut().unwrap().push(package.name().to_string());
@@ -545,14 +552,14 @@ impl<'cfg> Source for RegistrySource<'cfg> {
             }));
             let mut src = PathSource::new(&path, &self.source_id, self.config);
             try!(src.update());
-            self.sources.push(src);
+            self.sources.insert(package.clone(), src);
         }
         Ok(())
     }
 
     fn get(&self, packages: &[PackageId]) -> CargoResult<Vec<Package>> {
         let mut ret = Vec::new();
-        for src in self.sources.iter() {
+        for src in self.sources.values() {
             ret.extend(try!(src.get(packages)).into_iter());
         }
         return Ok(ret);

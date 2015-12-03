@@ -5,6 +5,8 @@ use cargo::util::important_paths::find_root_manifest_for_cwd;
 #[derive(RustcDecodable)]
 struct Options {
     flag_verbose: bool,
+    flag_quiet: bool,
+    flag_color: Option<String>,
     flag_manifest_path: Option<String>,
     flag_no_verify: bool,
     flag_no_metadata: bool,
@@ -24,11 +26,14 @@ Options:
     --no-metadata           Ignore warnings about a lack of human-usable metadata
     --manifest-path PATH    Path to the manifest to compile
     -v, --verbose           Use verbose output
+    -q, --quiet             No output printed to stdout
+    --color WHEN            Coloring: auto, always, never
 
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    config.shell().set_verbose(options.flag_verbose);
+    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
+    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
     let root = try!(find_root_manifest_for_cwd(options.flag_manifest_path));
     ops::package(&root, config,
                  !options.flag_no_verify,

@@ -35,39 +35,12 @@ the build command works.
 ## Inputs to the Build Script
 
 When the build script is run, there are a number of inputs to the build script,
-all passed in the form of environment variables:
+all passed in the form of [environment variables][env].
 
-* `OUT_DIR` - the folder in which all output should be placed. This folder is
-              inside the build directory for the package being built, and it is
-              unique for the package in question.
-* `TARGET` - the target triple that is being compiled for. Native code should be
-             compiled for this triple. Some more information about target
-             triples can be found in [clang's own documentation][clang].
-* `HOST` - the host triple of the rust compiler.
-* `NUM_JOBS` - the parallelism specified as the top-level parallelism. This can
-               be useful to pass a `-j` parameter to a system like `make`.
-* `CARGO_MANIFEST_DIR` - The directory containing the manifest for the package
-                         being built (the package containing the build
-                         script). Also note that this is the value of the
-                         current working directory of the build script when it
-                         starts.
-* `OPT_LEVEL`, `DEBUG` - values of the corresponding variables for the
-                         profile currently being built.
-* `PROFILE` - name of the profile currently being built (see
-              [profiles][profile]).
-* `CARGO_FEATURE_<name>` - For each activated feature of the package being
-                           built, this environment variable will be present
-                           where `<name>` is the name of the feature uppercased
-                           and having `-` translated to `_`.
-* `DEP_<name>_<key>` - For more information about this set of environment
-                       variables, see the section below about [`links`][links].
+In addition to environment variables, the build script's current directory is
+the source directory of the build script's package.
 
-In addition to the above environment variables, the build script's current
-directory is the source directory of the build script's package.
-
-[profile]: manifest.html#the-[profile.*]-sections
-[links]: #the-links-manifest-key
-[clang]:http://clang.llvm.org/docs/CrossCompilation.html#target-triple
+[env]: environment-variables.html
 
 ## Outputs of the Build Script
 
@@ -100,6 +73,8 @@ Any other element is a user-defined metadata that will be passed to
 dependencies. More information about this can be found in the [`links`][links]
 section.
 
+[links]: #the-links-manifest-key
+
 ## Build Dependencies
 
 Build scripts are also allowed to have dependencies on other Cargo-based crates.
@@ -107,8 +82,8 @@ Dependencies are declared through the `build-dependencies` section of the
 manifest.
 
 ```toml
-[build-dependencies.foo]
-git = "https://github.com/your-packages/foo"
+[build-dependencies]
+foo = { git = "https://github.com/your-packages/foo" }
 ```
 
 The build script **does not** have access to the dependencies listed in the
@@ -142,7 +117,7 @@ In other words, it's forbidden to have two packages link to the same native
 library. Note, however, that there are [conventions in place][star-sys] to
 alleviate this.
 
-[star-sys]: #*-sys-packages
+[star-sys]: #-sys-packages
 
 As mentioned above in the output format, each build script can generate an
 arbitrary set of metadata in the form of key-value pairs. This metadata is
@@ -310,6 +285,7 @@ the build script now:
 
 use std::process::Command;
 use std::env;
+use std::path::Path;
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -328,7 +304,7 @@ fn main() {
 }
 ```
 
-This build script starts out by compiling out C file into an object file (by
+This build script starts out by compiling our C file into an object file (by
 invoking `gcc`) and then converting this object file into a static library (by
 invoking `ar`). The final step is feedback to Cargo itself to say that our
 output was in `out_dir` and the compiler should link the crate to `libhello.a`
@@ -350,17 +326,25 @@ portable, and standardized. For example, the build script could be written as:
 ```rust,ignore
 // build.rs
 
-// Bring in a dependency on an externally maintained `cc` package which manages
+// Bring in a dependency on an externally maintained `gcc` package which manages
 // invoking the C compiler.
-extern crate cc;
+extern crate gcc;
 
 fn main() {
-    cc::compile_library("libhello.a", &["src/hello.c"]).unwrap();
+    gcc::compile_library("libhello.a", &["src/hello.c"]);
 }
 ```
 
-This example is a little hand-wavy, but we can assume that the `cc` crate
-performs tasks such as:
+Add a build time dependency on the `gcc` crate with the following addition to
+your `Cargo.toml`:
+
+```toml
+[build-dependencies]
+gcc = "0.3"
+```
+
+The [`gcc` crate](https://crates.io/crates/gcc) abstracts a range of build
+script requirements for C code:
 
 * It invokes the appropriate compiler (MSVC for windows, `gcc` for MinGW, `cc`
   for Unix platforms, etc).
@@ -442,11 +426,11 @@ authors = ["..."]
 links = "git2"
 build = "build.rs"
 
-[dependencies.libssh2-sys]
-git = "https://github.com/alexcrichton/ssh2-rs"
+[dependencies]
+libssh2-sys = { git = "https://github.com/alexcrichton/ssh2-rs" }
 
-[target.x86_64-unknown-linux-gnu.dependencies.openssl-sys]
-git = "https://github.com/alexcrichton/openssl-sys"
+[target.x86_64-unknown-linux-gnu.dependencies]
+openssl-sys = { git = "https://github.com/alexcrichton/openssl-sys" }
 
 # ...
 ```

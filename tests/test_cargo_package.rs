@@ -9,7 +9,8 @@ use git2;
 use tar::Archive;
 
 use support::{project, execs, cargo_dir, paths, git, path2url};
-use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING};
+use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING, UPDATING, DOWNLOADING};
+use support::registry as r;
 use hamcrest::{assert_that, existing_file};
 
 fn setup() {
@@ -57,10 +58,11 @@ src[..]main.rs
     let ar = Archive::new(Cursor::new(contents));
     for f in ar.files().unwrap() {
         let f = f.unwrap();
-        let fname = f.filename_bytes();
+        let fname = f.header().path_bytes();
+        let fname = &*fname;
         assert!(fname == b"foo-0.0.1/Cargo.toml" ||
                 fname == b"foo-0.0.1/src/main.rs",
-                "unexpected filename: {:?}", f.filename())
+                "unexpected filename: {:?}", f.header().path())
     }
 });
 
@@ -138,6 +140,61 @@ http://doc.crates.io/manifest.html#package-metadata for more info."));
         verifying = VERIFYING,
         compiling = COMPILING,
         dir = p.url())));
+});
+
+test!(wildcard_deps {
+    r::init();
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            license = "MIT"
+            description = "foo"
+            repository = "bar"
+
+            [dependencies]
+            bar = "*"
+
+            [build-dependencies]
+            baz = "*"
+
+            [dev-dependencies]
+            buz = "*"
+        "#)
+        .file("src/main.rs", "fn main() {}");
+
+    r::mock_pkg("baz", "0.0.1", &[]);
+    r::mock_pkg("bar", "0.0.1", &[("baz", "0.0.1", "normal")]);
+    r::mock_pkg("buz", "0.0.1", &[("bar", "0.0.1", "normal")]);
+
+    assert_that(p.cargo_process("package"),
+                execs().with_status(0).with_stdout(&format!("\
+{packaging} foo v0.0.1 ({dir})
+{verifying} foo v0.0.1 ({dir})
+{updating} registry `{reg}`
+{downloading} [..] v0.0.1 (registry file://[..])
+{downloading} [..] v0.0.1 (registry file://[..])
+{downloading} [..] v0.0.1 (registry file://[..])
+{compiling} baz v0.0.1 (registry file://[..])
+{compiling} bar v0.0.1 (registry file://[..])
+{compiling} foo v0.0.1 ({dir}[..])
+",
+        packaging = PACKAGING,
+        verifying = VERIFYING,
+        updating = UPDATING,
+        downloading = DOWNLOADING,
+        compiling = COMPILING,
+        dir = p.url(),
+        reg = r::registry()))
+                .with_stderr("\
+warning: some dependencies have wildcard (\"*\") version constraints. On December 11th, 2015, \
+crates.io will begin rejecting packages with wildcard dependency constraints. See \
+http://doc.crates.io/crates-io.html#using-crates.io-based-crates for information on version \
+constraints.
+dependencies for these crates have wildcard constraints: bar, baz"));
 });
 
 test!(package_verbose {
@@ -315,4 +372,58 @@ test!(package_git_submodule {
     let result = project.cargo("package").arg("--no-verify").arg("-v").exec_with_output().unwrap();
     assert!(result.status.success());
     assert!(from_utf8(&result.stdout).unwrap().contains(&format!("{} bar/Makefile", ARCHIVING)));
+});
+
+test!(ignore_nested {
+    let cargo_toml = r#"
+            [project]
+            name = "nested"
+            version = "0.0.1"
+            authors = []
+            license = "MIT"
+            description = "nested"
+        "#;
+    let main_rs = r#"
+            fn main() { println!("hello"); }
+        "#;
+    let p = project("nested")
+        .file("Cargo.toml", cargo_toml)
+        .file("src/main.rs", main_rs)
+        // If a project happens to contain a copy of itself, we should
+        // ignore it.
+        .file("a_dir/nested/Cargo.toml", cargo_toml)
+        .file("a_dir/nested/src/main.rs", main_rs);
+
+    assert_that(p.cargo_process("package"),
+                execs().with_status(0).with_stdout(&format!("\
+{packaging} nested v0.0.1 ({dir})
+{verifying} nested v0.0.1 ({dir})
+{compiling} nested v0.0.1 ({dir}[..])
+",
+        packaging = PACKAGING,
+        verifying = VERIFYING,
+        compiling = COMPILING,
+        dir = p.url())));
+    assert_that(&p.root().join("target/package/nested-0.0.1.crate"), existing_file());
+    assert_that(p.cargo("package").arg("-l"),
+                execs().with_status(0).with_stdout("\
+Cargo.toml
+src[..]main.rs
+"));
+    assert_that(p.cargo("package"),
+                execs().with_status(0).with_stdout(""));
+
+    let f = File::open(&p.root().join("target/package/nested-0.0.1.crate")).unwrap();
+    let mut rdr = GzDecoder::new(f).unwrap();
+    let mut contents = Vec::new();
+    rdr.read_to_end(&mut contents).unwrap();
+    let ar = Archive::new(Cursor::new(contents));
+    for f in ar.files().unwrap() {
+        let f = f.unwrap();
+        let fname = f.header().path_bytes();
+        let fname = &*fname;
+        assert!(fname == b"nested-0.0.1/Cargo.toml" ||
+                fname == b"nested-0.0.1/src/main.rs",
+                "unexpected filename: {:?}", f.header().path())
+    }
 });
