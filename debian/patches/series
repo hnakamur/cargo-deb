@@ -1,4 +1,2 @@
-relax-doc-lint.patch
-add-paths-override.patch
-remove-deps-path.patch
-remove-cargo-devdeps.patch
+clean-cargo-deps.patch
+libgit2-fixes.patch
