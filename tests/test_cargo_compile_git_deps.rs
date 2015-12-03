@@ -539,9 +539,12 @@ test!(recompilation {
 
     // Update the dependency and carry on!
     assert_that(p.cargo("update"),
-                execs().with_stdout(&format!("{} git repository `{}`",
+                execs().with_stdout(&format!("{} git repository `{}`\n\
+                                              {} bar v0.5.0 ([..]) -> #[..]\n\
+                                             ",
                                             UPDATING,
-                                            git_project.url())));
+                                            git_project.url(),
+                                            UPDATING)));
     println!("going for the last compile");
     assert_that(p.cargo("build"),
                 execs().with_stdout(&format!("{} bar v0.5.0 ({}#[..])\n\
@@ -657,9 +660,12 @@ test!(update_with_shared_deps {
     assert_that(p.cargo("update")
                  .arg("-p").arg("dep1")
                  .arg("--aggressive"),
-                execs().with_stdout(&format!("{} git repository `{}`",
+                execs().with_stdout(&format!("{} git repository `{}`\n\
+                                              {} bar v0.5.0 ([..]) -> #[..]\n\
+                                             ",
                                             UPDATING,
-                                            git_project.url())));
+                                            git_project.url(),
+                                            UPDATING)));
 
     // Make sure we still only compile one version of the git repo
     println!("build");
@@ -782,8 +788,12 @@ test!(two_deps_only_update_one {
     assert_that(project.cargo("update")
                        .arg("-p").arg("dep1"),
         execs()
-        .with_stdout(&format!("{} git repository `{}`\n",
-                             UPDATING, git1.url()))
+        .with_stdout(&format!("{} git repository `{}`\n\
+                               {} dep1 v0.5.0 ([..]) -> #[..]\n\
+                              ",
+                             UPDATING,
+                             git1.url(),
+                             UPDATING))
         .with_stderr(""));
 });
 
@@ -921,11 +931,12 @@ test!(dep_with_changed_submodule {
     sub.sync().unwrap();
     {
         let subrepo = sub.open().unwrap();
+        subrepo.remote_add_fetch("origin",
+                                 "refs/heads/*:refs/heads/*").unwrap();
+        subrepo.remote_set_url("origin",
+                               &git_project3.url().to_string()).unwrap();
         let mut origin = subrepo.find_remote("origin").unwrap();
-        origin.set_url(&git_project3.url().to_string()).unwrap();
-        origin.add_fetch("refs/heads/*:refs/heads/*").unwrap();;
-        origin.fetch(&[], None).unwrap();
-        origin.save().unwrap();
+        origin.fetch(&[], None, None).unwrap();
         let id = subrepo.refname_to_id("refs/remotes/origin/master").unwrap();
         let obj = subrepo.find_object(id, None).unwrap();
         subrepo.reset(&obj, git2::ResetType::Hard, None).unwrap();
@@ -940,9 +951,12 @@ test!(dep_with_changed_submodule {
     assert_that(project.cargo("update").arg("-v"),
                 execs()
                 .with_stderr("")
-                .with_stdout(&format!("{} git repository `{}`",
+                .with_stdout(&format!("{} git repository `{}`\n\
+                                       {} dep1 v0.5.0 ([..]) -> #[..]\n\
+                                      ",
                                      UPDATING,
-                                     git_project.url())));
+                                     git_project.url(),
+                                     UPDATING)));
 
     println!("last run");
     assert_that(project.cargo("run"), execs()
@@ -1653,4 +1667,74 @@ test!(doctest_same_name {
 
     assert_that(p.cargo_process("test").arg("-v"),
                 execs().with_status(0));
+});
+
+test!(lints_are_suppressed {
+    let a = git::new("a", |p| {
+        p.file("Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "
+            use std::option;
+        ")
+    }).unwrap();
+
+    let p = project("foo")
+        .file("Cargo.toml", &format!(r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            a = {{ git = '{}' }}
+        "#, a.url()))
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("build"),
+                execs().with_status(0).with_stdout(&format!("\
+{updating} git repository `[..]`
+{compiling} a v0.5.0 ([..])
+{compiling} foo v0.0.1 ([..])
+", compiling = COMPILING, updating = UPDATING)));
+});
+
+test!(denied_lints_are_allowed {
+    let enabled = super::RUSTC.with(|r| r.cap_lints);
+    if !enabled { return }
+
+    let a = git::new("a", |p| {
+        p.file("Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "
+            #![deny(warnings)]
+            use std::option;
+        ")
+    }).unwrap();
+
+    let p = project("foo")
+        .file("Cargo.toml", &format!(r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            a = {{ git = '{}' }}
+        "#, a.url()))
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("build"),
+                execs().with_status(0).with_stdout(&format!("\
+{updating} git repository `[..]`
+{compiling} a v0.5.0 ([..])
+{compiling} foo v0.0.1 ([..])
+", compiling = COMPILING, updating = UPDATING)));
 });

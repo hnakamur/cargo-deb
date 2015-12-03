@@ -1,6 +1,6 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::fs;
+use std::fs::{self, File};
 
 use rustc_serialize::{Encodable, Encoder};
 use url::Url;
@@ -112,13 +112,13 @@ impl GitRemote {
         let repo = match git2::Repository::open(into) {
             Ok(repo) => {
                 try!(self.fetch_into(&repo).chain_error(|| {
-                    internal(format!("failed to fetch into {}", into.display()))
+                    human(format!("failed to fetch into {}", into.display()))
                 }));
                 repo
             }
             Err(..) => {
                 try!(self.clone_into(into).chain_error(|| {
-                    internal(format!("failed to clone into: {}", into.display()))
+                    human(format!("failed to clone into: {}", into.display()))
                 }))
             }
         };
@@ -267,7 +267,10 @@ impl<'a> GitCheckout<'a> {
 
     fn is_fresh(&self) -> bool {
         match self.repo.revparse_single("HEAD") {
-            Ok(head) => head.id().to_string() == self.revision.to_string(),
+            Ok(ref head) if head.id() == self.revision.0 => {
+                // See comments in reset() for why we check this
+                fs::metadata(self.location.join(".cargo-ok")).is_ok()
+            }
             _ => false,
         }
     }
@@ -282,9 +285,20 @@ impl<'a> GitCheckout<'a> {
     }
 
     fn reset(&self) -> CargoResult<()> {
+        // If we're interrupted while performing this reset (e.g. we die because
+        // of a signal) Cargo needs to be sure to try to check out this repo
+        // again on the next go-round.
+        //
+        // To enable this we have a dummy file in our checkout, .cargo-ok, which
+        // if present means that the repo has been successfully reset and is
+        // ready to go. Hence if we start to do a reset, we make sure this file
+        // *doesn't* exist, and then once we're done we create the file.
+        let ok_file = self.location.join(".cargo-ok");
+        let _ = fs::remove_file(&ok_file);
         info!("reset {} to {}", self.repo.path().display(), self.revision);
         let object = try!(self.repo.find_object(self.revision.0, None));
         try!(self.repo.reset(&object, git2::ResetType::Hard, None));
+        try!(File::create(ok_file));
         Ok(())
     }
 
@@ -365,11 +379,21 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
     //
     // * After the above two have failed, we just kinda grapple attempting to
     //   return *something*.
+    //
+    // Note that we keep track of the number of times we've called this callback
+    // because libgit2 will repeatedly give us credentials until we give it a
+    // reason to not do so. If we've been called once and our credentials failed
+    // then we'll be called again, and in this case we assume that the reason
+    // was because the credentials were wrong.
     let mut cred_helper = git2::CredentialHelper::new(url);
     cred_helper.config(cfg);
-    let mut cred_error = false;
-    let ret = f(&mut |url, username, allowed| {
-        let creds = if allowed.contains(git2::SSH_KEY) ||
+    let mut called = 0;
+    let res = f(&mut |url, username, allowed| {
+        called += 1;
+        if called >= 2 {
+            return Err(git2::Error::from_str("no authentication available"))
+        }
+        if allowed.contains(git2::SSH_KEY) ||
                        allowed.contains(git2::USERNAME) {
             let user = username.map(|s| s.to_string())
                                .or_else(|| cred_helper.username.clone())
@@ -385,16 +409,14 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
             git2::Cred::default()
         } else {
             Err(git2::Error::from_str("no authentication available"))
-        };
-        cred_error = creds.is_err();
-        creds
+        }
     });
-    if cred_error {
-        ret.chain_error(|| {
-            human("Failed to authenticate when downloading repository")
+    if called > 0 {
+        res.chain_error(|| {
+            human("failed to authenticate when downloading repository")
         })
     } else {
-        ret
+        res
     }
 }
 
@@ -404,11 +426,12 @@ pub fn fetch(repo: &git2::Repository, url: &str,
 
     with_authentication(url, &try!(repo.config()), |f| {
         let mut cb = git2::RemoteCallbacks::new();
-        cb.credentials(|a, b, c| f(a, b, c));
-        let mut remote = try!(repo.remote_anonymous(&url, Some(refspec)));
-        try!(remote.add_fetch("refs/tags/*:refs/tags/*"));
-        remote.set_callbacks(cb);
-        try!(remote.fetch(&["refs/tags/*:refs/tags/*", refspec], None));
+        cb.credentials(f);
+        let mut remote = try!(repo.remote_anonymous(&url));
+        let mut opts = git2::FetchOptions::new();
+        opts.remote_callbacks(cb)
+            .download_tags(git2::AutotagOption::All);
+        try!(remote.fetch(&[refspec], Some(&mut opts), None));
         Ok(())
     })
 }

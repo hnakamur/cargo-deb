@@ -20,6 +20,8 @@ use cargo::util::{CliError, CliResult, lev_distance, Config};
 struct Flags {
     flag_list: bool,
     flag_verbose: bool,
+    flag_quiet: bool,
+    flag_color: Option<String>,
     arg_command: String,
     arg_args: Vec<String>,
 }
@@ -32,10 +34,12 @@ Usage:
     cargo [options]
 
 Options:
-    -h, --help       Display this message
-    -V, --version    Print version info and exit
-    --list           List installed commands
-    -v, --verbose    Use verbose output
+    -h, --help          Display this message
+    -V, --version       Print version info and exit
+    --list              List installed commands
+    -v, --verbose       Use verbose output
+    -q, --quiet         No output printed to stdout
+    --color WHEN        Coloring: auto, always, never
 
 Some common cargo commands are:
     build       Compile the current project
@@ -65,6 +69,7 @@ macro_rules! each_subcommand{ ($mac:ident) => ({
     $mac!(generate_lockfile);
     $mac!(git_checkout);
     $mac!(help);
+    $mac!(install);
     $mac!(locate_project);
     $mac!(login);
     $mac!(new);
@@ -77,6 +82,7 @@ macro_rules! each_subcommand{ ($mac:ident) => ({
     $mac!(rustc);
     $mac!(search);
     $mac!(test);
+    $mac!(uninstall);
     $mac!(update);
     $mac!(verify_project);
     $mac!(version);
@@ -89,7 +95,8 @@ macro_rules! each_subcommand{ ($mac:ident) => ({
   on this top-level information.
 */
 fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
-    config.shell().set_verbose(flags.flag_verbose);
+    try!(config.shell().set_verbosity(flags.flag_verbose, flags.flag_quiet));
+    try!(config.shell().set_color_config(flags.flag_color.as_ref().map(|s| &s[..])));
 
     init_git_transports(config);
 

@@ -1,5 +1,5 @@
 use cargo::ops;
-use cargo::util::{CliResult, CliError, Config};
+use cargo::util::{CliResult, CliError, Config, Human};
 use cargo::util::important_paths::{find_root_manifest_for_cwd};
 
 #[derive(RustcDecodable)]
@@ -12,6 +12,8 @@ struct Options {
     flag_target: Option<String>,
     flag_manifest_path: Option<String>,
     flag_verbose: bool,
+    flag_quiet: bool,
+    flag_color: Option<String>,
     flag_release: bool,
     arg_args: Vec<String>,
 }
@@ -33,17 +35,23 @@ Options:
     --target TRIPLE         Build for the target triple
     --manifest-path PATH    Path to the manifest to execute
     -v, --verbose           Use verbose output
+    -q, --quiet             No output printed to stdout
+    --color WHEN            Coloring: auto, always, never
 
-If neither `--bin` or `--example` are given, then if the project only has one
+If neither `--bin` nor `--example` are given, then if the project only has one
 bin target it will be run. Otherwise `--bin` specifies the bin target to run,
 and `--example` specifies the example target to run. At most one of `--bin` or
 `--example` can be provided.
 
-All of the trailing arguments are passed as to the binary to run.
+All of the trailing arguments are passed to the binary to run. If you're passing
+arguments to both Cargo and the binary, the ones after `--` go to the binary,
+the ones before go to Cargo.
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    config.shell().set_verbose(options.flag_verbose);
+    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
+    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
+
     let root = try!(find_root_manifest_for_cwd(options.flag_manifest_path));
 
     let (mut examples, mut bins) = (Vec::new(), Vec::new());
@@ -60,7 +68,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         target: options.flag_target.as_ref().map(|t| &t[..]),
         features: &options.flag_features,
         no_default_features: options.flag_no_default_features,
-        spec: None,
+        spec: &[],
         exec_engine: None,
         release: options.flag_release,
         mode: ops::CompileMode::Build,
@@ -84,7 +92,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         None => Ok(None),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {
-                Some(i) => CliError::from_error(err, i),
+                Some(code) => CliError::from_error(Human(err), code),
                 None => CliError::from_error(err, 101),
             })
         }

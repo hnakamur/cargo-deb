@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::{self, File};
+use std::fs;
 use std::io::prelude::*;
 use std::iter::repeat;
 use std::path::{Path, PathBuf};
@@ -15,8 +15,9 @@ use core::{Package, SourceId};
 use core::dependency::Kind;
 use core::manifest::ManifestMetadata;
 use ops;
-use sources::{PathSource, RegistrySource};
+use sources::{RegistrySource};
 use util::config;
+use util::paths;
 use util::{CargoResult, human, ChainError, ToUrl};
 use util::config::{Config, ConfigValue, Location};
 use util::important_paths::find_root_manifest_for_cwd;
@@ -31,10 +32,7 @@ pub fn publish(manifest_path: &Path,
                token: Option<String>,
                index: Option<String>,
                verify: bool) -> CargoResult<()> {
-    let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                            config));
-    try!(src.update());
-    let pkg = try!(src.root_package());
+    let pkg = try!(Package::for_path(&manifest_path, config));
 
     let (mut registry, reg_id) = try!(registry(config, token, index));
     try!(verify_dependencies(&pkg, &reg_id));
@@ -95,16 +93,7 @@ fn transmit(pkg: &Package, tarball: &Path, registry: &mut Registry)
         ref keywords, ref readme, ref repository, ref license, ref license_file,
     } = *manifest.metadata();
     let readme = match *readme {
-        Some(ref readme) => {
-            let path = pkg.root().join(readme);
-            let mut contents = String::new();
-            try!(File::open(&path).and_then(|mut f| {
-                f.read_to_string(&mut contents)
-            }).chain_error(|| {
-                human("failed to read the specified README")
-            }));
-            Some(contents)
-        }
+        Some(ref readme) => Some(try!(paths::read(&pkg.root().join(readme)))),
         None => None,
     };
     match *license_file {
@@ -264,10 +253,7 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
         Some(ref name) => name.clone(),
         None => {
             let manifest_path = try!(find_root_manifest_for_cwd(None));
-            let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                                    config));
-            try!(src.update());
-            let pkg = try!(src.root_package());
+            let pkg = try!(Package::for_path(&manifest_path, config));
             pkg.name().to_string()
         }
     };
@@ -278,10 +264,10 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
     match opts.to_add {
         Some(ref v) => {
             let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            try!(config.shell().status("Owner", format!("adding `{:#?}` to `{}`",
+            try!(config.shell().status("Owner", format!("adding {:?} to crate {}",
                                                         v, name)));
             try!(registry.add_owners(&name, &v).map_err(|e| {
-                human(format!("failed to add owners: {}", e))
+                human(format!("failed to add owners to crate {}: {}", name, e))
             }));
         }
         None => {}
@@ -290,10 +276,10 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
     match opts.to_remove {
         Some(ref v) => {
             let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            try!(config.shell().status("Owner", format!("removing `{:?}` from `{}`",
+            try!(config.shell().status("Owner", format!("removing {:?} from crate {}",
                                                         v, name)));
             try!(registry.remove_owners(&name, &v).map_err(|e| {
-                human(format!("failed to add owners: {}", e))
+                human(format!("failed to remove owners from crate {}: {}", name, e))
             }));
         }
         None => {}
@@ -301,7 +287,7 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
 
     if opts.list {
         let owners = try!(registry.list_owners(&name).map_err(|e| {
-            human(format!("failed to list owners: {}", e))
+            human(format!("failed to list owners of crate {}: {}", name, e))
         }));
         for owner in owners.iter() {
             print!("{}", owner.login);
@@ -327,10 +313,7 @@ pub fn yank(config: &Config,
         Some(name) => name,
         None => {
             let manifest_path = try!(find_root_manifest_for_cwd(None));
-            let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                                    config));
-            try!(src.update());
-            let pkg = try!(src.root_package());
+            let pkg = try!(Package::for_path(&manifest_path, config));
             pkg.name().to_string()
         }
     };

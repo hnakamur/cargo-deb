@@ -34,6 +34,11 @@ together.
 All of the following keys are optional, and their defaults are listed as their
 value unless otherwise noted.
 
+Key values that specify a tool may be given as an absolute path, a relative path
+or as a pathless tool name. Absolute paths and pathless tool names are used as
+given. Relative paths are resolved relative to the parent directory of the
+`.cargo` directory of the config file that the value resides within.
+
 ```toml
 # An array of paths to local repositories which are to be used as overrides for
 # dependencies. For more information see the Cargo Guide.
@@ -42,7 +47,7 @@ paths = ["/path/to/override"]
 [cargo-new]
 # This is your name/email to place in the `authors` section of a new Cargo.toml
 # that is generated. If not present, then `git` will be probed, and if that is
-# not present then `$USER` will be used (with no email).
+# not present then `$USER` and `$EMAIL` will be used.
 name = "..."
 email = "..."
 
@@ -54,15 +59,15 @@ vcs = "none"
 # literal string "$triple", and it will apply whenever that target triple is
 # being compiled to.
 [target]
-# For cargo builds which do not mention --target, these are the ar/linker which
-# are passed to rustc to use (via `-C ar=` and `-C linker=`). By default these
-# flags are not passed to the compiler.
+# For cargo builds which do not mention --target, these are the ar/linker tools
+# which are passed to rustc to use (via `-C ar=` and `-C linker=`). By default
+# these flags are not passed to the compiler.
 ar = ".."
 linker = ".."
 
 [target.$triple]
-# Similar to the above ar/linker configuration, but this only applies to when
-# the `$triple` is being compiled for.
+# Similar to the above ar/linker tool configuration, but this only applies to
+# when the `$triple` is being compiled for.
 ar = ".."
 linker = ".."
 
@@ -77,21 +82,15 @@ timeout = 60000   # Timeout for each HTTP request, in milliseconds
 
 [build]
 jobs = 1               # number of jobs to run by default (default to # cpus)
-rustc = "rustc"        # path to the compiler to execute
-rustdoc = "rustdoc"    # path to the doc generator to execute
+rustc = "rustc"        # the rust compiler tool
+rustdoc = "rustdoc"    # the doc generator tool
 target-dir = "target"  # path of where to place all generated artifacts
 ```
 
 # Environment Variables
 
-Cargo recognizes a few global environment variables to configure how it runs:
+Cargo recognizes a few global [environment variables][env] to configure itself.
+Settings specified via config files take precedence over those specified via
+environment variables.
 
-* `CARGO_HOME` - Cargo maintains a local cache of the registry index and of git
-  checkouts of crates.  By default these are stored under `$HOME/.cargo`, but
-  this variable overrides the location of this directory.
-* `RUSTC` - Instead of running `rustc`, Cargo will execute this specified
-  compiler instead.
-* `RUSTDOC` - Instead of running `rustdoc`, Cargo will execute this specified
-  `rustdoc` instance instead.
-* `CARGO_TARGET_DIR` - Location of where to place all generated artifacts,
-  relative to the current working directory.
+[env]: environment-variables.html
