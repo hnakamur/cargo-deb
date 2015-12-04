@@ -1,3 +1,16 @@
+cargo (0.6.0-1) unstable; urgency=medium
+
+  * New upstream version 0.6.0
+    + Updated deps tarball
+    + Not shipping a registry index anymore
+  * Refreshed bootstrap.py script
+    + Skip optional dependencies in stage0
+  * Added some crude pack/unpack helpers
+  * copyright: cleaned up unused entries
+  * rules: major update for new 0.6.0 bootstrap
+
+ -- Luca Bruno <lucab@debian.org>  Fri, 04 Dec 2015 00:42:55 +0100
+
 cargo (0.3.0-2) unstable; urgency=medium
 
   * Fix install target, removing arch-specific path
