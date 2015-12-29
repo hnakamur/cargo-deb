@@ -23,6 +23,8 @@ Build-Depends: debhelper (>= 9),
                zlib1g-dev
 Homepage: https://crates.io/
 Standards-Version: 3.9.6
+Vcs-Git: git://git.debian.org/pkg-rust/cargo.git
+Vcs-Browser: http://git.debian.org/?p=pkg-rust/cargo.git;a=summary
 
 Package: cargo
 Architecture: any
