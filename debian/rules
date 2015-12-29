@@ -49,6 +49,8 @@ override_dh_auto_build:
 	# Build final cargo binary and docs
 	$(MAKE)
 	$(MAKE) doc
+	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
+
 	# Restore from workarounds
 	mv $(CURDIR)/.deps $(DEPSDIR)
 

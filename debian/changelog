@@ -1,10 +1,12 @@
 cargo (0.6.0-2) unstable; urgency=medium
 
+  * Introduce a cargo-doc package
   * Fails to build when wget is installed. Force curl
     (Closes: #809298)
   * Add the missing VCS- fields
 
- --
+
+ -- Sylvestre Ledru <sylvestre@debian.org>  Tue, 29 Dec 2015 10:03:10 +0100
 
 cargo (0.6.0-1) unstable; urgency=medium
 
