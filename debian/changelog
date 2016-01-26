@@ -5,8 +5,7 @@ cargo (0.6.0-2) unstable; urgency=medium
     (Closes: #809298)
   * Add the missing VCS- fields
 
-
- -- Sylvestre Ledru <sylvestre@debian.org>  Tue, 29 Dec 2015 10:03:10 +0100
+ -- Sylvestre Ledru <sylvestre@debian.org>  Tue, 26 Jan 2016 13:01:16 +0100
 
 cargo (0.6.0-1) unstable; urgency=medium
 
