@@ -3,15 +3,14 @@ use std::io::prelude::*;
 use cargo::util::process;
 
 use support::{project, execs, cargo_dir};
-use support::{UPDATING, DOWNLOADING, COMPILING, PACKAGING, VERIFYING};
+use support::{UPDATING, DOWNLOADING, COMPILING, PACKAGING, VERIFYING, ADDING, REMOVING};
 use support::paths::{self, CargoPathExt};
-use support::registry as r;
+use support::registry::{self, Package};
 use support::git;
 
 use hamcrest::assert_that;
 
 fn setup() {
-    r::init();
 }
 
 test!(simple {
@@ -27,7 +26,7 @@ test!(simple {
         "#)
         .file("src/main.rs", "fn main() {}");
 
-    r::mock_pkg("bar", "0.0.1", &[]);
+    Package::new("bar", "0.0.1").publish();
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -40,7 +39,7 @@ test!(simple {
         downloading = DOWNLOADING,
         compiling = COMPILING,
         dir = p.url(),
-        reg = r::registry())));
+        reg = registry::registry())));
 
     // Don't download a second time
     assert_that(p.cargo_process("build"),
@@ -51,7 +50,7 @@ test!(simple {
 ",
         updating = UPDATING,
         dir = p.url(),
-        reg = r::registry())));
+        reg = registry::registry())));
 });
 
 test!(deps {
@@ -67,8 +66,8 @@ test!(deps {
         "#)
         .file("src/main.rs", "fn main() {}");
 
-    r::mock_pkg("baz", "0.0.1", &[]);
-    r::mock_pkg("bar", "0.0.1", &[("baz", "*", "normal")]);
+    Package::new("baz", "0.0.1").publish();
+    Package::new("bar", "0.0.1").dep("baz", "*").publish();
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -83,10 +82,12 @@ test!(deps {
         downloading = DOWNLOADING,
         compiling = COMPILING,
         dir = p.url(),
-        reg = r::registry())));
+        reg = registry::registry())));
 });
 
 test!(nonexistent {
+    Package::new("init", "0.0.1").publish();
+
     let p = project("foo")
         .file("Cargo.toml", r#"
             [project]
@@ -120,8 +121,8 @@ test!(wrong_version {
         "#)
         .file("src/main.rs", "fn main() {}");
 
-    r::mock_pkg("foo", "0.0.1", &[]);
-    r::mock_pkg("foo", "0.0.2", &[]);
+    Package::new("foo", "0.0.1").publish();
+    Package::new("foo", "0.0.2").publish();
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
@@ -131,8 +132,8 @@ version required: >= 1.0.0
 versions found: 0.0.2, 0.0.1
 "));
 
-    r::mock_pkg("foo", "0.0.3", &[]);
-    r::mock_pkg("foo", "0.0.4", &[]);
+    Package::new("foo", "0.0.3").publish();
+    Package::new("foo", "0.0.4").publish();
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
@@ -156,22 +157,25 @@ test!(bad_cksum {
         "#)
         .file("src/main.rs", "fn main() {}");
 
-    r::mock_pkg("bad-cksum", "0.0.1", &[]);
-    File::create(&r::mock_archive_dst("bad-cksum", "0.0.1")).unwrap();
+    let pkg = Package::new("bad-cksum", "0.0.1");
+    pkg.publish();
+    File::create(&pkg.archive_dst()).unwrap();
 
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(101).with_stderr("\
-Unable to get packages from source
+unable to get packages from source
 
 Caused by:
-  Failed to download package `bad-cksum v0.0.1 (registry file://[..])` from [..]
+  failed to download package `bad-cksum v0.0.1 (registry file://[..])` from [..]
 
 Caused by:
-  Failed to verify the checksum of `bad-cksum v0.0.1 (registry file://[..])`
+  failed to verify the checksum of `bad-cksum v0.0.1 (registry file://[..])`
 "));
 });
 
 test!(update_registry {
+    Package::new("init", "0.0.1").publish();
+
     let p = project("foo")
         .file("Cargo.toml", r#"
             [project]
@@ -191,7 +195,7 @@ location searched: registry file://[..]
 version required: >= 0.0.0
 "));
 
-    r::mock_pkg("notyet", "0.0.1", &[]);
+    Package::new("notyet", "0.0.1").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -204,10 +208,12 @@ version required: >= 0.0.0
         downloading = DOWNLOADING,
         compiling = COMPILING,
         dir = p.url(),
-        reg = r::registry())));
+        reg = registry::registry())));
 });
 
 test!(package_with_path_deps {
+    Package::new("init", "0.0.1").publish();
+
     let p = project("foo")
         .file("Cargo.toml", r#"
             [project]
@@ -242,7 +248,7 @@ location searched: registry file://[..]
 version required: ^0.0.1
 "));
 
-    r::mock_pkg("notyet", "0.0.1", &[]);
+    Package::new("notyet", "0.0.1").publish();
 
     assert_that(p.cargo("package"),
                 execs().with_status(0).with_stdout(format!("\
@@ -276,7 +282,7 @@ test!(lockfile_locks {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("bar", "0.0.1", &[]);
+    Package::new("bar", "0.0.1").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -288,7 +294,7 @@ test!(lockfile_locks {
    dir = p.url())));
 
     p.root().move_into_the_past().unwrap();
-    r::mock_pkg("bar", "0.0.2", &[]);
+    Package::new("bar", "0.0.2").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(""));
@@ -308,8 +314,8 @@ test!(lockfile_locks_transitively {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("baz", "0.0.1", &[]);
-    r::mock_pkg("bar", "0.0.1", &[("baz", "*", "normal")]);
+    Package::new("baz", "0.0.1").publish();
+    Package::new("bar", "0.0.1").dep("baz", "*").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -323,8 +329,8 @@ test!(lockfile_locks_transitively {
    dir = p.url())));
 
     p.root().move_into_the_past().unwrap();
-    r::mock_pkg("baz", "0.0.2", &[]);
-    r::mock_pkg("bar", "0.0.2", &[("baz", "*", "normal")]);
+    Package::new("baz", "0.0.2").publish();
+    Package::new("bar", "0.0.2").dep("baz", "*").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(""));
@@ -344,10 +350,10 @@ test!(yanks_are_not_used {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("baz", "0.0.1", &[]);
-    r::mock_pkg_yank("baz", "0.0.2", &[], true);
-    r::mock_pkg("bar", "0.0.1", &[("baz", "*", "normal")]);
-    r::mock_pkg_yank("bar", "0.0.2", &[("baz", "*", "normal")], true);
+    Package::new("baz", "0.0.1").publish();
+    Package::new("baz", "0.0.2").yanked(true).publish();
+    Package::new("bar", "0.0.1").dep("baz", "*").publish();
+    Package::new("bar", "0.0.2").dep("baz", "*").yanked(true).publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -375,9 +381,9 @@ test!(relying_on_a_yank_is_bad {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("baz", "0.0.1", &[]);
-    r::mock_pkg_yank("baz", "0.0.2", &[], true);
-    r::mock_pkg("bar", "0.0.1", &[("baz", "=0.0.2", "normal")]);
+    Package::new("baz", "0.0.1").publish();
+    Package::new("baz", "0.0.2").yanked(true).publish();
+    Package::new("bar", "0.0.1").dep("baz", "=0.0.2").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr("\
@@ -402,14 +408,14 @@ test!(yanks_in_lockfiles_are_ok {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("bar", "0.0.1", &[]);
+    Package::new("bar", "0.0.1").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0));
 
-    fs::remove_dir_all(&r::registry_path().join("3")).unwrap();
+    fs::remove_dir_all(&registry::registry_path().join("3")).unwrap();
 
-    r::mock_pkg_yank("bar", "0.0.1", &[], true);
+    Package::new("bar", "0.0.1").yanked(true).publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(""));
@@ -436,7 +442,7 @@ test!(update_with_lockfile_if_packages_missing {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("bar", "0.0.1", &[]);
+    Package::new("bar", "0.0.1").publish();
     assert_that(p.cargo("build"),
                 execs().with_status(0));
     p.root().move_into_the_past().unwrap();
@@ -464,18 +470,19 @@ test!(update_lockfile {
     p.build();
 
     println!("0.0.1");
-    r::mock_pkg("bar", "0.0.1", &[]);
+    Package::new("bar", "0.0.1").publish();
     assert_that(p.cargo("build"),
                 execs().with_status(0));
 
-    r::mock_pkg("bar", "0.0.2", &[]);
-    r::mock_pkg("bar", "0.0.3", &[]);
+    Package::new("bar", "0.0.2").publish();
+    Package::new("bar", "0.0.3").publish();
     paths::home().join(".cargo/registry").rm_rf().unwrap();
     println!("0.0.2 update");
     assert_that(p.cargo("update")
                  .arg("-p").arg("bar").arg("--precise").arg("0.0.2"),
                 execs().with_status(0).with_stdout(&format!("\
 {updating} registry `[..]`
+{updating} bar v0.0.1 (registry file://[..]) -> v0.0.2
 ", updating = UPDATING)));
 
     println!("0.0.2 build");
@@ -492,6 +499,7 @@ test!(update_lockfile {
                  .arg("-p").arg("bar"),
                 execs().with_status(0).with_stdout(&format!("\
 {updating} registry `[..]`
+{updating} bar v0.0.2 (registry file://[..]) -> v0.0.3
 ", updating = UPDATING)));
 
     println!("0.0.3 build");
@@ -502,6 +510,27 @@ test!(update_lockfile {
 {compiling} foo v0.0.1 ({dir})
 ", downloading = DOWNLOADING, compiling = COMPILING,
    dir = p.url())));
+
+   println!("new dependencies update");
+   Package::new("bar", "0.0.4").dep("spam", "0.2.5").publish();
+   Package::new("spam", "0.2.5").publish();
+   assert_that(p.cargo("update")
+                .arg("-p").arg("bar"),
+               execs().with_status(0).with_stdout(&format!("\
+{updating} registry `[..]`
+{updating} bar v0.0.3 (registry file://[..]) -> v0.0.4
+{adding} spam v0.2.5 (registry file://[..])
+", updating = UPDATING, adding = ADDING)));
+
+   println!("new dependencies update");
+   Package::new("bar", "0.0.5").publish();
+   assert_that(p.cargo("update")
+                .arg("-p").arg("bar"),
+               execs().with_status(0).with_stdout(&format!("\
+{updating} registry `[..]`
+{updating} bar v0.0.4 (registry file://[..]) -> v0.0.5
+{removing} spam v0.2.5 (registry file://[..])
+", updating = UPDATING, removing = REMOVING)));
 });
 
 test!(dev_dependency_not_used {
@@ -518,8 +547,8 @@ test!(dev_dependency_not_used {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("baz", "0.0.1", &[]);
-    r::mock_pkg("bar", "0.0.1", &[("baz", "*", "dev")]);
+    Package::new("baz", "0.0.1").publish();
+    Package::new("bar", "0.0.1").dev_dep("baz", "*").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -534,7 +563,7 @@ test!(dev_dependency_not_used {
 test!(login_with_no_cargo_dir {
     let home = paths::home().join("new-home");
     fs::create_dir(&home).unwrap();
-    assert_that(process(&cargo_dir().join("cargo")).unwrap()
+    assert_that(process(&cargo_dir().join("cargo"))
                        .arg("login").arg("foo").arg("-v")
                        .cwd(&paths::root())
                        .env("HOME", &home),
@@ -585,7 +614,7 @@ test!(updating_a_dep {
         .file("a/src/lib.rs", "");
     p.build();
 
-    r::mock_pkg("bar", "0.0.1", &[]);
+    Package::new("bar", "0.0.1").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -606,7 +635,7 @@ test!(updating_a_dep {
         [dependencies]
         bar = "0.1.0"
     "#).unwrap();
-    r::mock_pkg("bar", "0.1.0", &[]);
+    Package::new("bar", "0.1.0").publish();
 
     println!("second");
     assert_that(p.cargo("build"),
@@ -649,7 +678,7 @@ test!(git_and_registry_dep {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("a", "0.0.1", &[]);
+    Package::new("a", "0.0.1").publish();
 
     p.root().move_into_the_past().unwrap();
     assert_that(p.cargo("build"),
@@ -683,13 +712,12 @@ test!(update_publish_then_update {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("a", "0.1.0", &[]);
+    Package::new("a", "0.1.0").publish();
 
     assert_that(p.cargo("build"),
                 execs().with_status(0));
 
-
-    r::mock_pkg("a", "0.1.1", &[]);
+    Package::new("a", "0.1.1").publish();
 
     let lock = p.root().join("Cargo.lock");
     let mut s = String::new();
@@ -724,7 +752,7 @@ test!(fetch_downloads {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("a", "0.1.0", &[]);
+    Package::new("a", "0.1.0").publish();
 
     assert_that(p.cargo("fetch"),
                 execs().with_status(0)
@@ -748,18 +776,19 @@ test!(update_transitive_dependency {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    r::mock_pkg("a", "0.1.0", &[("b", "*", "normal")]);
-    r::mock_pkg("b", "0.1.0", &[]);
+    Package::new("a", "0.1.0").dep("b", "*").publish();
+    Package::new("b", "0.1.0").publish();
 
     assert_that(p.cargo("fetch"),
                 execs().with_status(0));
 
-    r::mock_pkg("b", "0.1.1", &[]);
+    Package::new("b", "0.1.1").publish();
 
     assert_that(p.cargo("update").arg("-pb"),
                 execs().with_status(0)
                        .with_stdout(format!("\
 {updating} registry `[..]`
+{updating} b v0.1.0 (registry [..]) -> v0.1.1
 ", updating = UPDATING)));
 
     assert_that(p.cargo("build"),
@@ -770,4 +799,140 @@ test!(update_transitive_dependency {
 {compiling} a v0.1.0 (registry [..])
 {compiling} foo v0.5.0 ([..])
 ", downloading = DOWNLOADING, compiling = COMPILING)));
+});
+
+test!(update_backtracking_ok {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+
+            [dependencies]
+            webdriver = "0.1"
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    Package::new("webdriver", "0.1.0").dep("hyper", "0.6").publish();
+    Package::new("hyper", "0.6.5").dep("openssl", "0.1")
+                                  .dep("cookie", "0.1")
+                                  .publish();
+    Package::new("cookie", "0.1.0").dep("openssl", "0.1").publish();
+    Package::new("openssl", "0.1.0").publish();
+
+    assert_that(p.cargo("generate-lockfile"),
+                execs().with_status(0));
+
+    Package::new("openssl", "0.1.1").publish();
+    Package::new("hyper", "0.6.6").dep("openssl", "0.1.1")
+                                  .dep("cookie", "0.1.0")
+                                  .publish();
+
+    assert_that(p.cargo("update").arg("-p").arg("hyper"),
+                execs().with_status(0)
+                       .with_stdout(&format!("\
+{updating} registry `[..]`
+", updating = UPDATING)));
+});
+
+test!(update_multiple_packages {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+
+            [dependencies]
+            a = "*"
+            b = "*"
+            c = "*"
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    Package::new("a", "0.1.0").publish();
+    Package::new("b", "0.1.0").publish();
+    Package::new("c", "0.1.0").publish();
+
+    assert_that(p.cargo("fetch"),
+                execs().with_status(0));
+
+    Package::new("a", "0.1.1").publish();
+    Package::new("b", "0.1.1").publish();
+    Package::new("c", "0.1.1").publish();
+
+    assert_that(p.cargo("update").arg("-pa").arg("-pb"),
+                execs().with_status(0)
+                       .with_stdout(format!("\
+{updating} registry `[..]`
+{updating} a v0.1.0 (registry [..]) -> v0.1.1
+{updating} b v0.1.0 (registry [..]) -> v0.1.1
+", updating = UPDATING)));
+
+    assert_that(p.cargo("update").arg("-pb").arg("-pc"),
+                execs().with_status(0)
+                       .with_stdout(format!("\
+{updating} registry `[..]`
+{updating} c v0.1.0 (registry [..]) -> v0.1.1
+", updating = UPDATING)));
+
+    assert_that(p.cargo("build"),
+                execs().with_status(0)
+                       .with_stdout_contains(format!("\
+{downloading} a v0.1.1 (registry file://[..])", downloading = DOWNLOADING))
+                       .with_stdout_contains(format!("\
+{downloading} b v0.1.1 (registry file://[..])", downloading = DOWNLOADING))
+                       .with_stdout_contains(format!("\
+{downloading} c v0.1.1 (registry file://[..])", downloading = DOWNLOADING))
+                       .with_stdout_contains(format!("\
+{compiling} a v0.1.1 (registry [..])", compiling = COMPILING))
+                       .with_stdout_contains(format!("\
+{compiling} b v0.1.1 (registry [..])", compiling = COMPILING))
+                       .with_stdout_contains(format!("\
+{compiling} c v0.1.1 (registry [..])", compiling = COMPILING))
+                       .with_stdout_contains(format!("\
+{compiling} foo v0.5.0 ([..])", compiling = COMPILING)));
+});
+
+test!(bundled_crate_in_registry {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+
+            [dependencies]
+            bar = "0.1"
+            baz = "0.1"
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    Package::new("bar", "0.1.0").publish();
+    Package::new("baz", "0.1.0")
+        .dep("bar", "0.1.0")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "baz"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            bar = { path = "bar", version = "0.1.0" }
+        "#)
+        .file("src/lib.rs", "")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", "")
+        .publish();
+
+    assert_that(p.cargo("run"), execs().with_status(0));
 });

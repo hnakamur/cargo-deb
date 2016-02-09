@@ -28,15 +28,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use core::registry::PackageRegistry;
-use core::{Source, SourceId, PackageSet, Package, Target, PackageId};
-use core::{Profile, TargetKind};
-use core::resolver::Method;
+use core::{Source, SourceId, SourceMap, PackageSet, Package, Target};
+use core::{Profile, TargetKind, Profiles};
+use core::resolver::{Method, Resolve};
 use ops::{self, BuildOutput, ExecEngine};
-use sources::{PathSource};
 use util::config::{ConfigValue, Config};
-use util::{CargoResult, internal, human, ChainError, profile};
+use util::{CargoResult, internal, ChainError, profile};
 
-/// Contains informations about how a package should be compiled.
+/// Contains information about how a package should be compiled.
 pub struct CompileOptions<'a> {
     pub config: &'a Config,
     /// Number of concurrent jobs to use.
@@ -48,7 +47,7 @@ pub struct CompileOptions<'a> {
     /// Flag if the default feature should be built for the root package
     pub no_default_features: bool,
     /// Root package to build (if None it's the current one)
-    pub spec: Option<&'a str>,
+    pub spec: &'a [String],
     /// Filter to apply to the root package to select which targets will be
     /// built.
     pub filter: CompileFilter<'a>,
@@ -58,6 +57,8 @@ pub struct CompileOptions<'a> {
     pub release: bool,
     /// Mode for this compile.
     pub mode: CompileMode,
+    /// Extra arguments to be passed to rustdoc (for main crate and dependencies)
+    pub target_rustdoc_args: Option<&'a [String]>,
     /// The specified target will be compiled with all the available arguments,
     /// note that this only accounts for the *final* invocation of rustc
     pub target_rustc_args: Option<&'a [String]>,
@@ -87,27 +88,66 @@ pub fn compile<'a>(manifest_path: &Path,
                    -> CargoResult<ops::Compilation<'a>> {
     debug!("compile; manifest-path={}", manifest_path.display());
 
-    let mut source = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                               options.config));
-    try!(source.update());
-
-    // TODO: Move this into PathSource
-    let package = try!(source.root_package());
+    let package = try!(Package::for_path(manifest_path, options.config));
     debug!("loaded package; package={}", package);
 
     for key in package.manifest().warnings().iter() {
         try!(options.config.shell().warn(key))
     }
-    compile_pkg(&package, Some(Box::new(source)), options)
+    compile_pkg(&package, None, options)
 }
 
-pub fn compile_pkg<'a>(package: &Package,
+pub fn resolve_dependencies<'a>(root_package: &Package,
+                                config: &'a Config,
+                                source: Option<Box<Source + 'a>>,
+                                features: Vec<String>,
+                                no_default_features: bool)
+                                -> CargoResult<(Vec<Package>, Resolve, SourceMap<'a>)> {
+
+    let override_ids = try!(source_ids_from_config(config, root_package.root()));
+
+    let mut registry = PackageRegistry::new(config);
+
+    if let Some(source) = source {
+        registry.add_preloaded(root_package.package_id().source_id(), source);
+    }
+
+    // First, resolve the root_package's *listed* dependencies, as well as
+    // downloading and updating all remotes and such.
+    let resolve = try!(ops::resolve_pkg(&mut registry, root_package));
+
+    // Second, resolve with precisely what we're doing. Filter out
+    // transitive dependencies if necessary, specify features, handle
+    // overrides, etc.
+    let _p = profile::start("resolving w/ overrides...");
+
+    try!(registry.add_overrides(override_ids));
+
+    let method = Method::Required{
+        dev_deps: true, // TODO: remove this option?
+        features: &features,
+        uses_default_features: !no_default_features,
+    };
+
+    let resolved_with_overrides =
+            try!(ops::resolve_with_previous(&mut registry, root_package,
+                                            method, Some(&resolve), None));
+
+    let packages = try!(ops::get_resolved_packages(&resolved_with_overrides,
+                                                   &mut registry));
+
+    Ok((packages, resolved_with_overrides, registry.move_sources()))
+}
+
+#[allow(deprecated)] // connect => join in 1.3
+pub fn compile_pkg<'a>(root_package: &Package,
                        source: Option<Box<Source + 'a>>,
                        options: &CompileOptions<'a>)
                        -> CargoResult<ops::Compilation<'a>> {
     let CompileOptions { config, jobs, target, spec, features,
                          no_default_features, release, mode,
                          ref filter, ref exec_engine,
+                         ref target_rustdoc_args,
                          ref target_rustc_args } = *options;
 
     let target = target.map(|s| s.to_string());
@@ -115,86 +155,88 @@ pub fn compile_pkg<'a>(package: &Package,
         s.split(' ')
     }).map(|s| s.to_string()).collect::<Vec<String>>();
 
-    if spec.is_some() && (no_default_features || features.len() > 0) {
-        return Err(human("features cannot be modified when the main package \
-                          is not being built"))
-    }
     if jobs == Some(0) {
-        return Err(human("jobs must be at least 1"))
+        bail!("jobs must be at least 1")
     }
-
-    let override_ids = try!(source_ids_from_config(config, package.root()));
 
     let (packages, resolve_with_overrides, sources) = {
-        let rustc_host = config.rustc_host().to_string();
-        let mut registry = PackageRegistry::new(config);
-        if let Some(source) = source {
-            registry.preload(package.package_id().source_id(), source);
-        } else {
-            try!(registry.add_sources(&[package.package_id().source_id()
-                                               .clone()]));
-        }
-
-        // First, resolve the package's *listed* dependencies, as well as
-        // downloading and updating all remotes and such.
-        let resolve = try!(ops::resolve_pkg(&mut registry, package));
-
-        // Second, resolve with precisely what we're doing. Filter out
-        // transitive dependencies if necessary, specify features, handle
-        // overrides, etc.
-        let _p = profile::start("resolving w/ overrides...");
-
-        try!(registry.add_overrides(override_ids));
-
-        let platform = target.as_ref().map(|e| &e[..]).or(Some(&rustc_host[..]));
-
-        let method = Method::Required{
-            dev_deps: true, // TODO: remove this option?
-            features: &features,
-            uses_default_features: !no_default_features,
-            target_platform: platform};
-
-        let resolved_with_overrides =
-                try!(ops::resolve_with_previous(&mut registry, package, method,
-                                                Some(&resolve), None));
-
-        let req: Vec<PackageId> = resolved_with_overrides.iter().map(|r| {
-            r.clone()
-        }).collect();
-        let packages = try!(registry.get(&req).chain_error(|| {
-            human("Unable to get packages from source")
-        }));
-
-        (packages, resolved_with_overrides, registry.move_sources())
+        try!(resolve_dependencies(root_package, config, source, features,
+                                  no_default_features))
     };
 
-    let pkgid = match spec {
-        Some(spec) => try!(resolve_with_overrides.query(spec)),
-        None => package.package_id(),
-    };
-    let to_build = packages.iter().find(|p| p.package_id() == pkgid).unwrap();
-    let targets = try!(generate_targets(to_build, mode, filter, release));
-
-    let target_with_args = match *target_rustc_args {
-        Some(args) if targets.len() == 1 => {
-            let (target, profile) = targets[0];
-            let mut profile = profile.clone();
-            profile.rustc_args = Some(args.to_vec());
-            Some((target, profile))
-        }
-        Some(_) => {
-            return Err(human("extra arguments to `rustc` can only be passed to \
-                              one target, consider filtering\nthe package by \
-                              passing e.g. `--lib` or `--bin NAME` to specify \
-                              a single target"))
-        }
-        None => None,
+    let mut invalid_spec = vec![];
+    let pkgids = if spec.len() > 0 {
+        spec.iter().filter_map(|p| {
+            match resolve_with_overrides.query(&p) {
+                Ok(p) => Some(p),
+                Err(..) => { invalid_spec.push(p.to_string()); None }
+            }
+        }).collect::<Vec<_>>()
+    } else {
+        vec![root_package.package_id()]
     };
 
-    let targets = target_with_args.as_ref().map(|&(t, ref p)| vec![(t, p)])
-                                           .unwrap_or(targets);
+    if spec.len() > 0 && invalid_spec.len() > 0 {
+        bail!("could not find package matching spec `{}`",
+              invalid_spec.connect(", "))
+    }
 
-    let ret = {
+    let to_builds = packages.iter().filter(|p| pkgids.contains(&p.package_id()))
+                            .collect::<Vec<_>>();
+
+    let mut general_targets = Vec::new();
+    let mut package_targets = Vec::new();
+
+    let profiles = root_package.manifest().profiles();
+    match (*target_rustc_args, *target_rustdoc_args) {
+        (Some(..), _) |
+        (_, Some(..)) if to_builds.len() != 1 => {
+            panic!("`rustc` and `rustdoc` should not accept multiple `-p` flags")
+        }
+        (Some(args), _) => {
+            let targets = try!(generate_targets(to_builds[0], profiles,
+                                                mode, filter, release));
+            if targets.len() == 1 {
+                let (target, profile) = targets[0];
+                let mut profile = profile.clone();
+                profile.rustc_args = Some(args.to_vec());
+                general_targets.push((target, profile));
+            } else {
+                bail!("extra arguments to `rustc` can only be passed to one \
+                       target, consider filtering\nthe package by passing \
+                       e.g. `--lib` or `--bin NAME` to specify a single target")
+            }
+        }
+        (None, Some(args)) => {
+            let targets = try!(generate_targets(to_builds[0], profiles,
+                                                mode, filter, release));
+            if targets.len() == 1 {
+                let (target, profile) = targets[0];
+                let mut profile = profile.clone();
+                profile.rustdoc_args = Some(args.to_vec());
+                general_targets.push((target, profile));
+            } else {
+                bail!("extra arguments to `rustdoc` can only be passed to one \
+                       target, consider filtering\nthe package by passing e.g. \
+                       `--lib` or `--bin NAME` to specify a single target")
+            }
+        }
+        (None, None) => {
+            for &to_build in to_builds.iter() {
+                let targets = try!(generate_targets(to_build, profiles, mode,
+                                                    filter, release));
+                package_targets.push((to_build, targets));
+            }
+        }
+    };
+
+    for &(target, ref profile) in &general_targets {
+        for &to_build in to_builds.iter() {
+            package_targets.push((to_build, vec![(target, profile)]));
+        }
+    }
+
+    let mut ret = {
         let _p = profile::start("compiling");
         let mut build_config = try!(scrape_build_config(config, jobs, target));
         build_config.exec_engine = exec_engine.clone();
@@ -203,14 +245,17 @@ pub fn compile_pkg<'a>(package: &Package,
             build_config.doc_all = deps;
         }
 
-        try!(ops::compile_targets(&targets, to_build,
+        try!(ops::compile_targets(&package_targets,
                                   &PackageSet::new(&packages),
                                   &resolve_with_overrides,
                                   &sources,
                                   config,
                                   build_config,
-                                  to_build.manifest().profiles()))
+                                  root_package.manifest().profiles(),
+                                  ))
     };
+
+    ret.to_doc_test = to_builds.iter().map(|&p| p.clone()).collect();
 
     return Ok(ret);
 }
@@ -253,11 +298,11 @@ impl<'a> CompileFilter<'a> {
 /// Given the configuration for a build, this function will generate all
 /// target/profile combinations needed to be built.
 fn generate_targets<'a>(pkg: &'a Package,
+                        profiles: &'a Profiles,
                         mode: CompileMode,
                         filter: &CompileFilter,
                         release: bool)
                         -> CargoResult<Vec<(&'a Target, &'a Profile)>> {
-    let profiles = pkg.manifest().profiles();
     let build = if release {&profiles.release} else {&profiles.dev};
     let test = if release {&profiles.bench} else {&profiles.test};
     let profile = match mode {
@@ -308,7 +353,7 @@ fn generate_targets<'a>(pkg: &'a Package,
                 if let Some(t) = pkg.targets().iter().find(|t| t.is_lib()) {
                     targets.push((t, profile));
                 } else {
-                    return Err(human(format!("no library targets found")))
+                    bail!("no library targets found")
                 }
             }
 
@@ -320,9 +365,7 @@ fn generate_targets<'a>(pkg: &'a Package,
                         });
                         let t = match target {
                             Some(t) => t,
-                            None => return Err(human(format!("no {} target \
-                                                              named `{}`",
-                                                             desc, name))),
+                            None => bail!("no {} target named `{}`", desc, name),
                         };
                         debug!("found {} `{}`", desc, name);
                         targets.push((t, profile));
@@ -380,11 +423,9 @@ fn scrape_build_config(config: &Config,
     let cfg_jobs = match try!(config.get_i64("build.jobs")) {
         Some((n, p)) => {
             if n <= 0 {
-                return Err(human(format!("build.jobs must be positive, \
-                                          but found {} in {:?}", n, p)));
+                bail!("build.jobs must be positive, but found {} in {:?}", n, p)
             } else if n >= u32::max_value() as i64 {
-                return Err(human(format!("build.jobs is too large: \
-                                          found {} in {:?}", n, p)));
+                bail!("build.jobs is too large: found {} in {:?}", n, p)
             } else {
                 Some(n as u32)
             }
@@ -397,7 +438,7 @@ fn scrape_build_config(config: &Config,
         requested_target: target.clone(),
         ..Default::default()
     };
-    base.host = try!(scrape_target_config(config, config.rustc_host()));
+    base.host = try!(scrape_target_config(config, &config.rustc_info().host));
     base.target = match target.as_ref() {
         Some(triple) => try!(scrape_target_config(config, &triple)),
         None => base.host.clone(),
@@ -409,12 +450,9 @@ fn scrape_target_config(config: &Config, triple: &str)
                         -> CargoResult<ops::TargetConfig> {
 
     let key = format!("target.{}", triple);
-    let ar = try!(config.get_string(&format!("{}.ar", key)));
-    let linker = try!(config.get_string(&format!("{}.linker", key)));
-
     let mut ret = ops::TargetConfig {
-        ar: ar.map(|p| p.0),
-        linker: linker.map(|p| p.0),
+        ar: try!(config.get_path(&format!("{}.ar", key))),
+        linker: try!(config.get_path(&format!("{}.linker", key))),
         overrides: HashMap::new(),
     };
     let table = match try!(config.get_table(&key)) {
@@ -429,6 +467,7 @@ fn scrape_target_config(config: &Config, triple: &str)
             library_links: Vec::new(),
             cfgs: Vec::new(),
             metadata: Vec::new(),
+            rerun_if_changed: Vec::new(),
         };
         let key = format!("{}.{}", key, lib_name);
         let table = try!(config.get_table(&key)).unwrap().0;

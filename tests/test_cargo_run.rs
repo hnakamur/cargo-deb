@@ -32,6 +32,44 @@ hello
     assert_that(&p.bin("foo"), existing_file());
 });
 
+test!(simple_quiet {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { println!("hello"); }
+        "#);
+
+    assert_that(p.cargo_process("run").arg("-q"),
+                execs().with_status(0).with_stdout("\
+hello
+")
+    );
+});
+
+test!(simple_quiet_and_verbose {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { println!("hello"); }
+        "#);
+
+    assert_that(p.cargo_process("run").arg("-q").arg("-v"),
+                execs().with_status(101).with_stderr("\
+cannot set both --verbose and --quiet
+")
+    );
+});
+
 test!(simple_with_args {
     let p = project("foo")
         .file("Cargo.toml", r#"
@@ -64,7 +102,31 @@ test!(exit_code {
         "#);
 
     assert_that(p.cargo_process("run"),
-                execs().with_status(2));
+                execs().with_status(2)
+                       .with_stderr(&format!("\
+Process didn't exit successfully: `target[..]foo[..]` (exit code: 2)
+",
+        )));
+});
+
+test!(exit_code_verbose {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { std::process::exit(2); }
+        "#);
+
+    assert_that(p.cargo_process("run").arg("-v"),
+                execs().with_status(2)
+                       .with_stderr(&format!("\
+Process didn't exit successfully: `target[..]foo[..]` (exit code: 2)
+",
+        )));
 });
 
 test!(no_main_file {
@@ -398,4 +460,53 @@ test!(run_bin_different_name {
         "#);
 
     assert_that(p.cargo_process("run"), execs().with_status(0));
+});
+
+test!(dashes_are_forwarded {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [[bin]]
+            name = "bar"
+        "#)
+        .file("src/main.rs", r#"
+            fn main() {
+                let s: Vec<String> = std::env::args().collect();
+                assert_eq!(s[1], "a");
+                assert_eq!(s[2], "--");
+                assert_eq!(s[3], "b");
+            }
+        "#);
+
+    assert_that(p.cargo_process("run").arg("--").arg("a").arg("--").arg("b"),
+                execs().with_status(0));
+});
+
+test!(run_from_executable_folder {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { println!("hello"); }
+        "#);
+
+    let cwd = p.root().join("target").join("debug");
+    p.cargo_process("build").exec_with_output().unwrap();
+
+    assert_that(p.cargo("run").cwd(cwd),
+                execs().with_status(0).with_stdout(&format!("\
+{running} `.{sep}foo[..]`
+hello
+",
+        running = RUNNING,
+        sep = SEP
+        )));
 });

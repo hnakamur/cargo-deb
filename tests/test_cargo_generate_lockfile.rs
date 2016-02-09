@@ -2,34 +2,9 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use support::{project, execs};
-use hamcrest::assert_that;
+use hamcrest::{assert_that, existing_file};
 
 fn setup() {}
-
-test!(ignores_carriage_return {
-    let p = project("foo")
-        .file("Cargo.toml", r#"
-            [package]
-            name = "foo"
-            authors = []
-            version = "0.0.1"
-        "#)
-        .file("src/main.rs", r#"
-            mod a; fn main() {}
-        "#)
-        .file("src/a.rs", "");
-
-    assert_that(p.cargo_process("build"),
-                execs().with_status(0));
-
-    let lockfile = p.root().join("Cargo.lock");
-    let mut lock = String::new();
-    File::open(&lockfile).unwrap().read_to_string(&mut lock).unwrap();
-    let lock = lock.replace("\n", "\r\n");
-    File::create(&lockfile).unwrap().write_all(lock.as_bytes()).unwrap();
-    assert_that(p.cargo("build"),
-                execs().with_status(0));
-});
 
 test!(adding_and_removing_packages {
     let p = project("foo")
@@ -146,4 +121,53 @@ foo = "bar"
     let mut lock = String::new();
     File::open(&lockfile).unwrap().read_to_string(&mut lock).unwrap();
     assert!(lock.contains(metadata.trim()), "{}", lock);
+});
+
+test!(preserve_line_endings_issue_2076 {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            authors = []
+            version = "0.0.1"
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            authors = []
+            version = "0.0.1"
+        "#)
+        .file("bar/src/lib.rs", "");
+
+    let lockfile = p.root().join("Cargo.lock");
+    assert_that(p.cargo_process("generate-lockfile"),
+                execs().with_status(0));
+    assert_that(&lockfile,
+                existing_file());
+    assert_that(p.cargo("generate-lockfile"),
+                execs().with_status(0));
+
+    let mut lock0 = String::new();
+    {
+        File::open(&lockfile).unwrap().read_to_string(&mut lock0).unwrap();
+    }
+
+    assert!(lock0.starts_with("[root]\n"));
+
+    let lock1 = lock0.replace("\n", "\r\n");
+    {
+        File::create(&lockfile).unwrap().write_all(lock1.as_bytes()).unwrap();
+    }
+
+    assert_that(p.cargo("generate-lockfile"),
+                execs().with_status(0));
+
+    let mut lock2 = String::new();
+    {
+        File::open(&lockfile).unwrap().read_to_string(&mut lock2).unwrap();
+    }
+
+    assert!(lock2.starts_with("[root]\r\n"));
+    assert_eq!(lock1, lock2);
 });

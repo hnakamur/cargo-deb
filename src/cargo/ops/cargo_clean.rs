@@ -3,70 +3,88 @@ use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
 
-use core::{PackageSet, Profiles, Profile};
+use core::{Package, PackageSet, Profiles};
 use core::source::{Source, SourceMap};
-use sources::PathSource;
+use core::registry::PackageRegistry;
 use util::{CargoResult, human, ChainError, Config};
-use ops::{self, Layout, Context, BuildConfig, Kind};
+use ops::{self, Layout, Context, BuildConfig, Kind, Unit};
 
 pub struct CleanOptions<'a> {
-    pub spec: Option<&'a str>,
+    pub spec: &'a [String],
     pub target: Option<&'a str>,
     pub config: &'a Config,
+    pub release: bool,
 }
 
 /// Cleans the project from build artifacts.
 pub fn clean(manifest_path: &Path, opts: &CleanOptions) -> CargoResult<()> {
-    let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                            opts.config));
-    try!(src.update());
-    let root = try!(src.root_package());
+    let root = try!(Package::for_path(manifest_path, opts.config));
     let target_dir = opts.config.target_dir(&root);
 
-    // If we have a spec, then we need to delete some package,s otherwise, just
+    // If we have a spec, then we need to delete some packages, otherwise, just
     // remove the whole target directory and be done with it!
-    let spec = match opts.spec {
-        Some(spec) => spec,
-        None => return rm_rf(&target_dir),
-    };
+    if opts.spec.len() == 0 {
+        return rm_rf(&target_dir);
+    }
 
-    // Load the lockfile (if one's available), and resolve spec to a pkgid
+    // Load the lockfile (if one's available)
     let lockfile = root.root().join("Cargo.lock");
     let source_id = root.package_id().source_id();
     let resolve = match try!(ops::load_lockfile(&lockfile, source_id)) {
         Some(resolve) => resolve,
-        None => return Err(human("A Cargo.lock must exist before cleaning"))
-    };
-    let pkgid = try!(resolve.query(spec));
-
-    // Translate the PackageId to a Package
-    let pkg = {
-        let mut source = pkgid.source_id().load(opts.config);
-        try!(source.update());
-        (try!(source.get(&[pkgid.clone()]))).into_iter().next().unwrap()
+        None => bail!("a Cargo.lock must exist before cleaning")
     };
 
     // Create a compilation context to have access to information like target
     // filenames and such
     let srcs = SourceMap::new();
     let pkgs = PackageSet::new(&[]);
-    let profiles = Profiles::default();
-    let cx = try!(Context::new(&resolve, &srcs, &pkgs, opts.config,
-                               Layout::at(target_dir),
-                               None, &pkg, BuildConfig::default(),
-                               &profiles));
 
-    // And finally, clean everything out!
-    for target in pkg.targets().iter() {
-        // TODO: `cargo clean --release`
-        let layout = Layout::new(opts.config, &root, opts.target, "debug");
-        try!(rm_rf(&layout.fingerprint(&pkg)));
-        let profiles = [Profile::default_dev(), Profile::default_test()];
-        for profile in profiles.iter() {
-            for filename in try!(cx.target_filenames(&pkg, target, profile,
-                                                     Kind::Target)).iter() {
-                try!(rm_rf(&layout.dest().join(&filename)));
-                try!(rm_rf(&layout.deps().join(&filename)));
+    let dest = if opts.release {"release"} else {"debug"};
+    let host_layout = Layout::new(opts.config, &root, None, dest);
+    let target_layout = opts.target.map(|target| {
+        Layout::new(opts.config, &root, Some(target), dest)
+    });
+
+    let cx = try!(Context::new(&resolve, &srcs, &pkgs, opts.config,
+                               host_layout, target_layout,
+                               BuildConfig::default(),
+                               root.manifest().profiles()));
+
+    let mut registry = PackageRegistry::new(opts.config);
+
+    // resolve package specs and remove the corresponding packages
+    for spec in opts.spec {
+        let pkgid = try!(resolve.query(spec));
+
+        // Translate the PackageId to a Package
+        let pkg = {
+            try!(registry.add_sources(&[pkgid.source_id().clone()]));
+            (try!(registry.get(&[pkgid.clone()]))).into_iter().next().unwrap()
+        };
+
+        // And finally, clean everything out!
+        for target in pkg.targets() {
+            for kind in [Kind::Host, Kind::Target].iter() {
+                let layout = cx.layout(&pkg, *kind);
+                try!(rm_rf(&layout.proxy().fingerprint(&pkg)));
+                try!(rm_rf(&layout.build(&pkg)));
+                let Profiles {
+                    ref release, ref dev, ref test, ref bench, ref doc,
+                    ref custom_build,
+                } = *root.manifest().profiles();
+                for profile in [release, dev, test, bench, doc, custom_build].iter() {
+                    let unit = Unit {
+                        pkg: &pkg,
+                        target: target,
+                        profile: profile,
+                        kind: *kind,
+                    };
+                    let root = cx.out_dir(&unit);
+                    for filename in try!(cx.target_filenames(&unit)).iter() {
+                        try!(rm_rf(&root.join(&filename)));
+                    }
+                }
             }
         }
     }

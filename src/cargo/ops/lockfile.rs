@@ -6,7 +6,7 @@ use rustc_serialize::{Encodable, Decodable};
 use toml::{self, Encoder, Value};
 
 use core::{Resolve, resolver, Package, SourceId};
-use util::{CargoResult, ChainError, human};
+use util::{CargoResult, ChainError, human, paths};
 use util::toml as cargo_toml;
 
 pub fn load_pkg_lockfile(pkg: &Package) -> CargoResult<Option<Resolve>> {
@@ -68,8 +68,29 @@ pub fn write_lockfile(dst: &Path, resolve: &Resolve) -> CargoResult<()> {
         None => {}
     }
 
-    try!(try!(File::create(dst)).write_all(out.as_bytes()));
+    // Load the original lockfile if it exists.
+    if let Ok(orig) = paths::read(dst) {
+        if has_crlf_line_endings(&orig) {
+            out = out.replace("\n", "\r\n");
+        }
+        if out == orig {
+            // The lockfile contents haven't changed so don't rewrite it.
+            // This is helpful on read-only filesystems.
+            return Ok(())
+        }
+    }
+
+    try!(paths::write(dst, out.as_bytes()));
     Ok(())
+}
+
+fn has_crlf_line_endings(s: &str) -> bool {
+    // Only check the first line.
+    if let Some(lf) = s.find('\n') {
+        s[..lf].ends_with('\r')
+    } else {
+        false
+    }
 }
 
 fn emit_package(dep: &toml::Table, out: &mut String) {

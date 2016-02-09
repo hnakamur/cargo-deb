@@ -35,39 +35,12 @@ the build command works.
 ## Inputs to the Build Script
 
 When the build script is run, there are a number of inputs to the build script,
-all passed in the form of environment variables:
+all passed in the form of [environment variables][env].
 
-* `OUT_DIR` - the folder in which all output should be placed. This folder is
-              inside the build directory for the package being built, and it is
-              unique for the package in question.
-* `TARGET` - the target triple that is being compiled for. Native code should be
-             compiled for this triple. Some more information about target
-             triples can be found in [clang's own documentation][clang].
-* `HOST` - the host triple of the rust compiler.
-* `NUM_JOBS` - the parallelism specified as the top-level parallelism. This can
-               be useful to pass a `-j` parameter to a system like `make`.
-* `CARGO_MANIFEST_DIR` - The directory containing the manifest for the package
-                         being built (the package containing the build
-                         script). Also note that this is the value of the
-                         current working directory of the build script when it
-                         starts.
-* `OPT_LEVEL`, `DEBUG` - values of the corresponding variables for the
-                         profile currently being built.
-* `PROFILE` - name of the profile currently being built (see
-              [profiles][profile]).
-* `CARGO_FEATURE_<name>` - For each activated feature of the package being
-                           built, this environment variable will be present
-                           where `<name>` is the name of the feature uppercased
-                           and having `-` translated to `_`.
-* `DEP_<name>_<key>` - For more information about this set of environment
-                       variables, see the section below about [`links`][links].
+In addition to environment variables, the build script’s current directory is
+the source directory of the build script’s package.
 
-In addition to the above environment variables, the build script's current
-directory is the source directory of the build script's package.
-
-[profile]: manifest.html#the-[profile.*]-sections
-[links]: #the-links-manifest-key
-[clang]:http://clang.llvm.org/docs/CrossCompilation.html#target-triple
+[env]: environment-variables.html
 
 ## Outputs of the Build Script
 
@@ -95,10 +68,18 @@ build script is for is built:
 * `rustc-cfg` indicates that the specified directive will be passed as a `--cfg`
   flag to the compiler. This is often useful for performing compile-time
   detection of various features.
+* `rerun-if-changed` is a path to a file or directory which indicates that the
+  build script should be re-run if it changes (detected by a more-recent
+  last-modified timestamp on the file). Normally build scripts are re-run if
+  any file inside the crate root changes, but this can be used to scope changes
+  to just a small set of files. If this path points to a directory the entire
+  directory will be traversed for changes.
 
 Any other element is a user-defined metadata that will be passed to
 dependencies. More information about this can be found in the [`links`][links]
 section.
+
+[links]: #the-links-manifest-key
 
 ## Build Dependencies
 
@@ -107,12 +88,12 @@ Dependencies are declared through the `build-dependencies` section of the
 manifest.
 
 ```toml
-[build-dependencies.foo]
-git = "https://github.com/your-packages/foo"
+[build-dependencies]
+foo = { git = "https://github.com/your-packages/foo" }
 ```
 
 The build script **does not** have access to the dependencies listed in the
-`dependencies` or `dev-dependencies` section (they're not built yet!). All build
+`dependencies` or `dev-dependencies` section (they’re not built yet!). All build
 dependencies will also not be available to the package itself unless explicitly
 stated as so.
 
@@ -138,11 +119,11 @@ of native dependencies that a package has, as well as providing a principled
 system of passing metadata between package build scripts.
 
 Primarily, Cargo requires that there is at most one package per `links` value.
-In other words, it's forbidden to have two packages link to the same native
+In other words, it’s forbidden to have two packages link to the same native
 library. Note, however, that there are [conventions in place][star-sys] to
 alleviate this.
 
-[star-sys]: #*-sys-packages
+[star-sys]: #-sys-packages
 
 As mentioned above in the output format, each build script can generate an
 arbitrary set of metadata in the form of key-value pairs. This metadata is
@@ -186,10 +167,10 @@ instead be used.
 # Case study: Code generation
 
 Some Cargo packages need to have code generated just before they are compiled
-for various reasons. Here we'll walk through a simple example which generates a
+for various reasons. Here we’ll walk through a simple example which generates a
 library call as part of the build script.
 
-First, let's take a look at the directory structure of this package:
+First, let’s take a look at the directory structure of this package:
 
 ```notrust
 .
@@ -202,7 +183,7 @@ First, let's take a look at the directory structure of this package:
 ```
 
 Here we can see that we have a `build.rs` build script and our binary in
-`main.rs`. Next, let's take a look at the manifest:
+`main.rs`. Next, let’s take a look at the manifest:
 
 ```toml
 # Cargo.toml
@@ -214,8 +195,8 @@ authors = ["you@example.com"]
 build = "build.rs"
 ```
 
-Here we can see we've got a build script specified which we'll use to generate
-some code. Let's see what's inside the build script:
+Here we can see we’ve got a build script specified which we’ll use to generate
+some code. Let’s see what’s inside the build script:
 
 ```rust,no_run
 // build.rs
@@ -238,18 +219,18 @@ fn main() {
 }
 ```
 
-There's a couple of points of note here:
+There’s a couple of points of note here:
 
 * The script uses the `OUT_DIR` environment variable to discover where the
-  output files should be located. It can use the process's current working
+  output files should be located. It can use the process’ current working
   directory to find where the input files should be located, but in this case we
-  don't have any input files.
+  don’t have any input files.
 * This script is relatively simple as it just writes out a small generated file.
   One could imagine that other more fanciful operations could take place such as
   generating a Rust module from a C header file or another language definition,
   for example.
 
-Next, let's peek at the library itself:
+Next, let’s peek at the library itself:
 
 ```rust,ignore
 // src/main.rs
@@ -263,21 +244,21 @@ fn main() {
 
 This is where the real magic happens. The library is using the rustc-defined
 `include!` macro in combination with the `concat!` and `env!` macros to include
-the generated file (`mod.rs`) into the crate's compilation.
+the generated file (`mod.rs`) into the crate’s compilation.
 
 Using the structure shown here, crates can include any number of generated files
-from the build script itself. We've also seen a brief example of how a build
+from the build script itself. We’ve also seen a brief example of how a build
 script can use a crate as a dependency purely for the build process and not for
 the crate itself at runtime.
 
 # Case study: Building some native code
 
-Sometimes it's necessary to build some native C or C++ code as part of a
+Sometimes it’s necessary to build some native C or C++ code as part of a
 package. This is another excellent use case of leveraging the build script to
-build a native library before the Rust crate itself. As an example, we'll create
-a Rust library which calls into C to print "Hello, World!".
+build a native library before the Rust crate itself. As an example, we’ll create
+a Rust library which calls into C to print “Hello, World!”.
 
-Like above, let's first take a look at the project layout:
+Like above, let’s first take a look at the project layout:
 
 ```notrust
 .
@@ -302,7 +283,7 @@ authors = ["you@example.com"]
 build = "build.rs"
 ```
 
-For now we're not going to use any build dependencies, so let's take a look at
+For now we’re not going to use any build dependencies, so let’s take a look at
 the build script now:
 
 ```rust,no_run
@@ -310,6 +291,7 @@ the build script now:
 
 use std::process::Command;
 use std::env;
+use std::path::Path;
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -328,7 +310,7 @@ fn main() {
 }
 ```
 
-This build script starts out by compiling out C file into an object file (by
+This build script starts out by compiling our C file into an object file (by
 invoking `gcc`) and then converting this object file into a static library (by
 invoking `ar`). The final step is feedback to Cargo itself to say that our
 output was in `out_dir` and the compiler should link the crate to `libhello.a`
@@ -336,11 +318,11 @@ statically via the `-l static=hello` flag.
 
 Note that there are a number of drawbacks to this hardcoded approach:
 
-* The `gcc` command itself is not portable across platforms. For example it's
+* The `gcc` command itself is not portable across platforms. For example it’s
   unlikely that Windows platforms have `gcc`, and not even all Unix platforms
   may have `gcc`. The `ar` command is also in a similar situation.
-* These commands do not take cross-compilation into account. If we're cross
-  compiling for a platform such as Android it's unlikely that `gcc` will produce
+* These commands do not take cross-compilation into account. If we’re cross
+  compiling for a platform such as Android it’s unlikely that `gcc` will produce
   an ARM executable.
 
 Not to fear, though, this is where a `build-dependencies` entry would help! The
@@ -350,23 +332,31 @@ portable, and standardized. For example, the build script could be written as:
 ```rust,ignore
 // build.rs
 
-// Bring in a dependency on an externally maintained `cc` package which manages
+// Bring in a dependency on an externally maintained `gcc` package which manages
 // invoking the C compiler.
-extern crate cc;
+extern crate gcc;
 
 fn main() {
-    cc::compile_library("libhello.a", &["src/hello.c"]).unwrap();
+    gcc::compile_library("libhello.a", &["src/hello.c"]);
 }
 ```
 
-This example is a little hand-wavy, but we can assume that the `cc` crate
-performs tasks such as:
+Add a build time dependency on the `gcc` crate with the following addition to
+your `Cargo.toml`:
+
+```toml
+[build-dependencies]
+gcc = "0.3"
+```
+
+The [`gcc` crate](https://crates.io/crates/gcc) abstracts a range of build
+script requirements for C code:
 
 * It invokes the appropriate compiler (MSVC for windows, `gcc` for MinGW, `cc`
-  for Unix platforms, etc).
+  for Unix platforms, etc.).
 * It takes the `TARGET` variable into account by passing appropriate flags to
   the compiler being used.
-* Other environment variables, such as `OPT_LEVEL`, `DEBUG`, etc, are all
+* Other environment variables, such as `OPT_LEVEL`, `DEBUG`, etc., are all
   handled automatically.
 * The stdout output and `OUT_DIR` locations are also handled by the `gcc`
   library.
@@ -375,7 +365,7 @@ Here we can start to see some of the major benefits of farming as much
 functionality as possible out to common build dependencies rather than
 duplicating logic across all build scripts!
 
-Back to the case study though, let's take a quick look at the contents of the
+Back to the case study though, let’s take a quick look at the contents of the
 `src` directory:
 
 ```c
@@ -391,7 +381,7 @@ void hello() {
 ```rust,ignore
 // src/main.rs
 
-// Note the lack of the `#[link]` attribute. We're delegating the responsibility
+// Note the lack of the `#[link]` attribute. We’re delegating the responsibility
 // of selecting what to link to over to the build script rather than hardcoding
 // it in the source file.
 extern { fn hello(); }
@@ -417,7 +407,7 @@ performing this in a platform-agnostic fashion, and the purpose of a build
 script is again to farm out as much of this as possible to make this as easy as
 possible for consumers.
 
-As an example to follow, let's take a look at one of [Cargo's own
+As an example to follow, let’s take a look at one of [Cargo’s own
 dependencies][git2-rs], [libgit2][libgit2]. This library has a number of
 constraints:
 
@@ -431,7 +421,7 @@ constraints:
 * It is often not installed on all systems by default.
 * It can be built from source using `cmake`.
 
-To visualize what's going on here, let's take a look at the manifest for the
+To visualize what’s going on here, let’s take a look at the manifest for the
 relevant Cargo package.
 
 ```toml
@@ -442,16 +432,16 @@ authors = ["..."]
 links = "git2"
 build = "build.rs"
 
-[dependencies.libssh2-sys]
-git = "https://github.com/alexcrichton/ssh2-rs"
+[dependencies]
+libssh2-sys = { git = "https://github.com/alexcrichton/ssh2-rs" }
 
-[target.x86_64-unknown-linux-gnu.dependencies.openssl-sys]
-git = "https://github.com/alexcrichton/openssl-sys"
+[target.x86_64-unknown-linux-gnu.dependencies]
+openssl-sys = { git = "https://github.com/alexcrichton/openssl-sys" }
 
 # ...
 ```
 
-As the above manifests show, we've got a `build` script specified, but it's
+As the above manifests show, we’ve got a `build` script specified, but it’s
 worth noting that this example has a `links` entry which indicates that the
 crate (`libgit2-sys`) links to the `git2` native library.
 
@@ -459,7 +449,7 @@ Here we also see the unconditional dependency on `libssh2` via the
 `libssh2-sys` crate, as well as a platform-specific dependency on `openssl-sys`
 for unix (other variants elided for now). It may seem a little counterintuitive
 to express *C dependencies* in the *Cargo manifest*, but this is actually using
-one of Cargo's conventions in this space.
+one of Cargo’s conventions in this space.
 
 ## `*-sys` Packages
 
@@ -485,40 +475,40 @@ convention of native-library-related packages:
 
 ## Building libgit2
 
-Now that we've got libgit2's dependencies sorted out, we need to actually write
-the build script. We're not going to look at specific snippets of code here and
+Now that we’ve got libgit2’s dependencies sorted out, we need to actually write
+the build script. We’re not going to look at specific snippets of code here and
 instead only take a look at the high-level details of the build script of
 `libgit2-sys`. This is not recommending all packages follow this strategy, but
 rather just outlining one specific strategy.
 
 The first step of the build script should do is to query whether libgit2 is
-already installed on the host system. To do this we'll leverage the preexisting
-tool `pkg-config` (when its available). We'll also use a `build-dependencies`
-section to refactor out all the `pkg-config` related code (or someone's already
+already installed on the host system. To do this we’ll leverage the preexisting
+tool `pkg-config` (when its available). We’ll also use a `build-dependencies`
+section to refactor out all the `pkg-config` related code (or someone’s already
 done that!).
 
-If `pkg-config` failed to find libgit2, or if `pkg-config` just wasn't
+If `pkg-config` failed to find libgit2, or if `pkg-config` just wasn’t
 installed, the next step is to build libgit2 from bundled source code
 (distributed as part of `libgit2-sys` itself). There are a few nuances when
 doing so that we need to take into account, however:
 
-* The build system of libgit2, `cmake`, needs to be able to find libgit2's
-  optional dependency of libssh2. We're sure we've already built it (it's a
+* The build system of libgit2, `cmake`, needs to be able to find libgit2’s
+  optional dependency of libssh2. We’re sure we’ve already built it (it’s a
   Cargo dependency), we just need to communicate this information. To do this
   we leverage the metadata format to communicate information between build
   scripts. In this example the libssh2 package printed out `cargo:root=...` to
   tell us where libssh2 is installed at, and we can then pass this along to
   cmake with the `CMAKE_PREFIX_PATH` environment variable.
 
-* We'll need to handle some `CFLAGS` values when compiling C code (and tell
+* We’ll need to handle some `CFLAGS` values when compiling C code (and tell
   `cmake` about this). Some flags we may want to pass are `-m64` for 64-bit
   code, `-m32` for 32-bit code, or `-fPIC` for 64-bit code as well.
 
-* Finally, we'll invoke `cmake` to place all output into the `OUT_DIR`
-  environment variable, and then we'll print the necessary metadata to instruct
+* Finally, we’ll invoke `cmake` to place all output into the `OUT_DIR`
+  environment variable, and then we’ll print the necessary metadata to instruct
   rustc how to link to libgit2.
 
 Most of the functionality of this build script is easily refactorable into
-common dependencies, so our build script isn't quite as intimidating as this
-descriptions! In reality it's expected that build scripts are quite succinct by
+common dependencies, so our build script isn’t quite as intimidating as this
+descriptions! In reality it’s expected that build scripts are quite succinct by
 farming logic such as above to build dependencies.

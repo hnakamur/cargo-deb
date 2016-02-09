@@ -1,7 +1,6 @@
 use std::env;
-use std::fs::{self, File};
+use std::fs;
 use std::io::prelude::*;
-use std::io;
 use std::path::Path;
 
 use rustc_serialize::{Decodable, Decoder};
@@ -11,7 +10,7 @@ use git2::Config as GitConfig;
 use term::color::BLACK;
 
 use util::{GitRepo, HgRepo, CargoResult, human, ChainError, internal};
-use util::Config;
+use util::{Config, paths};
 
 use toml;
 
@@ -48,8 +47,7 @@ struct CargoNewConfig {
 pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
     let path = config.cwd().join(opts.path);
     if fs::metadata(&path).is_ok() {
-        return Err(human(format!("Destination `{}` already exists",
-                                 path.display())))
+        bail!("destination `{}` already exists", path.display())
     }
     let name = match opts.name {
         Some(name) => name,
@@ -75,8 +73,7 @@ pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
     for c in name.chars() {
         if c.is_alphanumeric() { continue }
         if c == '_' || c == '-' { continue }
-        return Err(human(&format!("Invalid character `{}` in crate name: `{}`",
-                                  c, name)));
+        bail!("Invalid character `{}` in crate name: `{}`", c, name)
     }
     mk(config, &path, name, &opts).chain_error(|| {
         human(format!("Failed to create project `{}` at `{}`",
@@ -98,19 +95,15 @@ fn strip_rust_affixes(name: &str) -> &str {
     name
 }
 
-fn existing_vcs_repo(path: &Path) -> bool {
-    GitRepo::discover(path).is_ok() || HgRepo::discover(path).is_ok()
-}
-
-fn file(p: &Path, contents: &[u8]) -> io::Result<()> {
-    try!(File::create(p)).write_all(contents)
+fn existing_vcs_repo(path: &Path, cwd: &Path) -> bool {
+    GitRepo::discover(path, cwd).is_ok() || HgRepo::discover(path, cwd).is_ok()
 }
 
 fn mk(config: &Config, path: &Path, name: &str,
       opts: &NewOptions) -> CargoResult<()> {
     let cfg = try!(global_config(config));
     let mut ignore = "target\n".to_string();
-    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap());
+    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap(), config.cwd());
     if !opts.bin {
         ignore.push_str("Cargo.lock\n");
     }
@@ -118,18 +111,18 @@ fn mk(config: &Config, path: &Path, name: &str,
     let vcs = match (opts.version_control, cfg.version_control, in_existing_vcs_repo) {
         (None, None, false) => VersionControl::Git,
         (None, Some(option), false) => option,
-        (Some(option), _, false) => option,
+        (Some(option), _, _) => option,
         (_, _, true) => VersionControl::NoVcs,
     };
 
     match vcs {
         VersionControl::Git => {
-            try!(GitRepo::init(path));
-            try!(file(&path.join(".gitignore"), ignore.as_bytes()));
+            try!(GitRepo::init(path, config.cwd()));
+            try!(paths::write(&path.join(".gitignore"), ignore.as_bytes()));
         },
         VersionControl::Hg => {
-            try!(HgRepo::init(path));
-            try!(file(&path.join(".hgignore"), ignore.as_bytes()));
+            try!(HgRepo::init(path, config.cwd()));
+            try!(paths::write(&path.join(".hgignore"), ignore.as_bytes()));
         },
         VersionControl::NoVcs => {
             try!(fs::create_dir(path));
@@ -147,23 +140,25 @@ fn mk(config: &Config, path: &Path, name: &str,
         (None, None, name, None) => name,
     };
 
-    try!(file(&path.join("Cargo.toml"), format!(
+    try!(paths::write(&path.join("Cargo.toml"), format!(
 r#"[package]
 name = "{}"
 version = "0.1.0"
 authors = [{}]
+
+[dependencies]
 "#, name, toml::Value::String(author)).as_bytes()));
 
     try!(fs::create_dir(&path.join("src")));
 
     if opts.bin {
-        try!(file(&path.join("src/main.rs"), b"\
+        try!(paths::write(&path.join("src/main.rs"), b"\
 fn main() {
     println!(\"Hello, world!\");
 }
 "));
     } else {
-        try!(file(&path.join("src/lib.rs"), b"\
+        try!(paths::write(&path.join("src/lib.rs"), b"\
 #[test]
 fn it_works() {
 }
@@ -184,11 +179,12 @@ fn discover_author() -> CargoResult<(String, Option<String>)> {
         Some(name) => name,
         None => {
             let username_var = if cfg!(windows) {"USERNAME"} else {"USER"};
-            return Err(human(format!("could not determine the current \
-                                      user, please set ${}", username_var)))
+            bail!("could not determine the current user, please set ${}",
+                  username_var)
         }
     };
-    let email = git_config.and_then(|g| g.get_string("user.email").ok());
+    let email = git_config.and_then(|g| g.get_string("user.email").ok())
+                          .or_else(|| env::var("EMAIL").ok());
 
     let name = name.trim().to_string();
     let email = email.map(|s| s.trim().to_string());

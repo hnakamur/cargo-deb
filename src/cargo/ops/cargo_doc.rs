@@ -3,11 +3,9 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use core::PackageIdSpec;
-use core::source::Source;
+use core::{Package, PackageIdSpec};
 use ops;
-use sources::PathSource;
-use util::{CargoResult, human};
+use util::CargoResult;
 
 pub struct DocOptions<'a> {
     pub open_result: bool,
@@ -16,14 +14,11 @@ pub struct DocOptions<'a> {
 
 pub fn doc(manifest_path: &Path,
            options: &DocOptions) -> CargoResult<()> {
-    let mut source = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                               options.compile_opts.config));
-    try!(source.update());
-    let package = try!(source.root_package());
+    let package = try!(Package::for_path(manifest_path, options.compile_opts.config));
 
     let mut lib_names = HashSet::new();
     let mut bin_names = HashSet::new();
-    if options.compile_opts.spec.is_none() {
+    if options.compile_opts.spec.len() == 0 {
         for target in package.targets().iter().filter(|t| t.documented()) {
             if target.is_lib() {
                 assert!(lib_names.insert(target.crate_name()));
@@ -33,10 +28,9 @@ pub fn doc(manifest_path: &Path,
         }
         for bin in bin_names.iter() {
             if lib_names.contains(bin) {
-                return Err(human("Cannot document a package where a library \
-                                  and a binary have the same name. Consider \
-                                  renaming one or marking the target as \
-                                  `doc = false`"))
+                bail!("cannot document a package where a library and a binary \
+                       have the same name. Consider renaming one or marking \
+                       the target as `doc = false`")
             }
         }
     }
@@ -44,13 +38,15 @@ pub fn doc(manifest_path: &Path,
     try!(ops::compile(manifest_path, &options.compile_opts));
 
     if options.open_result {
-        let name = match options.compile_opts.spec {
-            Some(spec) => try!(PackageIdSpec::parse(spec)).name().replace("-", "_").to_string(),
-            None => {
-                match lib_names.iter().chain(bin_names.iter()).nth(0) {
-                    Some(s) => s.to_string(),
-                    None => return Ok(())
-                }
+        let name = if options.compile_opts.spec.len() > 1 {
+            bail!("Passing multiple packages and `open` is not supported")
+        } else if options.compile_opts.spec.len() == 1 {
+            try!(PackageIdSpec::parse(&options.compile_opts.spec[0]))
+                                             .name().replace("-", "_").to_string()
+        } else {
+            match lib_names.iter().chain(bin_names.iter()).nth(0) {
+                Some(s) => s.to_string(),
+                None => return Ok(())
             }
         };
 

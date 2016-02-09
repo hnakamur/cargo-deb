@@ -1,5 +1,7 @@
+use std::str;
+
 use support::{project, execs, path2url};
-use support::COMPILING;
+use support::{COMPILING, DOCUMENTING, RUNNING};
 use hamcrest::{assert_that, existing_file, existing_dir, is_not};
 
 fn setup() {
@@ -21,9 +23,9 @@ test!(simple {
 
     assert_that(p.cargo_process("doc"),
                 execs().with_status(0).with_stdout(&format!("\
-{compiling} foo v0.0.1 ({dir})
+[..] foo v0.0.1 ({dir})
+[..] foo v0.0.1 ({dir})
 ",
-        compiling = COMPILING,
         dir = path2url(p.root()))));
     assert_that(&p.root().join("target/doc"), existing_dir());
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
@@ -63,9 +65,9 @@ test!(doc_twice {
 
     assert_that(p.cargo_process("doc"),
                 execs().with_status(0).with_stdout(&format!("\
-{compiling} foo v0.0.1 ({dir})
+{documenting} foo v0.0.1 ({dir})
 ",
-        compiling = COMPILING,
+        documenting = DOCUMENTING,
         dir = path2url(p.root()))));
 
     assert_that(p.cargo("doc"),
@@ -99,10 +101,11 @@ test!(doc_deps {
 
     assert_that(p.cargo_process("doc"),
                 execs().with_status(0).with_stdout(&format!("\
-{compiling} bar v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir})
+[..] bar v0.0.1 ({dir})
+[..] bar v0.0.1 ({dir})
+{documenting} foo v0.0.1 ({dir})
 ",
-        compiling = COMPILING,
+        documenting = DOCUMENTING,
         dir = path2url(p.root()))));
 
     assert_that(&p.root().join("target/doc"), existing_dir());
@@ -146,9 +149,9 @@ test!(doc_no_deps {
     assert_that(p.cargo_process("doc").arg("--no-deps"),
                 execs().with_status(0).with_stdout(&format!("\
 {compiling} bar v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir})
+{documenting} foo v0.0.1 ({dir})
 ",
-        compiling = COMPILING,
+        documenting = DOCUMENTING, compiling = COMPILING,
         dir = path2url(p.root()))));
 
     assert_that(&p.root().join("target/doc"), existing_dir());
@@ -203,7 +206,7 @@ test!(doc_lib_bin_same_name {
     assert_that(p.cargo_process("doc"),
                 execs().with_status(101)
                        .with_stderr("\
-Cannot document a package where a library and a binary have the same name. \
+cannot document a package where a library and a binary have the same name. \
 Consider renaming one or marking the target as `doc = false`
 "));
 });
@@ -241,9 +244,10 @@ test!(doc_dash_p {
     assert_that(p.cargo_process("doc").arg("-p").arg("a"),
                 execs().with_status(0)
                        .with_stdout(&format!("\
-{compiling} b v0.0.1 (file://[..])
-{compiling} a v0.0.1 (file://[..])
-", compiling = COMPILING)));
+[..] b v0.0.1 (file://[..])
+[..] b v0.0.1 (file://[..])
+{documenting} a v0.0.1 (file://[..])
+", documenting = DOCUMENTING)));
 });
 
 test!(doc_same_name {
@@ -266,6 +270,8 @@ test!(doc_same_name {
 test!(doc_target {
     const TARGET: &'static str = "arm-unknown-linux-gnueabihf";
 
+    if !::is_nightly() { return }
+
     let p = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -274,8 +280,8 @@ test!(doc_target {
             authors = []
         "#)
         .file("src/lib.rs", r#"
-            #![feature(no_std)]
-            #![no_std]
+            #![feature(no_core)]
+            #![no_core]
 
             extern {
                 pub static A: u32;
@@ -286,4 +292,236 @@ test!(doc_target {
                 execs().with_status(0));
     assert_that(&p.root().join(&format!("target/{}/doc", TARGET)), existing_dir());
     assert_that(&p.root().join(&format!("target/{}/doc/foo/index.html", TARGET)), existing_file());
+});
+
+test!(target_specific_not_documented {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [target.foo.dependencies]
+            a = { path = "a" }
+        "#)
+        .file("src/lib.rs", "")
+        .file("a/Cargo.toml", r#"
+            [package]
+            name = "a"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("a/src/lib.rs", "not rust");
+
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+});
+
+test!(output_not_captured {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            a = { path = "a" }
+        "#)
+        .file("src/lib.rs", "")
+        .file("a/Cargo.toml", r#"
+            [package]
+            name = "a"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("a/src/lib.rs", "
+            /// ```
+            /// ☃
+            /// ```
+            pub fn foo() {}
+        ");
+
+    let output = p.cargo_process("doc").exec_with_output().err().unwrap()
+                                                          .output.unwrap();
+    let stderr = str::from_utf8(&output.stderr).unwrap();
+    assert!(stderr.contains("☃"), "no snowman\n{}", stderr);
+    assert!(stderr.contains("unknown start of token"), "no message\n{}", stderr);
+});
+
+test!(target_specific_documented {
+    let p = project("foo")
+        .file("Cargo.toml", &format!(r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [target.foo.dependencies]
+            a = {{ path = "a" }}
+            [target.{}.dependencies]
+            a = {{ path = "a" }}
+        "#, ::rustc_host()))
+        .file("src/lib.rs", "
+            extern crate a;
+
+            /// test
+            pub fn foo() {}
+        ")
+        .file("a/Cargo.toml", r#"
+            [package]
+            name = "a"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("a/src/lib.rs", "
+            /// test
+            pub fn foo() {}
+        ");
+
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+});
+
+test!(no_document_build_deps {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [build-dependencies]
+            a = { path = "a" }
+        "#)
+        .file("src/lib.rs", "
+            pub fn foo() {}
+        ")
+        .file("a/Cargo.toml", r#"
+            [package]
+            name = "a"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("a/src/lib.rs", "
+            /// ```
+            /// ☃
+            /// ```
+            pub fn foo() {}
+        ");
+
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+});
+
+test!(doc_release {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("build").arg("--release"),
+                execs().with_status(0));
+    assert_that(p.cargo("doc").arg("--release").arg("-v"),
+                execs().with_status(0)
+                       .with_stdout(&format!("\
+{documenting} foo v0.0.1 ([..])
+{running} `rustdoc src[..]lib.rs [..]`
+", documenting = DOCUMENTING, running = RUNNING)));
+});
+
+test!(doc_multiple_deps {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies.bar]
+            path = "bar"
+
+            [dependencies.baz]
+            path = "baz"
+        "#)
+        .file("src/lib.rs", r#"
+            extern crate bar;
+            pub fn foo() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", r#"
+            pub fn bar() {}
+        "#)
+        .file("baz/Cargo.toml", r#"
+            [package]
+            name = "baz"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("baz/src/lib.rs", r#"
+            pub fn baz() {}
+        "#);
+
+    assert_that(p.cargo_process("doc")
+                  .arg("-p").arg("bar")
+                  .arg("-p").arg("baz")
+                  .arg("-v"),
+                execs().with_status(0));
+
+    assert_that(&p.root().join("target/doc"), existing_dir());
+    assert_that(&p.root().join("target/doc/bar/index.html"), existing_file());
+    assert_that(&p.root().join("target/doc/baz/index.html"), existing_file());
+});
+
+test!(features {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies.bar]
+            path = "bar"
+
+            [features]
+            foo = ["bar/bar"]
+        "#)
+        .file("src/lib.rs", r#"
+            #[cfg(feature = "foo")]
+            pub fn foo() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.0.1"
+            authors = []
+
+            [features]
+            bar = []
+        "#)
+        .file("bar/build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-cfg=bar");
+            }
+        "#)
+        .file("bar/src/lib.rs", r#"
+            #[cfg(feature = "bar")]
+            pub fn bar() {}
+        "#);
+    assert_that(p.cargo_process("doc").arg("--features").arg("foo"),
+                execs().with_status(0));
+    assert_that(&p.root().join("target/doc"), existing_dir());
+    assert_that(&p.root().join("target/doc/foo/fn.foo.html"), existing_file());
+    assert_that(&p.root().join("target/doc/bar/fn.bar.html"), existing_file());
 });

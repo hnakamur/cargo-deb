@@ -1,5 +1,7 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf, Component};
 
 use util::{human, internal, CargoResult, ChainError};
@@ -47,22 +49,42 @@ pub fn normalize_path(path: &Path) -> PathBuf {
             Component::Normal(c) => { ret.push(c); }
         }
     }
-    return ret;
+    ret
 }
 
 pub fn without_prefix<'a>(a: &'a Path, b: &'a Path) -> Option<&'a Path> {
     let mut a = a.components();
     let mut b = b.components();
     loop {
-        let mut a2 = a.clone();
-        match (a2.next(), b.next()) {
-            (Some(x), Some(y)) if x == y => a = a2,
-            (Some(_), Some(_)) |
-            (None, Some(_)) => return None,
-            (Some(_), None) |
-            (None, None) => return Some(a.as_path()),
+        match b.next() {
+            Some(y) => match a.next() {
+                Some(x) if x == y => continue,
+                _ => return None,
+            },
+            None => return Some(a.as_path()),
         }
     }
+}
+
+pub fn read(path: &Path) -> CargoResult<String> {
+    (|| -> CargoResult<String> {
+        let mut ret = String::new();
+        let mut f = try!(File::open(path));
+        try!(f.read_to_string(&mut ret));
+        Ok(ret)
+    }).chain_error(|| {
+        internal(format!("failed to read `{}`", path.display()))
+    })
+}
+
+pub fn write(path: &Path, contents: &[u8]) -> CargoResult<()> {
+    (|| -> CargoResult<()> {
+        let mut f = try!(File::create(path));
+        try!(f.write_all(contents));
+        Ok(())
+    }).chain_error(|| {
+        internal(format!("failed to write `{}`", path.display()))
+    })
 }
 
 #[cfg(unix)]

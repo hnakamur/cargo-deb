@@ -190,7 +190,7 @@ Caused by:
 
 Caused by:
   could not parse input as TOML
-[..]config:2:1 expected `=`, but found eof
+[..]config:1:2 expected `=`, but found eof
 
 "));
 });
@@ -212,5 +212,159 @@ failed to parse lock file at: [..]Cargo.lock
 
 Caused by:
   expected a section for the key `root`
+"));
+});
+
+test!(bad_git_dependency {
+    let foo = project("foo")
+    .file("Cargo.toml", r#"
+        [package]
+        name = "foo"
+        version = "0.0.0"
+        authors = []
+
+        [dependencies]
+        foo = { git = "file:.." }
+    "#)
+    .file("src/lib.rs", "");
+
+    assert_that(foo.cargo_process("build").arg("-v"),
+                execs().with_status(101).with_stderr("\
+Unable to update file:///
+
+Caused by:
+  failed to clone into: [..]
+
+Caused by:
+  [[..]] 'file:///' is not a valid local file URI
+"));
+});
+
+test!(bad_crate_type {
+    let foo = project("foo")
+    .file("Cargo.toml", r#"
+        [package]
+        name = "foo"
+        version = "0.0.0"
+        authors = []
+
+        [lib]
+        crate-type = ["bad_type", "rlib"]
+    "#)
+    .file("src/lib.rs", "");
+
+    assert_that(foo.cargo_process("build").arg("-v"),
+                execs().with_status(0).with_stderr("\
+warning: crate-type \"bad_type\" was not one of lib|rlib|dylib|staticlib
+"));
+});
+
+test!(malformed_override {
+    let foo = project("foo")
+    .file("Cargo.toml", r#"
+        [package]
+        name = "foo"
+        version = "0.0.0"
+        authors = []
+
+        [target.x86_64-apple-darwin.freetype]
+        native = {
+          foo: "bar"
+        }
+    "#)
+    .file("src/lib.rs", "");
+
+    assert_that(foo.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+failed to parse manifest at `[..]`
+
+Caused by:
+  could not parse input as TOML
+Cargo.toml:[..]
+
+"));
+});
+
+test!(duplicate_binary_names {
+    let foo = project("foo")
+    .file("Cargo.toml", r#"
+       [package]
+       name = "qqq"
+       version = "0.1.0"
+       authors = ["A <a@a.a>"]
+
+       [[bin]]
+       name = "e"
+       path = "a.rs"
+
+       [[bin]]
+       name = "e"
+       path = "b.rs"
+    "#)
+    .file("a.rs", r#"fn main() -> () {}"#)
+    .file("b.rs", r#"fn main() -> () {}"#);
+
+    assert_that(foo.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+failed to parse manifest at `[..]`
+
+Caused by:
+  found duplicate binary name e, but all binary targets must have a unique name
+"));
+});
+
+test!(duplicate_example_names {
+    let foo = project("foo")
+    .file("Cargo.toml", r#"
+       [package]
+       name = "qqq"
+       version = "0.1.0"
+       authors = ["A <a@a.a>"]
+
+       [[example]]
+       name = "ex"
+       path = "examples/ex.rs"
+
+       [[example]]
+       name = "ex"
+       path = "examples/ex2.rs"
+    "#)
+    .file("examples/ex.rs", r#"fn main () -> () {}"#)
+    .file("examples/ex2.rs", r#"fn main () -> () {}"#);
+
+    assert_that(foo.cargo_process("build").arg("--example").arg("ex"),
+                execs().with_status(101).with_stderr("\
+failed to parse manifest at `[..]`
+
+Caused by:
+  found duplicate example name ex, but all binary targets must have a unique name
+"));
+});
+
+test!(duplicate_bench_names {
+    let foo = project("foo")
+    .file("Cargo.toml", r#"
+       [package]
+       name = "qqq"
+       version = "0.1.0"
+       authors = ["A <a@a.a>"]
+
+       [[bench]]
+       name = "ex"
+       path = "benches/ex.rs"
+
+       [[bench]]
+       name = "ex"
+       path = "benches/ex2.rs"
+    "#)
+    .file("benches/ex.rs", r#"fn main () {}"#)
+    .file("benches/ex2.rs", r#"fn main () {}"#);
+
+    assert_that(foo.cargo_process("bench"),
+                execs().with_status(101).with_stderr("\
+failed to parse manifest at `[..]`
+
+Caused by:
+  found duplicate bench name ex, but all binary targets must have a unique name
 "));
 });

@@ -9,7 +9,8 @@ use git2;
 use tar::Archive;
 
 use support::{project, execs, cargo_dir, paths, git, path2url};
-use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING};
+use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING, UPDATING, DOWNLOADING};
+use support::registry::{self, Package};
 use hamcrest::{assert_that, existing_file};
 
 fn setup() {
@@ -57,10 +58,11 @@ src[..]main.rs
     let ar = Archive::new(Cursor::new(contents));
     for f in ar.files().unwrap() {
         let f = f.unwrap();
-        let fname = f.filename_bytes();
+        let fname = f.header().path_bytes();
+        let fname = &*fname;
         assert!(fname == b"foo-0.0.1/Cargo.toml" ||
                 fname == b"foo-0.0.1/src/main.rs",
-                "unexpected filename: {:?}", f.filename())
+                "unexpected filename: {:?}", f.header().path())
     }
 });
 
@@ -140,6 +142,59 @@ http://doc.crates.io/manifest.html#package-metadata for more info."));
         dir = p.url())));
 });
 
+test!(wildcard_deps {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            license = "MIT"
+            description = "foo"
+            repository = "bar"
+
+            [dependencies]
+            bar = "*"
+
+            [build-dependencies]
+            baz = "*"
+
+            [dev-dependencies]
+            buz = "*"
+        "#)
+        .file("src/main.rs", "fn main() {}");
+
+    Package::new("baz", "0.0.1").publish();
+    Package::new("bar", "0.0.1").dep("baz", "0.0.1").publish();
+    Package::new("buz", "0.0.1").dep("bar", "0.0.1").publish();
+
+    assert_that(p.cargo_process("package"),
+                execs().with_status(0).with_stdout(&format!("\
+{packaging} foo v0.0.1 ({dir})
+{verifying} foo v0.0.1 ({dir})
+{updating} registry `{reg}`
+{downloading} [..] v0.0.1 (registry file://[..])
+{downloading} [..] v0.0.1 (registry file://[..])
+{downloading} [..] v0.0.1 (registry file://[..])
+{compiling} baz v0.0.1 (registry file://[..])
+{compiling} bar v0.0.1 (registry file://[..])
+{compiling} foo v0.0.1 ({dir}[..])
+",
+        packaging = PACKAGING,
+        verifying = VERIFYING,
+        updating = UPDATING,
+        downloading = DOWNLOADING,
+        compiling = COMPILING,
+        dir = p.url(),
+        reg = registry::registry()))
+                .with_stderr("\
+warning: some dependencies have wildcard (\"*\") version constraints. On January 22nd, 2016, \
+crates.io will begin rejecting packages with wildcard dependency constraints. See \
+http://doc.crates.io/crates-io.html#using-crates.io-based-crates for information on version \
+constraints.
+dependencies for these crates have wildcard constraints: bar, baz"));
+});
+
 test!(package_verbose {
     let root = paths::root().join("all");
     let p = git::repo(&root)
@@ -160,7 +215,7 @@ test!(package_verbose {
         "#)
         .file("a/src/lib.rs", "");
     p.build();
-    let mut cargo = process(&cargo_dir().join("cargo")).unwrap();
+    let mut cargo = process(&cargo_dir().join("cargo"));
     cargo.cwd(&root).env("HOME", &paths::home());
     assert_that(cargo.clone().arg("build"), execs().with_status(0));
     assert_that(cargo.arg("package").arg("-v").arg("--no-verify"),
@@ -315,4 +370,82 @@ test!(package_git_submodule {
     let result = project.cargo("package").arg("--no-verify").arg("-v").exec_with_output().unwrap();
     assert!(result.status.success());
     assert!(from_utf8(&result.stdout).unwrap().contains(&format!("{} bar/Makefile", ARCHIVING)));
+});
+
+test!(ignore_nested {
+    let cargo_toml = r#"
+            [project]
+            name = "nested"
+            version = "0.0.1"
+            authors = []
+            license = "MIT"
+            description = "nested"
+        "#;
+    let main_rs = r#"
+            fn main() { println!("hello"); }
+        "#;
+    let p = project("nested")
+        .file("Cargo.toml", cargo_toml)
+        .file("src/main.rs", main_rs)
+        // If a project happens to contain a copy of itself, we should
+        // ignore it.
+        .file("a_dir/nested/Cargo.toml", cargo_toml)
+        .file("a_dir/nested/src/main.rs", main_rs);
+
+    assert_that(p.cargo_process("package"),
+                execs().with_status(0).with_stdout(&format!("\
+{packaging} nested v0.0.1 ({dir})
+{verifying} nested v0.0.1 ({dir})
+{compiling} nested v0.0.1 ({dir}[..])
+",
+        packaging = PACKAGING,
+        verifying = VERIFYING,
+        compiling = COMPILING,
+        dir = p.url())));
+    assert_that(&p.root().join("target/package/nested-0.0.1.crate"), existing_file());
+    assert_that(p.cargo("package").arg("-l"),
+                execs().with_status(0).with_stdout("\
+Cargo.toml
+src[..]main.rs
+"));
+    assert_that(p.cargo("package"),
+                execs().with_status(0).with_stdout(""));
+
+    let f = File::open(&p.root().join("target/package/nested-0.0.1.crate")).unwrap();
+    let mut rdr = GzDecoder::new(f).unwrap();
+    let mut contents = Vec::new();
+    rdr.read_to_end(&mut contents).unwrap();
+    let ar = Archive::new(Cursor::new(contents));
+    for f in ar.files().unwrap() {
+        let f = f.unwrap();
+        let fname = f.header().path_bytes();
+        let fname = &*fname;
+        assert!(fname == b"nested-0.0.1/Cargo.toml" ||
+                fname == b"nested-0.0.1/src/main.rs",
+                "unexpected filename: {:?}", f.header().path())
+    }
+});
+
+#[cfg(unix)] // windows doesn't allow these characters in filenames
+test!(package_weird_characters {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { println!("hello"); }
+        "#)
+        .file("src/:foo", "");
+
+    assert_that(p.cargo_process("package"),
+                execs().with_status(101).with_stderr("\
+warning: [..]
+failed to prepare local package for uploading
+
+Caused by:
+  cannot package a filename with a special character `:`: src/:foo
+"));
 });

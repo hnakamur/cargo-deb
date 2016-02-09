@@ -3,6 +3,8 @@
 
 #[cfg(test)] extern crate hamcrest;
 #[macro_use] extern crate log;
+extern crate crates_io as registry;
+extern crate crossbeam;
 extern crate curl;
 extern crate docopt;
 extern crate filetime;
@@ -13,12 +15,10 @@ extern crate libc;
 extern crate libgit2_sys;
 extern crate num_cpus;
 extern crate regex;
-extern crate registry;
 extern crate rustc_serialize;
 extern crate semver;
 extern crate tar;
 extern crate term;
-extern crate threadpool;
 extern crate time;
 extern crate toml;
 extern crate url;
@@ -31,10 +31,18 @@ use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize::json::{self, Json};
 use docopt::Docopt;
 
-use core::{Shell, MultiShell, ShellConfig};
+use core::{Shell, MultiShell, ShellConfig, Verbosity, ColorConfig};
+use core::shell::Verbosity::{Verbose};
+use core::shell::ColorConfig::{Auto};
 use term::color::{BLACK, RED};
 
 pub use util::{CargoError, CliError, CliResult, human, Config, ChainError};
+
+macro_rules! bail {
+    ($($fmt:tt)*) => (
+        return Err(::util::human(&format_args!($($fmt)*)))
+    )
+}
 
 pub mod core;
 pub mod ops;
@@ -95,7 +103,7 @@ fn process<V, F>(mut callback: F)
 {
     let mut config = None;
     let result = (|| {
-        config = Some(try!(Config::new(shell(true))));
+        config = Some(try!(Config::default()));
         let args: Vec<_> = try!(env::args_os().map(|s| {
             s.into_string().map_err(|s| {
                 human(format!("invalid unicode in argument: {:?}", s))
@@ -103,7 +111,7 @@ fn process<V, F>(mut callback: F)
         }).collect());
         callback(&args, config.as_ref().unwrap())
     })();
-    let mut verbose_shell = shell(true);
+    let mut verbose_shell = shell(Verbose, Auto);
     let mut shell = config.as_ref().map(|s| s.shell());
     let shell = shell.as_mut().map(|s| &mut **s).unwrap_or(&mut verbose_shell);
     process_executed(result, shell)
@@ -122,20 +130,20 @@ pub fn process_executed<T>(result: CliResult<Option<T>>, shell: &mut MultiShell)
     }
 }
 
-pub fn shell(verbose: bool) -> MultiShell {
+pub fn shell(verbosity: Verbosity, color_config: ColorConfig) -> MultiShell {
     let tty = isatty(libc::STDERR_FILENO);
     let stderr = Box::new(io::stderr());
 
-    let config = ShellConfig { color: true, verbose: verbose, tty: tty };
+    let config = ShellConfig { color_config: color_config, tty: tty };
     let err = Shell::create(stderr, config);
 
     let tty = isatty(libc::STDOUT_FILENO);
     let stdout = Box::new(io::stdout());
 
-    let config = ShellConfig { color: true, verbose: verbose, tty: tty };
+    let config = ShellConfig { color_config: color_config, tty: tty };
     let out = Shell::create(stdout, config);
 
-    return MultiShell::new(out, err, verbose);
+    return MultiShell::new(out, err, verbosity);
 
     #[cfg(unix)]
     fn isatty(fd: libc::c_int) -> bool {
@@ -172,8 +180,7 @@ pub fn handle_error(err: CliError, shell: &mut MultiShell) {
     let CliError { error, exit_code, unknown } = err;
     let fatal = exit_code != 0; // exit_code == 0 is non-fatal error
 
-
-    let hide = unknown && !shell.get_verbose();
+    let hide = unknown && shell.get_verbose() != Verbose;
     if hide {
         let _ = shell.err().say("An unknown error occurred", RED);
     } else {
@@ -195,12 +202,12 @@ fn handle_cause(mut cargo_err: &CargoError, shell: &mut MultiShell) -> bool {
             Some(cause) => cause,
             None => { err = cargo_err.cause(); break }
         };
-        if !verbose && !cargo_err.is_human() { return false }
+        if verbose != Verbose && !cargo_err.is_human() { return false }
         print(cargo_err.to_string(), shell);
     }
     loop {
         let cause = match err { Some(err) => err, None => return true };
-        if !verbose { return false }
+        if verbose != Verbose { return false }
         print(cause.to_string(), shell);
         err = cause.cause();
     }

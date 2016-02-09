@@ -2,25 +2,16 @@ use std::io::prelude::*;
 use std::fs::{self, File};
 use std::path::{self, Path, PathBuf};
 
+use semver::VersionReq;
 use tar::Archive;
 use flate2::{GzBuilder, Compression};
 use flate2::read::GzDecoder;
 
-use core::{Source, SourceId, Package, PackageId};
+use core::{SourceId, Package, PackageId};
+use core::dependency::Kind;
 use sources::PathSource;
 use util::{self, CargoResult, human, internal, ChainError, Config};
 use ops;
-
-struct Bomb { path: Option<PathBuf> }
-
-impl Drop for Bomb {
-    fn drop(&mut self) {
-        match self.path.as_ref() {
-            Some(path) => { let _ = fs::remove_file(path); }
-            None => {}
-        }
-    }
-}
 
 pub fn package(manifest_path: &Path,
                config: &Config,
@@ -29,12 +20,13 @@ pub fn package(manifest_path: &Path,
                metadata: bool) -> CargoResult<Option<PathBuf>> {
     let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
                                             config));
-    try!(src.update());
     let pkg = try!(src.root_package());
 
     if metadata {
         try!(check_metadata(&pkg, config));
     }
+
+    try!(check_dependencies(&pkg, config));
 
     if list {
         let root = pkg.root();
@@ -48,27 +40,37 @@ pub fn package(manifest_path: &Path,
         return Ok(None)
     }
 
-    let filename = format!("package/{}-{}.crate", pkg.name(), pkg.version());
-    let target_dir = config.target_dir(&pkg);
-    let dst = target_dir.join(&filename);
-    if fs::metadata(&dst).is_ok() { return Ok(Some(dst)) }
+    let filename = format!("{}-{}.crate", pkg.name(), pkg.version());
+    let dir = config.target_dir(&pkg).join("package");
+    let dst = dir.join(&filename);
+    if fs::metadata(&dst).is_ok() {
+        return Ok(Some(dst))
+    }
 
-    let mut bomb = Bomb { path: Some(dst.clone()) };
-
+    // Package up and test a temporary tarball and only move it to the final
+    // location if it actually passes all our tests. Any previously existing
+    // tarball can be assumed as corrupt or invalid, so we just blow it away if
+    // it exists.
     try!(config.shell().status("Packaging", pkg.package_id().to_string()));
-    try!(tar(&pkg, &src, config, &dst).chain_error(|| {
+    let tmp_dst = dir.join(format!(".{}", filename));
+    let _ = fs::remove_file(&tmp_dst);
+    try!(tar(&pkg, &src, config, &tmp_dst, &filename).chain_error(|| {
         human("failed to prepare local package for uploading")
     }));
     if verify {
-        try!(run_verify(config, &pkg, &dst).chain_error(|| {
+        try!(run_verify(config, &pkg, &tmp_dst).chain_error(|| {
             human("failed to verify package tarball")
         }))
     }
-    Ok(Some(bomb.path.take().unwrap()))
+    try!(fs::rename(&tmp_dst, &dst).chain_error(|| {
+        human("failed to move temporary tarball into final location")
+    }));
+    Ok(Some(dst))
 }
 
 // check that the package has some piece of metadata that a human can
 // use to tell what the package is about.
+#[allow(deprecated)] // connect => join in 1.3
 fn check_metadata(pkg: &Package, config: &Config) -> CargoResult<()> {
     let md = pkg.manifest().metadata();
 
@@ -102,12 +104,39 @@ fn check_metadata(pkg: &Package, config: &Config) -> CargoResult<()> {
     Ok(())
 }
 
-fn tar(pkg: &Package, src: &PathSource, config: &Config,
-       dst: &Path) -> CargoResult<()> {
+// Warn about wildcard deps which will soon be prohibited on crates.io
+#[allow(deprecated)] // connect => join in 1.3
+fn check_dependencies(pkg: &Package, config: &Config) -> CargoResult<()> {
+    let wildcard = VersionReq::parse("*").unwrap();
 
+    let mut wildcard_deps = vec![];
+    for dep in pkg.dependencies() {
+        if dep.kind() != Kind::Development && dep.version_req() == &wildcard {
+            wildcard_deps.push(dep.name());
+        }
+    }
+
+    if !wildcard_deps.is_empty() {
+        let deps = wildcard_deps.connect(", ");
+        try!(config.shell().warn(
+            "warning: some dependencies have wildcard (\"*\") version constraints. \
+             On January 22nd, 2016, crates.io will begin rejecting packages with \
+             wildcard dependency constraints. See \
+             http://doc.crates.io/crates-io.html#using-crates.io-based-crates \
+             for information on version constraints."));
+        try!(config.shell().warn(
+            &format!("dependencies for these crates have wildcard constraints: {}", deps)));
+    }
+    Ok(())
+}
+
+fn tar(pkg: &Package,
+       src: &PathSource,
+       config: &Config,
+       dst: &Path,
+       filename: &str) -> CargoResult<()> {
     if fs::metadata(&dst).is_ok() {
-        return Err(human(format!("destination already exists: {}",
-                                 dst.display())))
+        bail!("destination already exists: {}", dst.display())
     }
 
     try!(fs::create_dir_all(dst.parent().unwrap()));
@@ -115,7 +144,7 @@ fn tar(pkg: &Package, src: &PathSource, config: &Config,
     let tmpfile = try!(File::create(dst));
 
     // Prepare the encoder and its header
-    let filename = Path::new(dst.file_name().unwrap());
+    let filename = Path::new(filename);
     let encoder = GzBuilder::new().filename(try!(util::path2bytes(filename)))
                                   .write(tmpfile, Compression::Best);
 
@@ -125,6 +154,7 @@ fn tar(pkg: &Package, src: &PathSource, config: &Config,
     for file in try!(src.list_files(pkg)).iter() {
         if &**file == dst { continue }
         let relative = util::without_prefix(&file, &root).unwrap();
+        try!(check_filename(relative));
         let relative = try!(relative.to_str().chain_error(|| {
             human(format!("non-utf8 path in source directory: {}",
                           relative.display()))
@@ -135,7 +165,7 @@ fn tar(pkg: &Package, src: &PathSource, config: &Config,
         }));
         let path = format!("{}-{}{}{}", pkg.name(), pkg.version(),
                            path::MAIN_SEPARATOR, relative);
-        try!(ar.append(&path, &mut file).chain_error(|| {
+        try!(ar.append_file(&path, &mut file).chain_error(|| {
             internal(format!("could not archive source file `{}`", relative))
         }));
     }
@@ -161,17 +191,17 @@ fn run_verify(config: &Config, pkg: &Package, tar: &Path)
     // implicitly converted to registry-based dependencies, so we rewrite those
     // dependencies here.
     //
-    // We also be sure to point all paths at `dst` instead of the previous
-    // location that the package was original read from. In locking the
+    // We also make sure to point all paths at `dst` instead of the previous
+    // location that the package was originally read from. In locking the
     // `SourceId` we're telling it that the corresponding `PathSource` will be
-    // considered updated and won't actually read any packages.
+    // considered updated and we won't actually read any packages.
     let registry = try!(SourceId::for_central(config));
     let precise = Some("locked".to_string());
     let new_src = try!(SourceId::for_path(&dst)).with_precise(precise);
     let new_pkgid = try!(PackageId::new(pkg.name(), pkg.version(), &new_src));
     let new_summary = pkg.summary().clone().map_dependencies(|d| {
         if !d.source_id().is_path() { return d }
-        d.set_source_id(registry.clone())
+        d.clone_inner().set_source_id(registry.clone()).into_dependency()
     });
     let mut new_manifest = pkg.manifest().clone();
     new_manifest.set_summary(new_summary.override_id(new_pkgid));
@@ -184,13 +214,40 @@ fn run_verify(config: &Config, pkg: &Package, tar: &Path)
         target: None,
         features: &[],
         no_default_features: false,
-        spec: None,
+        spec: &[],
         filter: ops::CompileFilter::Everything,
         exec_engine: None,
         release: false,
         mode: ops::CompileMode::Build,
+        target_rustdoc_args: None,
         target_rustc_args: None,
     }));
 
+    Ok(())
+}
+
+// It can often be the case that files of a particular name on one platform
+// can't actually be created on another platform. For example files with colons
+// in the name are allowed on Unix but not on Windows.
+//
+// To help out in situations like this, issue about weird filenames when
+// packaging as a "heads up" that something may not work on other platforms.
+fn check_filename(file: &Path) -> CargoResult<()> {
+    let name = match file.file_name() {
+        Some(name) => name,
+        None => return Ok(()),
+    };
+    let name = match name.to_str() {
+        Some(name) => name,
+        None => {
+            bail!("path does not have a unicode filename which may not unpack \
+                   on all platforms: {}", file.display())
+        }
+    };
+    let bad_chars = ['/', '\\', '<', '>', ':', '"', '|', '?', '*'];
+    for c in bad_chars.iter().filter(|c| name.contains(**c)) {
+        bail!("cannot package a filename with a special character `{}`: {}",
+              c, file.display())
+    }
     Ok(())
 }

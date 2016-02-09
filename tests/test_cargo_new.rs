@@ -13,13 +13,13 @@ fn setup() {
 }
 
 fn my_process(s: &str) -> ProcessBuilder {
-    let mut p = process(s).unwrap();
+    let mut p = process(s);
     p.cwd(&paths::root()).env("HOME", &paths::home());
     return p;
 }
 
 fn cargo_process(s: &str) -> ProcessBuilder {
-    let mut p = process(&cargo_dir().join("cargo")).unwrap();
+    let mut p = process(&cargo_dir().join("cargo"));
     p.arg(s).cwd(&paths::root()).env("HOME", &paths::home());
     return p;
 }
@@ -87,7 +87,7 @@ test!(existing {
     fs::create_dir(&dst).unwrap();
     assert_that(cargo_process("new").arg("foo"),
                 execs().with_status(101)
-                       .with_stderr(format!("Destination `{}` already exists\n",
+                       .with_stderr(format!("destination `{}` already exists\n",
                                             dst.display())));
 });
 
@@ -169,6 +169,22 @@ test!(finds_author_username {
     assert!(contents.contains(r#"authors = ["foo"]"#));
 });
 
+test!(finds_author_email {
+    // Use a temp dir to make sure we don't pick up .cargo/config somewhere in
+    // the hierarchy
+    let td = TempDir::new("cargo").unwrap();
+    assert_that(cargo_process("new").arg("foo")
+                                    .env("USER", "bar")
+                                    .env("EMAIL", "baz")
+                                    .cwd(td.path().clone()),
+                execs().with_status(0));
+
+    let toml = td.path().join("foo/Cargo.toml");
+    let mut contents = String::new();
+    File::open(&toml).unwrap().read_to_string(&mut contents).unwrap();
+    assert!(contents.contains(r#"authors = ["bar <baz>"]"#));
+});
+
 test!(finds_author_git {
     my_process("git").args(&["config", "--global", "user.name", "bar"])
                      .exec().unwrap();
@@ -184,9 +200,9 @@ test!(finds_author_git {
 });
 
 test!(author_prefers_cargo {
-    my_process("git").args(&["config", "--global", "user.name", "bar"])
+    my_process("git").args(&["config", "--global", "user.name", "foo"])
                      .exec().unwrap();
-    my_process("git").args(&["config", "--global", "user.email", "baz"])
+    my_process("git").args(&["config", "--global", "user.email", "bar"])
                      .exec().unwrap();
     let root = paths::root();
     fs::create_dir(&root.join(".cargo")).unwrap();
@@ -239,6 +255,23 @@ test!(subpackage_no_git {
                  is_not(existing_file()));
     assert_that(&paths::root().join("foo/components/subcomponent/.gitignore"),
                  is_not(existing_file()));
+});
+
+test!(subpackage_git_with_vcs_arg {
+    assert_that(cargo_process("new").arg("foo").env("USER", "foo"),
+                execs().with_status(0));
+
+    let subpackage = paths::root().join("foo").join("components");
+    fs::create_dir(&subpackage).unwrap();
+    assert_that(cargo_process("new").arg("foo/components/subcomponent")
+                                    .arg("--vcs").arg("git")
+                                    .env("USER", "foo"),
+                execs().with_status(0));
+
+    assert_that(&paths::root().join("foo/components/subcomponent/.git"),
+                 existing_dir());
+    assert_that(&paths::root().join("foo/components/subcomponent/.gitignore"),
+                 existing_file());
 });
 
 test!(unknown_flags {

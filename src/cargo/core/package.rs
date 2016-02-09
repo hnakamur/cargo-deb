@@ -4,15 +4,15 @@ use std::slice;
 use std::path::{Path, PathBuf};
 use semver::Version;
 
-use core::{Dependency, Manifest, PackageId, Registry, Target, Summary, Metadata};
-use core::dependency::SerializedDependency;
-use util::{CargoResult, graph};
+use core::{Dependency, Manifest, PackageId, SourceId, Registry, Target, Summary, Metadata};
+use ops;
+use util::{CargoResult, graph, Config};
 use rustc_serialize::{Encoder,Encodable};
 use core::source::Source;
 
-/// Informations about a package that is available somewhere in the file system.
+/// Information about a package that is available somewhere in the file system.
 ///
-/// A package is a `Cargo.toml` file, plus all the files that are part of it.
+/// A package is a `Cargo.toml` file plus all the files that are part of it.
 // TODO: Is manifest_path a relic?
 #[derive(Clone, Debug)]
 pub struct Package {
@@ -23,10 +23,10 @@ pub struct Package {
 }
 
 #[derive(RustcEncodable)]
-struct SerializedPackage {
+struct SerializedPackage<'a> {
     name: String,
     version: String,
-    dependencies: Vec<SerializedDependency>,
+    dependencies: &'a [Dependency],
     targets: Vec<Target>,
     manifest_path: String,
 }
@@ -40,9 +40,7 @@ impl Encodable for Package {
         SerializedPackage {
             name: package_id.name().to_string(),
             version: package_id.version().to_string(),
-            dependencies: summary.dependencies().iter().map(|d| {
-                SerializedDependency::from_dependency(d)
-            }).collect(),
+            dependencies: summary.dependencies(),
             targets: manifest.targets().to_vec(),
             manifest_path: self.manifest_path.display().to_string()
         }.encode(s)
@@ -56,6 +54,14 @@ impl Package {
             manifest: manifest,
             manifest_path: manifest_path.to_path_buf(),
         }
+    }
+
+    pub fn for_path(manifest_path: &Path, config: &Config) -> CargoResult<Package> {
+        let path = manifest_path.parent().unwrap();
+        let source_id = try!(SourceId::for_path(path));
+        let (pkg, _) = try!(ops::read_package(&manifest_path, &source_id,
+                                              config));
+        Ok(pkg)
     }
 
     pub fn dependencies(&self) -> &[Dependency] { self.manifest.dependencies() }

@@ -43,14 +43,17 @@ pub fn read_packages(path: &Path, source_id: &SourceId, config: &Config)
     try!(walk(path, &mut |dir| {
         trace!("looking for child package: {}", dir.display());
 
-        // Don't recurse into git databases
-        if dir.file_name().and_then(|s| s.to_str()) == Some(".git") {
-            return Ok(false)
-        }
+        // Don't recurse into hidden/dot directories unless we're at the toplevel
+        if dir != path {
+            let name = dir.file_name().and_then(|s| s.to_str());
+            if name.map(|s| s.starts_with(".")) == Some(true) {
+                return Ok(false)
+            }
 
-        // Don't automatically discover packages across git submodules
-        if dir != path && fs::metadata(&dir.join(".git")).is_ok() {
-            return Ok(false)
+            // Don't automatically discover packages across git submodules
+            if fs::metadata(&dir.join(".git")).is_ok() {
+                return Ok(false)
+            }
         }
 
         // Don't ever look at target directories
@@ -112,7 +115,13 @@ fn read_nested_packages(path: &Path,
     let manifest = try!(find_project_manifest_exact(path, "Cargo.toml"));
 
     let (pkg, nested) = try!(read_package(&manifest, source_id, config));
-    all_packages.insert(pkg.package_id().clone(), pkg);
+    let pkg_id = pkg.package_id().clone();
+    if !all_packages.contains_key(&pkg_id) {
+        all_packages.insert(pkg_id, pkg);
+    } else {
+        info!("skipping nested package `{}` found at `{}`",
+              pkg.name(), path.to_string_lossy());
+    }
 
     // Registry sources are not allowed to have `path=` dependencies because
     // they're all translated to actual registry dependencies.

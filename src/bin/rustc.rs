@@ -2,7 +2,7 @@ use std::env;
 
 use cargo::ops::CompileOptions;
 use cargo::ops;
-use cargo::util::important_paths::{find_root_manifest_for_cwd};
+use cargo::util::important_paths::{find_root_manifest_for_wd};
 use cargo::util::{CliResult, CliError, Config};
 
 #[derive(RustcDecodable)]
@@ -15,6 +15,8 @@ struct Options {
     flag_target: Option<String>,
     flag_manifest_path: Option<String>,
     flag_verbose: bool,
+    flag_quiet: bool,
+    flag_color: Option<String>,
     flag_release: bool,
     flag_lib: bool,
     flag_bin: Vec<String>,
@@ -36,14 +38,16 @@ Options:
     --lib                    Build only this package's library
     --bin NAME               Build only the specified binary
     --example NAME           Build only the specified example
-    --test NAME              Build only the specified test
-    --bench NAME             Build only the specified benchmark
+    --test NAME              Build only the specified test target
+    --bench NAME             Build only the specified benchmark target
     --release                Build artifacts in release mode, with optimizations
     --features FEATURES      Features to compile for the package
     --no-default-features    Do not compile default features for the package
     --target TRIPLE          Target triple which compiles will be for
-    --manifest-path PATH     Path to the manifest to fetch depednencies for
+    --manifest-path PATH     Path to the manifest to fetch dependencies for
     -v, --verbose            Use verbose output
+    -q, --quiet              No output printed to stdout
+    --color WHEN             Coloring: auto, always, never
 
 The specified target for the current package (or package specified by SPEC if
 provided) will be compiled along with all of its dependencies. The specified
@@ -60,9 +64,11 @@ must be used to select which target is compiled.
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     debug!("executing; cmd=cargo-rustc; args={:?}",
            env::args().collect::<Vec<_>>());
-    config.shell().set_verbose(options.flag_verbose);
+    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
+    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
 
-    let root = try!(find_root_manifest_for_cwd(options.flag_manifest_path));
+    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path,
+                                              config.cwd()));
 
     let opts = CompileOptions {
         config: config,
@@ -70,7 +76,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         target: options.flag_target.as_ref().map(|t| &t[..]),
         features: &options.flag_features,
         no_default_features: options.flag_no_default_features,
-        spec: options.flag_package.as_ref().map(|s| &s[..]),
+        spec: &options.flag_package.map_or(Vec::new(), |s| vec![s]),
         exec_engine: None,
         mode: ops::CompileMode::Build,
         release: options.flag_release,
@@ -79,6 +85,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
                                         &options.flag_test,
                                         &options.flag_example,
                                         &options.flag_bench),
+        target_rustdoc_args: None,
         target_rustc_args: options.arg_opts.as_ref().map(|a| &a[..]),
     };
 
@@ -86,5 +93,4 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         CliError::from_boxed(err, 101)
     })
 }
-
 

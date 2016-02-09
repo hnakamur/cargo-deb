@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs::{self, File};
+use std::fs;
 use std::io::prelude::*;
 use std::iter::repeat;
 use std::path::{Path, PathBuf};
@@ -15,11 +15,12 @@ use core::{Package, SourceId};
 use core::dependency::Kind;
 use core::manifest::ManifestMetadata;
 use ops;
-use sources::{PathSource, RegistrySource};
+use sources::{RegistrySource};
 use util::config;
+use util::paths;
 use util::{CargoResult, human, ChainError, ToUrl};
 use util::config::{Config, ConfigValue, Location};
-use util::important_paths::find_root_manifest_for_cwd;
+use util::important_paths::find_root_manifest_for_wd;
 
 pub struct RegistryConfig {
     pub index: Option<String>,
@@ -31,10 +32,7 @@ pub fn publish(manifest_path: &Path,
                token: Option<String>,
                index: Option<String>,
                verify: bool) -> CargoResult<()> {
-    let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                            config));
-    try!(src.update());
-    let pkg = try!(src.root_package());
+    let pkg = try!(Package::for_path(&manifest_path, config));
 
     let (mut registry, reg_id) = try!(registry(config, token, index));
     try!(verify_dependencies(&pkg, &reg_id));
@@ -56,17 +54,14 @@ fn verify_dependencies(pkg: &Package, registry_src: &SourceId)
     for dep in pkg.dependencies().iter() {
         if dep.source_id().is_path() {
             if dep.specified_req().is_none() {
-                return Err(human(format!("all path dependencies must have \
-                                          a version specified when \
-                                          publishing.\n\
-                                          dependency `{}` does not specify \
-                                          a version", dep.name())))
+                bail!("all path dependencies must have a version specified \
+                       when publishing.\ndependency `{}` does not specify \
+                       a version", dep.name())
             }
         } else if dep.source_id() != registry_src {
-            return Err(human(format!("all dependencies must come from the \
-                                      same source.\ndependency `{}` comes \
-                                      from {} instead", dep.name(),
-                                     dep.source_id())))
+            bail!("all dependencies must come from the same source.\n\
+                   dependency `{}` comes from {} instead",
+                  dep.name(), dep.source_id())
         }
     }
     Ok(())
@@ -95,23 +90,13 @@ fn transmit(pkg: &Package, tarball: &Path, registry: &mut Registry)
         ref keywords, ref readme, ref repository, ref license, ref license_file,
     } = *manifest.metadata();
     let readme = match *readme {
-        Some(ref readme) => {
-            let path = pkg.root().join(readme);
-            let mut contents = String::new();
-            try!(File::open(&path).and_then(|mut f| {
-                f.read_to_string(&mut contents)
-            }).chain_error(|| {
-                human("failed to read the specified README")
-            }));
-            Some(contents)
-        }
+        Some(ref readme) => Some(try!(paths::read(&pkg.root().join(readme)))),
         None => None,
     };
     match *license_file {
         Some(ref file) => {
             if fs::metadata(&pkg.root().join(file)).is_err() {
-                return Err(human(format!("the license file `{}` does not exist",
-                                         file)))
+                bail!("the license file `{}` does not exist", file)
             }
         }
         None => {}
@@ -156,7 +141,7 @@ pub fn registry(config: &Config,
     let api_host = {
         let mut src = RegistrySource::new(&sid, config);
         try!(src.update().chain_error(|| {
-            human(format!("Failed to update registry {}", index))
+            human(format!("failed to update registry {}", index))
         }));
         (try!(src.config())).api
     };
@@ -263,11 +248,8 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
     let name = match opts.krate {
         Some(ref name) => name.clone(),
         None => {
-            let manifest_path = try!(find_root_manifest_for_cwd(None));
-            let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                                    config));
-            try!(src.update());
-            let pkg = try!(src.root_package());
+            let manifest_path = try!(find_root_manifest_for_wd(None, config.cwd()));
+            let pkg = try!(Package::for_path(&manifest_path, config));
             pkg.name().to_string()
         }
     };
@@ -278,10 +260,10 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
     match opts.to_add {
         Some(ref v) => {
             let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            try!(config.shell().status("Owner", format!("adding `{:#?}` to `{}`",
+            try!(config.shell().status("Owner", format!("adding {:?} to crate {}",
                                                         v, name)));
             try!(registry.add_owners(&name, &v).map_err(|e| {
-                human(format!("failed to add owners: {}", e))
+                human(format!("failed to add owners to crate {}: {}", name, e))
             }));
         }
         None => {}
@@ -290,10 +272,10 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
     match opts.to_remove {
         Some(ref v) => {
             let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            try!(config.shell().status("Owner", format!("removing `{:?}` from `{}`",
+            try!(config.shell().status("Owner", format!("removing {:?} from crate {}",
                                                         v, name)));
             try!(registry.remove_owners(&name, &v).map_err(|e| {
-                human(format!("failed to add owners: {}", e))
+                human(format!("failed to remove owners from crate {}: {}", name, e))
             }));
         }
         None => {}
@@ -301,7 +283,7 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
 
     if opts.list {
         let owners = try!(registry.list_owners(&name).map_err(|e| {
-            human(format!("failed to list owners: {}", e))
+            human(format!("failed to list owners of crate {}: {}", name, e))
         }));
         for owner in owners.iter() {
             print!("{}", owner.login);
@@ -326,17 +308,14 @@ pub fn yank(config: &Config,
     let name = match krate {
         Some(name) => name,
         None => {
-            let manifest_path = try!(find_root_manifest_for_cwd(None));
-            let mut src = try!(PathSource::for_path(manifest_path.parent().unwrap(),
-                                                    config));
-            try!(src.update());
-            let pkg = try!(src.root_package());
+            let manifest_path = try!(find_root_manifest_for_wd(None, config.cwd()));
+            let pkg = try!(Package::for_path(&manifest_path, config));
             pkg.name().to_string()
         }
     };
     let version = match version {
         Some(v) => v,
-        None => return Err(human("a version must be specified to yank"))
+        None => bail!("a version must be specified to yank")
     };
 
     let (mut registry, _) = try!(registry(config, token, index));

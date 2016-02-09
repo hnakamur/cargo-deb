@@ -33,7 +33,7 @@ test!(cargo_bench_simple {
     assert_that(p.cargo_process("build"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("hello\n"));
 
     assert_that(p.cargo("bench"),
@@ -154,6 +154,7 @@ test!(many_similar_names {
 
 test!(cargo_bench_failing_test {
     if !::is_nightly() { return }
+    if !::can_panic() { return }
 
     let p = project("foo")
         .file("Cargo.toml", &basic_bin_manifest("foo"))
@@ -176,7 +177,7 @@ test!(cargo_bench_failing_test {
     assert_that(p.cargo_process("build"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("hello\n"));
 
     assert_that(p.cargo("bench"),
@@ -191,7 +192,7 @@ test bench_hello ... ",
 thread '<main>' panicked at 'assertion failed: \
     `(left == right)` (left: \
     `\"hello\"`, right: `\"nope\"`)', src[..]foo.rs:14
-
+[..]
 ")
               .with_status(101));
 });
@@ -858,10 +859,9 @@ test!(bench_with_examples {
                 execs().with_status(0)
                        .with_stdout(&format!("\
 {compiling} testbench v6.6.6 ({url})
-{running} `rustc src[..]lib.rs --crate-name testbench --crate-type lib [..]`
-{running} `rustc src[..]lib.rs --crate-name testbench --crate-type lib [..]`
-{running} `rustc benches[..]testb1.rs --crate-name testb1 --crate-type bin \
-        [..] --test [..]`
+{running} `rustc [..]`
+{running} `rustc [..]`
+{running} `rustc [..]`
 {running} `{dir}[..]target[..]release[..]testb1-[..] --bench`
 
 running 1 test
@@ -920,4 +920,89 @@ test foo ... ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
 
 ", compiling = COMPILING, running = RUNNING)));
+});
+
+test!(test_bench_multiple_packages {
+    if !::is_nightly() { return }
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            authors = []
+            version = "0.1.0"
+
+            [dependencies.bar]
+            path = "../bar"
+
+            [dependencies.baz]
+            path = "../baz"
+        "#)
+        .file("src/lib.rs", "");
+
+    let bar = project("bar")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "bar"
+            authors = []
+            version = "0.1.0"
+
+            [[bench]]
+            name = "bbar"
+            test = true
+        "#)
+        .file("src/lib.rs", "")
+        .file("benches/bbar.rs", r#"
+            #![feature(test)]
+            extern crate test;
+
+            use test::Bencher;
+
+            #[bench]
+            fn bench_bar(_b: &mut Bencher) {}
+        "#);
+    bar.build();
+
+    let baz = project("baz")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "baz"
+            authors = []
+            version = "0.1.0"
+
+            [[bench]]
+            name = "bbaz"
+            test = true
+        "#)
+        .file("src/lib.rs", "")
+        .file("benches/bbaz.rs", r#"
+            #![feature(test)]
+            extern crate test;
+
+            use test::Bencher;
+
+            #[bench]
+            fn bench_baz(_b: &mut Bencher) {}
+        "#);
+    baz.build();
+
+
+    assert_that(p.cargo_process("bench").arg("-p").arg("bar").arg("-p").arg("baz"),
+                execs().with_status(0)
+                       .with_stdout_contains(&format!("\
+{running} target[..]release[..]bbaz-[..]
+
+running 1 test
+test bench_baz ... bench:           0 ns/iter (+/- 0)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 1 measured
+", running = RUNNING))
+                       .with_stdout_contains(&format!("\
+{running} target[..]release[..]bbar-[..]
+
+running 1 test
+test bench_bar ... bench:           0 ns/iter (+/- 0)
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 1 measured
+", running = RUNNING)));
 });

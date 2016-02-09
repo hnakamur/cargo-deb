@@ -6,8 +6,7 @@ use support::{project, execs, main_file};
 use support::{COMPILING, RUNNING};
 use support::paths::{self, CargoPathExt};
 use hamcrest::{assert_that, existing_file};
-use cargo;
-use cargo::util::{process};
+use cargo::util::process;
 
 fn setup() {
 }
@@ -83,7 +82,7 @@ test!(cargo_compile_with_nested_deps_shorthand {
 
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(cargo::util::process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("test passed\n").with_status(0));
 
     println!("cleaning");
@@ -238,7 +237,7 @@ test!(cargo_compile_with_transitive_dev_deps {
 
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(cargo::util::process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("zoidberg\n"));
 });
 
@@ -513,8 +512,12 @@ test!(error_message_for_missing_manifest {
     assert_that(p.cargo_process("build"),
                 execs()
                 .with_status(101)
-                .with_stderr(&format!("Could not find `Cargo.toml` in `{}`\n",
-                                      p.root().join("src").join("bar").display())));
+                .with_stderr(&format!("\
+Unable to update file://[..]
+
+Caused by:
+  Could not find `Cargo.toml` in `{}`
+", p.root().join("src").join("bar").display())));
 
 });
 
@@ -683,7 +686,7 @@ test!(path_dep_build_cmd {
 
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(cargo::util::process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("0\n"));
 
     // Touching bar.rs.in should cause the `build` command to run again.
@@ -698,7 +701,7 @@ test!(path_dep_build_cmd {
                                     COMPILING, p.url(),
                                     COMPILING, p.url())));
 
-    assert_that(cargo::util::process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("1\n"));
 });
 

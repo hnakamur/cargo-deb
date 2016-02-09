@@ -17,7 +17,6 @@ body {
   -webkit-align-items: center;
           align-items: center;
   font-family: sans-serif;
-  overflow-y: scroll;
 }
 
 a { color: #00ac5b; text-decoration: none; }
@@ -283,4 +282,8 @@ ul.dropdown.open {
 .dropdown-container {
     display: inline-block;
     position: relative;
+}
+
+p > img {
+    max-width: 100%;
 }

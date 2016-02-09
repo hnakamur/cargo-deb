@@ -1,11 +1,11 @@
-use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::thread;
 
 use support::{project, execs};
-use support::{COMPILING, RUNNING, DOCTEST, FRESH};
+use support::{COMPILING, RUNNING, DOCTEST, FRESH, DOCUMENTING};
 use support::paths::CargoPathExt;
-use hamcrest::{assert_that};
+use hamcrest::{assert_that, existing_file, existing_dir};
 
 fn setup() {
 }
@@ -267,8 +267,10 @@ test!(overrides_and_links {
         .file("build.rs", r#"
             use std::env;
             fn main() {
-                assert_eq!(env::var("DEP_FOO_FOO").unwrap(), "bar");
-                assert_eq!(env::var("DEP_FOO_BAR").unwrap(), "baz");
+                assert_eq!(env::var("DEP_FOO_FOO").ok().expect("FOO missing"),
+                           "bar");
+                assert_eq!(env::var("DEP_FOO_BAR").ok().expect("BAR missing"),
+                           "baz");
             }
         "#)
         .file(".cargo/config", &format!(r#"
@@ -361,17 +363,7 @@ test!(links_passes_env_vars {
         "#);
 
     assert_that(p.cargo_process("build").arg("-v"),
-                execs().with_status(0)
-                       .with_stdout(&format!("\
-{compiling} [..] v0.5.0 (file://[..])
-{running} `rustc [..]build.rs [..]`
-{compiling} [..] v0.5.0 (file://[..])
-{running} `rustc [..]build.rs [..]`
-{running} `[..]`
-{running} `[..]`
-{running} `[..]`
-{running} `rustc [..] --crate-name foo [..]`
-", compiling = COMPILING, running = RUNNING)));
+                execs().with_status(0));
 });
 
 test!(only_rerun_build_script {
@@ -419,6 +411,7 @@ test!(rebuild_continues_to_pass_env_vars {
             fn main() {
                 println!("cargo:foo=bar");
                 println!("cargo:bar=baz");
+                std::thread::sleep_ms(500);
             }
         "#);
     a.build();
@@ -504,9 +497,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured
     assert_that(p.cargo("doc").arg("-v"),
                 execs().with_status(0)
                        .with_stdout(&format!("\
-{compiling} foo v0.5.0 (file://[..])
+{documenting} foo v0.5.0 (file://[..])
 {running} `rustdoc [..]`
-", compiling = COMPILING, running = RUNNING)));
+", documenting = DOCUMENTING, running = RUNNING)));
 
     File::create(&p.root().join("src/main.rs")).unwrap()
          .write_all(b"fn main() {}").unwrap();
@@ -565,12 +558,7 @@ test!(propagation_of_l_flags {
 
     assert_that(p.cargo_process("build").arg("-v").arg("-j1"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-[..]
-[..]
-[..]
-[..]
-{running} `[..]a-[..]build-script-build[..]`
+                       .with_stdout_contains(&format!("\
 {running} `rustc [..] --crate-name a [..]-L bar[..]-L foo[..]`
 {compiling} foo v0.5.0 (file://[..])
 {running} `rustc [..] --crate-name foo [..] -L bar -L foo`
@@ -623,12 +611,7 @@ test!(propagation_of_l_flags_new {
 
     assert_that(p.cargo_process("build").arg("-v").arg("-j1"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-[..]
-[..]
-[..]
-[..]
-{running} `[..]a-[..]build-script-build[..]`
+                       .with_stdout_contains(&format!("\
 {running} `rustc [..] --crate-name a [..]-L bar[..]-L foo[..]`
 {compiling} foo v0.5.0 (file://[..])
 {running} `rustc [..] --crate-name foo [..] -L bar -L foo`
@@ -699,7 +682,7 @@ test!(build_deps_not_for_normal {
     assert_that(p.cargo_process("build").arg("-v").arg("--target").arg(&target),
                 execs().with_status(101)
                        .with_stderr("\
-[..]lib.rs[..] error: can't find crate for `aaaaa`
+[..]lib.rs[..] error: can't find crate for `aaaaa`[..]
 [..]lib.rs[..] extern crate aaaaa;
 [..]           ^~~~~~~~~~~~~~~~~~~
 error: aborting due to previous error
@@ -761,7 +744,7 @@ test!(build_cmd_with_a_build_cmd {
     -L [..]target[..]deps -L [..]target[..]deps`
 {compiling} foo v0.5.0 (file://[..])
 {running} `rustc build.rs --crate-name build_script_build --crate-type bin \
-    -C prefer-dynamic -g \
+    -g \
     --out-dir [..]build[..]foo-[..] --emit=dep-info,link \
     -L [..]target[..]debug -L [..]target[..]deps \
     --extern a=[..]liba-[..].rlib`
@@ -991,7 +974,7 @@ test!(shared_dep_with_a_build_script {
             path = "../b"
         "#)
         .file("b/src/lib.rs", "");
-    assert_that(p.cargo_process("build"),
+    assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0));
 });
 
@@ -1109,6 +1092,7 @@ test!(build_script_with_dynamic_native_dependency {
             [lib]
             name = "builder"
             crate-type = ["dylib"]
+            plugin = true
         "#)
         .file("src/lib.rs", r#"
             #[no_mangle]
@@ -1116,15 +1100,6 @@ test!(build_script_with_dynamic_native_dependency {
         "#);
     assert_that(build.cargo_process("build"),
                 execs().with_status(0));
-    let src = build.root().join("target/debug");
-    let lib = fs::read_dir(&src).unwrap().map(|s| s.unwrap().path()).find(|lib| {
-        let lib = lib.file_name().unwrap().to_str().unwrap();
-        lib.starts_with(env::consts::DLL_PREFIX) &&
-            lib.ends_with(env::consts::DLL_SUFFIX)
-    }).unwrap();
-    let libname = lib.file_name().unwrap().to_str().unwrap();
-    let libname = &libname[env::consts::DLL_PREFIX.len()..
-                           libname.len() - env::consts::DLL_SUFFIX.len()];
 
     let foo = project("foo")
         .file("Cargo.toml", r#"
@@ -1155,19 +1130,19 @@ test!(build_script_with_dynamic_native_dependency {
 
             fn main() {
                 let src = PathBuf::from(env::var("SRC").unwrap());
-                println!("cargo:rustc-flags=-L {}", src.parent().unwrap()
-                                                       .display());
+                println!("cargo:rustc-link-search={}/target/debug",
+                         src.display());
             }
         "#)
-        .file("bar/src/lib.rs", &format!(r#"
-            pub fn bar() {{
-                #[link(name = "{}")]
-                extern {{ fn foo(); }}
-                unsafe {{ foo() }}
-            }}
-        "#, libname));
+        .file("bar/src/lib.rs", r#"
+            pub fn bar() {
+                #[link(name = "builder")]
+                extern { fn foo(); }
+                unsafe { foo() }
+            }
+        "#);
 
-    assert_that(foo.cargo_process("build").env("SRC", &lib),
+    assert_that(foo.cargo_process("build").env("SRC", build.root()),
                 execs().with_status(0));
 });
 
@@ -1267,7 +1242,7 @@ test!(cfg_feedback {
                 println!("cargo:rustc-cfg=foo");
             }
         "#);
-    assert_that(build.cargo_process("build"),
+    assert_that(build.cargo_process("build").arg("-v"),
                 execs().with_status(0));
 });
 
@@ -1295,6 +1270,237 @@ test!(cfg_override {
 
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0));
+});
+
+test!(cfg_test {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            build = "build.rs"
+        "#)
+        .file("build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-cfg=foo");
+            }
+        "#)
+        .file("src/lib.rs", r#"
+            ///
+            /// ```
+            /// extern crate foo;
+            ///
+            /// fn main() {
+            ///     foo::foo()
+            /// }
+            /// ```
+            ///
+            #[cfg(foo)]
+            pub fn foo() {}
+
+            #[cfg(foo)]
+            #[test]
+            fn test_foo() {
+                foo()
+            }
+        "#)
+        .file("tests/test.rs", r#"
+            #[cfg(foo)]
+            #[test]
+            fn test_bar() {}
+        "#);
+    assert_that(p.cargo_process("test").arg("-v"),
+                execs().with_stdout(format!("\
+{compiling} foo v0.0.1 ({dir})
+{running} [..] build.rs [..]
+{running} [..]build-script-build[..]
+{running} [..] --cfg foo[..]
+{running} [..] --cfg foo[..]
+{running} [..] --cfg foo[..]
+{running} [..]foo-[..]
+
+running 1 test
+test test_foo ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+{running} [..]test-[..]
+
+running 1 test
+test test_bar ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+{doctest} foo
+{running} [..] --cfg foo[..]
+
+running 1 test
+test foo_0 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+",
+compiling = COMPILING, dir = p.url(), running = RUNNING, doctest = DOCTEST)));
+});
+
+test!(cfg_doc {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            build = "build.rs"
+
+            [dependencies.bar]
+            path = "bar"
+        "#)
+        .file("build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-cfg=foo");
+            }
+        "#)
+        .file("src/lib.rs", r#"
+            #[cfg(foo)]
+            pub fn foo() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.0.1"
+            authors = []
+            build = "build.rs"
+        "#)
+        .file("bar/build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-cfg=bar");
+            }
+        "#)
+        .file("bar/src/lib.rs", r#"
+            #[cfg(bar)]
+            pub fn bar() {}
+        "#);
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+    assert_that(&p.root().join("target/doc"), existing_dir());
+    assert_that(&p.root().join("target/doc/foo/fn.foo.html"), existing_file());
+    assert_that(&p.root().join("target/doc/bar/fn.bar.html"), existing_file());
+});
+
+test!(cfg_override_test {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            build = "build.rs"
+            links = "a"
+        "#)
+        .file("build.rs", "")
+        .file(".cargo/config", &format!(r#"
+            [target.{}.a]
+            rustc-cfg = ["foo"]
+        "#, ::rustc_host()))
+        .file("src/lib.rs", r#"
+            ///
+            /// ```
+            /// extern crate foo;
+            ///
+            /// fn main() {
+            ///     foo::foo()
+            /// }
+            /// ```
+            ///
+            #[cfg(foo)]
+            pub fn foo() {}
+
+            #[cfg(foo)]
+            #[test]
+            fn test_foo() {
+                foo()
+            }
+        "#)
+        .file("tests/test.rs", r#"
+            #[cfg(foo)]
+            #[test]
+            fn test_bar() {}
+        "#);
+    assert_that(p.cargo_process("test").arg("-v"),
+                execs().with_stdout(format!("\
+{compiling} foo v0.0.1 ({dir})
+{running} `[..]`
+{running} `[..]`
+{running} `[..]`
+{running} [..]foo-[..]
+
+running 1 test
+test test_foo ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+{running} [..]test-[..]
+
+running 1 test
+test test_bar ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+{doctest} foo
+{running} [..] --cfg foo[..]
+
+running 1 test
+test foo_0 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+",
+compiling = COMPILING, dir = p.url(), running = RUNNING, doctest = DOCTEST)));
+});
+
+test!(cfg_override_doc {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            build = "build.rs"
+            links = "a"
+
+            [dependencies.bar]
+            path = "bar"
+        "#)
+        .file(".cargo/config", &format!(r#"
+            [target.{target}.a]
+            rustc-cfg = ["foo"]
+            [target.{target}.b]
+            rustc-cfg = ["bar"]
+        "#, target = ::rustc_host()))
+        .file("build.rs", "")
+        .file("src/lib.rs", r#"
+            #[cfg(foo)]
+            pub fn foo() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.0.1"
+            authors = []
+            build = "build.rs"
+            links = "b"
+        "#)
+        .file("bar/build.rs", "")
+        .file("bar/src/lib.rs", r#"
+            #[cfg(bar)]
+            pub fn bar() {}
+        "#) ;
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+    assert_that(&p.root().join("target/doc"), existing_dir());
+    assert_that(&p.root().join("target/doc/foo/fn.foo.html"), existing_file());
+    assert_that(&p.root().join("target/doc/bar/fn.bar.html"), existing_file());
 });
 
 test!(flags_go_into_tests {
@@ -1354,9 +1560,9 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured
 
     assert_that(p.cargo("test").arg("-v").arg("-pb").arg("--lib"),
                 execs().with_status(0).with_stdout(&format!("\
+{fresh} a v0.5.0 ([..]
 {compiling} b v0.5.0 ([..]
 {running} `rustc b[..]src[..]lib.rs [..] -L test[..]`
-{fresh} a v0.5.0 ([..]
 {running} `[..]b-[..]`
 
 running 0 tests
@@ -1365,3 +1571,221 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured
 
 ", compiling = COMPILING, running = RUNNING, fresh = FRESH)));
 });
+
+test!(diamond_passes_args_only_once {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+
+            [dependencies]
+            a = { path = "a" }
+            b = { path = "b" }
+        "#)
+        .file("src/lib.rs", "")
+        .file("tests/foo.rs", "")
+        .file("a/Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+            [dependencies]
+            b = { path = "../b" }
+            c = { path = "../c" }
+        "#)
+        .file("a/src/lib.rs", "")
+        .file("b/Cargo.toml", r#"
+            [project]
+            name = "b"
+            version = "0.5.0"
+            authors = []
+            [dependencies]
+            c = { path = "../c" }
+        "#)
+        .file("b/src/lib.rs", "")
+        .file("c/Cargo.toml", r#"
+            [project]
+            name = "c"
+            version = "0.5.0"
+            authors = []
+            build = "build.rs"
+        "#)
+        .file("c/build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-link-search=native=test");
+            }
+        "#)
+        .file("c/src/lib.rs", "");
+
+    assert_that(p.cargo_process("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} c v0.5.0 ([..]
+{running} `rustc [..]`
+{running} `[..]`
+{running} `rustc [..]`
+{compiling} b v0.5.0 ([..]
+{running} `rustc [..]`
+{compiling} a v0.5.0 ([..]
+{running} `rustc [..]`
+{compiling} foo v0.5.0 ([..]
+{running} `[..]rlib -L native=test`
+", compiling = COMPILING, running = RUNNING)));
+});
+
+test!(adding_an_override_invalidates {
+    let target = ::rustc_host();
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+            links = "foo"
+            build = "build.rs"
+        "#)
+        .file("src/lib.rs", "")
+        .file(".cargo/config", "")
+        .file("build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-link-search=native=foo");
+            }
+        "#);
+
+    assert_that(p.cargo_process("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} foo v0.5.0 ([..]
+{running} `rustc [..]`
+{running} `[..]`
+{running} `rustc [..] -L native=foo`
+", compiling = COMPILING, running = RUNNING)));
+
+    File::create(p.root().join(".cargo/config")).unwrap().write_all(format!("
+        [target.{}.foo]
+        rustc-link-search = [\"native=bar\"]
+    ", target).as_bytes()).unwrap();
+
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} foo v0.5.0 ([..]
+{running} `rustc [..] -L native=bar`
+", compiling = COMPILING, running = RUNNING)));
+});
+
+test!(changing_an_override_invalidates {
+    let target = ::rustc_host();
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+            links = "foo"
+            build = "build.rs"
+        "#)
+        .file("src/lib.rs", "")
+        .file(".cargo/config", &format!("
+            [target.{}.foo]
+            rustc-link-search = [\"native=foo\"]
+        ", target))
+        .file("build.rs", "");
+
+    assert_that(p.cargo_process("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} foo v0.5.0 ([..]
+{running} `rustc [..] -L native=foo`
+", compiling = COMPILING, running = RUNNING)));
+
+    File::create(p.root().join(".cargo/config")).unwrap().write_all(format!("
+        [target.{}.foo]
+        rustc-link-search = [\"native=bar\"]
+    ", target).as_bytes()).unwrap();
+
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} foo v0.5.0 ([..]
+{running} `rustc [..] -L native=bar`
+", compiling = COMPILING, running = RUNNING)));
+});
+
+test!(rebuild_only_on_explicit_paths {
+    let p = project("a")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+            build = "build.rs"
+        "#)
+        .file("src/lib.rs", "")
+        .file("build.rs", r#"
+            fn main() {
+                println!("cargo:rerun-if-changed=foo");
+                println!("cargo:rerun-if-changed=bar");
+            }
+        "#);
+    p.build();
+
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0));
+
+    // files don't exist, so should always rerun if they don't exist
+    println!("run without");
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+
+    thread::sleep_ms(1000);
+    File::create(p.root().join("foo")).unwrap();
+    File::create(p.root().join("bar")).unwrap();
+
+    // now the exist, so run once, catch the mtime, then shouldn't run again
+    println!("run with");
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+
+    println!("run with2");
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{fresh} a v0.5.0 ([..])
+", fresh = FRESH)));
+
+    thread::sleep_ms(1000);
+
+    // random other files do not affect freshness
+    println!("run baz");
+    File::create(p.root().join("baz")).unwrap();
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{fresh} a v0.5.0 ([..])
+", fresh = FRESH)));
+
+    // but changing dependent files does
+    println!("run foo change");
+    File::create(p.root().join("foo")).unwrap();
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+
+    // .. as does deleting a file
+    println!("run foo delete");
+    fs::remove_file(p.root().join("bar")).unwrap();
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+});
+

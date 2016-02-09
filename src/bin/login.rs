@@ -11,6 +11,8 @@ struct Options {
     flag_host: Option<String>,
     arg_token: Option<String>,
     flag_verbose: bool,
+    flag_quiet: bool,
+    flag_color: Option<String>,
 }
 
 pub const USAGE: &'static str = "
@@ -20,14 +22,17 @@ Usage:
     cargo login [options] [<token>]
 
 Options:
-    -h, --help              Print this message
-    --host HOST             Host to set the token for
-    -v, --verbose           Use verbose output
+    -h, --help               Print this message
+    --host HOST              Host to set the token for
+    -v, --verbose            Use verbose output
+    -q, --quiet              No output printed to stdout
+    --color WHEN             Coloring: auto, always, never
 
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    config.shell().set_verbose(options.flag_verbose);
+    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
+    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
     let token = match options.arg_token.clone() {
         Some(token) => token,
         None => {

@@ -18,11 +18,14 @@ basic rules:
 * Before you reach 1.0.0, anything goes.
 * After 1.0.0, only make breaking changes when you increment the major
   version. In Rust, breaking changes include adding fields to structs or
-  variants to enums. Don't break the build.
-* After 1.0.0, don't add any new public API (no new `pub` anything) in
+  variants to enums. Don’t break the build.
+* After 1.0.0, don’t add any new public API (no new `pub` anything) in
   tiny versions. Always increment the minor version if you add any new
   `pub` structs, traits, fields, types, functions, methods or anything else.
 * Use version numbers with three numeric parts such as 1.0.0 rather than 1.0.
+
+For more on versions, see [this
+documentation](crates-io.html#using-cratesio-based-crates).
 
 ## The `build` Field (optional)
 
@@ -48,7 +51,7 @@ when to rebuild a package, and the globs in `include` specify files that are
 explicitly included.
 
 If a VCS is being used for a package, the `exclude` field will be seeded with
-the VCS's ignore settings (`.gitignore` for git for example).
+the VCS’ ignore settings (`.gitignore` for git for example).
 
 ```toml
 [package]
@@ -113,57 +116,80 @@ search ranking of a crate. It is highly discouraged to omit everything in a
 published crate.
 
 
-# The `[dependencies.*]` Sections
+# The `[dependencies]` Section
 
-You list dependencies using `[dependencies.<name>]`. For example, if you
-wanted to depend on both `hammer` and `color`:
+You list dependencies using keys inside of the `[dependencies]` section. For
+example, if you wanted to depend on `hammer`, `color`, and `geometry`:
 
 ```toml
 [package]
 # ...
 
-[dependencies.hammer]
-version = "0.5.0" # optional
-git = "https://github.com/wycats/hammer.rs"
-
-[dependencies.color]
-git = "https://github.com/bjz/color-rs"
+[dependencies]
+hammer = { version = "0.5.0", git = "https://github.com/wycats/hammer.rs" }
+color = { git = "https://github.com/bjz/color-rs" }
+geometry = { path = "crates/geometry" }
 ```
 
-You can specify the source of a dependency in one of two ways at the moment:
+You can specify the source of a dependency in a few ways:
 
-* `git = "<git-url>"`: A git repository with a `Cargo.toml` in its root. The
-  `rev`, `tag`, and `branch` options are also recognized to use something other
-  than the `master` branch.
+* `git = "<git-url>"`: A git repository with a `Cargo.toml` inside it (not
+  necessarily at the root). The `rev`, `tag`, and `branch` options are also
+  recognized to use something other than the `master` branch.
 * `path = "<relative-path>"`: A path relative to the current `Cargo.toml`
-  with a `Cargo.toml` in its root.
+  pointing to another directory with a `Cargo.toml` and an associated package.
+* If `path` and `git` are omitted, then a dependencies will come from crates.io
+  and use the `version` key to indicate the version requirement.
 
-Dependencies from crates.io are not declared with separate sections:
+Dependencies from crates.io can also use a shorthand where just the version
+requirement is specified:
 
 ```toml
 [dependencies]
 hammer = "0.5.0"
-color = "0.6.0"
+color = "> 0.6.0, < 0.8.0"
 ```
 
-The syntax of the requirement strings is described in the [crates.io guide](crates-io.html#using-crates.io-based-crates).
+The syntax of the requirement strings is described in the [crates.io
+guide](crates-io.html#using-cratesio-based-crates).
 
 Platform-specific dependencies take the same format, but are listed under the
 `target.$triple` section:
 
 ```toml
-[target.x86_64-unknown-linux-gnu.dependencies]
-openssl = "1.0.1"
-
 [target.x86_64-pc-windows-gnu.dependencies]
 winhttp = "0.4.0"
+
+[target.i686-unknown-linux-gnu.dependencies]
+openssl = "1.0.1"
+native = { path = "native/i686" }
+
+[target.x86_64-unknown-linux-gnu.dependencies]
+openssl = "1.0.1"
+native = { path = "native/x86_64" }
+```
+
+If you’re using a custom target specification, quote the full path and file
+name:
+
+```toml
+[target."x86_64/windows.json".dependencies]
+winhttp = "0.4.0"
+
+[target."i686/linux.json".dependencies]
+openssl = "1.0.1"
+native = { path = "native/i686" }
+
+[target."x86_64/linux.json".dependencies]
+openssl = "1.0.1"
+native = { path = "native/x86_64" }
 ```
 
 # The `[profile.*]` Sections
 
 Cargo supports custom configuration of how rustc is invoked through **profiles**
 at the top level. Any manifest may declare a profile, but only the **top level**
-project's profiles are actually read. All dependencies' profiles will be
+project’s profiles are actually read. All dependencies’ profiles will be
 overridden. This is done so the top-level project has control over how its
 dependencies are compiled.
 
@@ -223,8 +249,9 @@ codegen-units = 1
 
 Cargo supports **features** to allow expression of:
 
-* Optional dependencies, which enhance a package, but are not required
-* Clusters of optional dependencies, such as "postgres", that would include the
+* Conditional compilation options (usable through `cfg` attributes);
+* Optional dependencies, which enhance a package, but are not required;
+* Clusters of optional dependencies, such as “postgres”, that would include the
   `postgres` package, the `postgres-macros` package, and possibly other packages
   (such as development-time mocking libraries, debugging tools, etc.)
 
@@ -236,13 +263,17 @@ features. The format for specifying features is:
 name = "awesome"
 
 [features]
-# The "default" set of optional packages. Most people will
+# The “default” set of optional packages. Most people will
 # want to use these packages, but they are strictly optional.
 # Note that `session` is not a package but rather another
 # feature listed in this manifest.
 default = ["jquery", "uglifier", "session"]
 
-# The "secure-password" feature depends on the bcrypt package.
+# A feature with no dependencies is used mainly for conditional
+# compilation, like `#[cfg(feature = "go-faster")]`.
+go-faster = []
+
+# The “secure-password” feature depends on the bcrypt package.
 # This aliasing will allow people to talk about the feature in
 # a higher-level way and allow this package to add more
 # requirements to the feature in the future.
@@ -255,29 +286,18 @@ session = ["cookie/session"]
 
 [dependencies]
 # These packages are mandatory and form the core of this
-# package's distribution
+# package’s distribution
 cookie = "1.2.0"
 oauth = "1.1.0"
 route-recognizer = "=2.1.0"
 
 # A list of all of the optional dependencies, some of which
-# are included in the above "features". They can be opted
+# are included in the above “features”. They can be opted
 # into by apps.
-[dependencies.jquery]
-version = "1.0.2"
-optional = true
-
-[dependencies.uglifier]
-version = "1.5.3"
-optional = true
-
-[dependencies.bcrypt]
-version = "*"
-optional = true
-
-[dependencies.civet]
-version = "*"
-optional = true
+jquery = { version = "1.0.2", optional = true }
+uglifier = { version = "1.5.3", optional = true }
+bcrypt = { version = "*", optional = true }
+civet = { version = "*", optional = true }
 ```
 
 To use the package `awesome`:
@@ -285,11 +305,9 @@ To use the package `awesome`:
 ```toml
 [dependencies.awesome]
 version = "1.3.5"
+default-features = false # do not include the default features, and optionally
+                         # cherry-pick individual features
 features = ["secure-password", "civet"]
-
-# do not include the default features, and optionally
-# cherry-pick individual features
-default-features = false
 ```
 
 ## Rules
@@ -302,7 +320,7 @@ The usage of features is subject to a few rules:
 2. With the exception of the `default` feature, all features are opt-in. To opt
    out of the default feature, use `default-features = false` and cherry-pick
    individual features.
-3. Feature groups are not allowed to cyclicly depend on one another.
+3. Feature groups are not allowed to cyclically depend on one another.
 4. Dev-dependencies cannot be optional
 5. Features groups can only reference optional dependencies
 6. When a feature is selected, Cargo will call `rustc` with
@@ -331,7 +349,7 @@ Default features could be excluded using `--no-default-features`.
 
 ## Usage In Packages
 
-In most cases, the concept of "optional dependency" in a library is best
+In most cases, the concept of “optional dependency” in a library is best
 expressed as a separate package that the top-level application depends on.
 
 However, high-level packages, like Iron or Piston, may want the ability to
@@ -343,7 +361,7 @@ In some cases, packages may want to provide additional curation for **optional**
 dependencies:
 
 * Grouping a number of low-level optional dependencies together into a single
-  high-level "feature".
+  high-level “feature”.
 * Specifying packages that are recommended (or suggested) to be included by
   users of the package.
 * Including a feature (like `secure-password` in the motivating example) that
@@ -356,9 +374,9 @@ In almost all cases, it is an antipattern to use these features outside of
 high-level packages that are designed for curation. If a feature is optional, it
 can almost certainly be expressed as a separate package.
 
-# The `[dev-dependencies.*]` Sections
+# The `[dev-dependencies]` Section
 
-The format of this section is equivalent to `[dependencies.*]`. Dev-dependencies
+The format of this section is equivalent to `[dependencies]`. Dev-dependencies
 are not used when compiling a package for building, but are used for compiling
 tests and benchmarks.
 
@@ -405,19 +423,33 @@ your tests to protect them from bitrotting.
 
 When you run `cargo test`, Cargo will:
 
-* Compile your library's unit tests, which are in files reachable from
+* Compile and run your library’s unit tests, which are in files reachable from
   `lib.rs`. Any sections marked with `#[cfg(test)]` will be included.
-* Compile your library's integration tests, which are located in
-  `tests`. Files in `tests` load in your library by using `extern crate
-  <library-name>` like any other code that depends on it.
-* Compile your library's examples.
+* Compile and run your library’s documentation tests, which are embedded
+  inside of documentation blocks.
+* Compile and run your library’s [integration tests](#integration-tests).
+* Compile your library’s examples.
+
+## Integration tests
+
+Each file in `tests/*.rs` is an integration test. When you run `cargo test`,
+Cargo will compile each of these files as a separate crate. The crate can link
+to your library by using `extern crate <library-name>`, like any other code
+that depends on it.
+
+Cargo will not automatically compile files inside subdirectories of `tests`,
+but an integration test can import modules from these directories as usual.
+For example, if you want several integration tests to share some code, you can
+put the shared code in `tests/common/mod.rs` and then put `mod common;` in
+each of the test files.
 
 # Configuring a target
 
-All of the  `[[bin]]`, `[lib]`, `[[bench]]`, and `[[test]]` sections support
-similar configuration for specifying how a target should be built. The example
-below uses `[lib]`, but it also applies to all other sections as well. All
-values listed are the defaults for that option unless otherwise specified.
+All of the  `[[bin]]`, `[lib]`, `[[bench]]`, `[[test]]`, and `[[example]]`
+sections support similar configuration for specifying how a target should be
+built. The example below uses `[lib]`, but it also applies to all other
+sections as well. All values listed are the defaults for that option unless
+otherwise specified.
 
 ```toml
 [package]
@@ -446,7 +478,7 @@ bench = true
 doc = true
 
 # If the target is meant to be a compiler plugin, this field must be set to true
-# for cargo to correctly compile it and make it available for all dependencies.
+# for Cargo to correctly compile it and make it available for all dependencies.
 plugin = false
 
 # If set to false, `cargo test` will omit the --test flag to rustc, which stops
@@ -465,7 +497,7 @@ library to build by explicitly listing the library in your `Cargo.toml`:
 
 [lib]
 name = "..."
-# this could be "staticlib" as well
+# this could be “staticlib” as well
 crate-type = ["dylib"]
 ```
 

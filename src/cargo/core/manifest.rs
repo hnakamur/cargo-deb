@@ -1,15 +1,15 @@
 use std::default::Default;
+use std::fmt;
 use std::path::{PathBuf, Path};
 
 use semver::Version;
-use rustc_serialize::{Encoder,Encodable};
+use rustc_serialize::{Encoder, Encodable};
 
 use core::{Dependency, PackageId, Summary};
 use core::package_id::Metadata;
-use core::dependency::SerializedDependency;
 use util::{CargoResult, human};
 
-/// Contains all the informations about a package, as loaded from a Cargo.toml.
+/// Contains all the information about a package, as loaded from a Cargo.toml.
 #[derive(Clone, Debug)]
 pub struct Manifest {
     summary: Summary,
@@ -43,11 +43,11 @@ pub struct ManifestMetadata {
     pub documentation: Option<String>,  // url
 }
 
-#[derive(PartialEq,Clone,RustcEncodable)]
-pub struct SerializedManifest {
+#[derive(RustcEncodable)]
+struct SerializedManifest<'a> {
     name: String,
     version: String,
-    dependencies: Vec<SerializedDependency>,
+    dependencies: &'a [Dependency],
     targets: Vec<Target>,
 }
 
@@ -56,9 +56,7 @@ impl Encodable for Manifest {
         SerializedManifest {
             name: self.summary.name().to_string(),
             version: self.summary.version().to_string(),
-            dependencies: self.summary.dependencies().iter().map(|d| {
-                SerializedDependency::from_dependency(d)
-            }).collect(),
+            dependencies: self.summary.dependencies(),
             targets: self.targets.clone(),
         }.encode(s)
     }
@@ -79,7 +77,7 @@ impl LibKind {
             "rlib" => Ok(LibKind::Rlib),
             "dylib" => Ok(LibKind::Dylib),
             "staticlib" => Ok(LibKind::StaticLib),
-            _ => Err(human(format!("{} was not one of lib|rlib|dylib|staticlib",
+            _ => Err(human(format!("crate-type \"{}\" was not one of lib|rlib|dylib|staticlib",
                                    string)))
         }
     }
@@ -111,11 +109,13 @@ pub struct Profile {
     pub lto: bool,
     pub codegen_units: Option<u32>,    // None = use rustc default
     pub rustc_args: Option<Vec<String>>,
+    pub rustdoc_args: Option<Vec<String>>,
     pub debuginfo: bool,
     pub debug_assertions: bool,
     pub rpath: bool,
     pub test: bool,
     pub doc: bool,
+    pub run_custom_build: bool,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -125,9 +125,10 @@ pub struct Profiles {
     pub test: Profile,
     pub bench: Profile,
     pub doc: Profile,
+    pub custom_build: Profile,
 }
 
-/// Informations about a binary, a library, an example, etc. that is part of the
+/// Information about a binary, a library, an example, etc. that is part of the
 /// package.
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Target {
@@ -157,7 +158,7 @@ impl Encodable for Target {
             TargetKind::Lib(ref kinds) => {
                 kinds.iter().map(|k| k.crate_type()).collect()
             }
-            TargetKind::Bin => vec!("bin"),
+            TargetKind::Bin => vec!["bin"],
             TargetKind::Example => vec!["example"],
             TargetKind::Test => vec!["test"],
             TargetKind::CustomBuild => vec!["custom-build"],
@@ -368,7 +369,7 @@ impl Target {
             TargetKind::Bench |
             TargetKind::Test |
             TargetKind::Example |
-            TargetKind::Bin => vec!("bin"),
+            TargetKind::Bin => vec!["bin"],
         }
     }
 
@@ -402,6 +403,19 @@ impl Target {
     pub fn set_doc(&mut self, doc: bool) -> &mut Target {
         self.doc = doc;
         self
+    }
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.kind {
+            TargetKind::Lib(..) => write!(f, "Target(lib)"),
+            TargetKind::Bin => write!(f, "Target(bin: {})", self.name),
+            TargetKind::Test => write!(f, "Target(test: {})", self.name),
+            TargetKind::Bench => write!(f, "Target(bench: {})", self.name),
+            TargetKind::Example => write!(f, "Target(example: {})", self.name),
+            TargetKind::CustomBuild => write!(f, "Target(script)"),
+        }
     }
 }
 
@@ -442,6 +456,13 @@ impl Profile {
             ..Profile::default_dev()
         }
     }
+
+    pub fn default_custom_build() -> Profile {
+        Profile {
+            run_custom_build: true,
+            ..Profile::default_dev()
+        }
+    }
 }
 
 impl Default for Profile {
@@ -451,11 +472,28 @@ impl Default for Profile {
             lto: false,
             codegen_units: None,
             rustc_args: None,
+            rustdoc_args: None,
             debuginfo: false,
             debug_assertions: false,
             rpath: false,
             test: false,
             doc: false,
+            run_custom_build: false,
         }
+    }
+}
+
+impl fmt::Display for Profile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.test {
+            write!(f, "Profile(test)")
+        } else if self.doc {
+            write!(f, "Profile(doc)")
+        } else if self.run_custom_build {
+            write!(f, "Profile(run)")
+        } else {
+            write!(f, "Profile(build)")
+        }
+
     }
 }

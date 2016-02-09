@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 
 use rustc_serialize::{Encodable,Encoder};
 use toml;
+use core::shell::{Verbosity, ColorConfig};
 use core::{MultiShell, Package};
-use ops;
-use util::{CargoResult, ChainError, internal, human};
+use util::{CargoResult, ChainError, Rustc, internal, human, paths};
 
 use util::toml as cargo_toml;
 
@@ -22,37 +22,29 @@ use self::ConfigValue as CV;
 pub struct Config {
     home_path: PathBuf,
     shell: RefCell<MultiShell>,
-    rustc_version: String,
-    /// The current host and default target of rustc
-    rustc_host: String,
+    rustc_info: Rustc,
     values: RefCell<HashMap<String, ConfigValue>>,
     values_loaded: Cell<bool>,
     cwd: PathBuf,
     rustc: PathBuf,
     rustdoc: PathBuf,
-    target_dir: Option<PathBuf>,
+    target_dir: RefCell<Option<PathBuf>>,
 }
 
 impl Config {
-    pub fn new(shell: MultiShell) -> CargoResult<Config> {
-        let cwd = try!(env::current_dir().chain_error(|| {
-            human("couldn't get the current directory of the process")
-        }));
-
+    pub fn new(shell: MultiShell,
+               cwd: PathBuf,
+               homedir: PathBuf) -> CargoResult<Config> {
         let mut cfg = Config {
-            home_path: try!(homedir(cwd.as_path()).chain_error(|| {
-                human("Cargo couldn't find your home directory. \
-                      This probably means that $HOME was not set.")
-            })),
+            home_path: homedir,
             shell: RefCell::new(shell),
-            rustc_version: String::new(),
-            rustc_host: String::new(),
+            rustc_info: Rustc::blank(),
             cwd: cwd,
             values: RefCell::new(HashMap::new()),
             values_loaded: Cell::new(false),
             rustc: PathBuf::from("rustc"),
             rustdoc: PathBuf::from("rustdoc"),
-            target_dir: None,
+            target_dir: RefCell::new(None),
         };
 
         try!(cfg.scrape_tool_config());
@@ -60,6 +52,18 @@ impl Config {
         try!(cfg.scrape_target_dir_config());
 
         Ok(cfg)
+    }
+
+    pub fn default() -> CargoResult<Config> {
+        let shell = ::shell(Verbosity::Verbose, ColorConfig::Auto);
+        let cwd = try!(env::current_dir().chain_error(|| {
+            human("couldn't get the current directory of the process")
+        }));
+        let homedir = try!(homedir(&cwd).chain_error(|| {
+            human("Cargo couldn't find your home directory. \
+                  This probably means that $HOME was not set.")
+        }));
+        Config::new(shell, cwd, homedir)
     }
 
     pub fn home(&self) -> &Path { &self.home_path }
@@ -92,11 +96,7 @@ impl Config {
 
     pub fn rustdoc(&self) -> &Path { &self.rustdoc }
 
-    /// Return the output of `rustc -v verbose`
-    pub fn rustc_version(&self) -> &str { &self.rustc_version }
-
-    /// Return the host platform and default target of rustc
-    pub fn rustc_host(&self) -> &str { &self.rustc_host }
+    pub fn rustc_info(&self) -> &Rustc { &self.rustc_info }
 
     pub fn values(&self) -> CargoResult<Ref<HashMap<String, ConfigValue>>> {
         if !self.values_loaded.get() {
@@ -109,9 +109,13 @@ impl Config {
     pub fn cwd(&self) -> &Path { &self.cwd }
 
     pub fn target_dir(&self, pkg: &Package) -> PathBuf {
-        self.target_dir.clone().unwrap_or_else(|| {
+        self.target_dir.borrow().clone().unwrap_or_else(|| {
             pkg.root().join("target")
         })
+    }
+
+    pub fn set_target_dir(&self, path: &Path) {
+        *self.target_dir.borrow_mut() = Some(path.to_owned());
     }
 
     pub fn get(&self, key: &str) -> CargoResult<Option<ConfigValue>> {
@@ -136,10 +140,9 @@ impl Config {
                     let idx = key.split('.').take(i)
                                  .fold(0, |n, s| n + s.len()) + i - 1;
                     let key_so_far = &key[..idx];
-                    return Err(human(format!("expected table for configuration \
-                                              key `{}`, but found {} in {}",
-                                             key_so_far, val.desc(),
-                                             path.display())));
+                    bail!("expected table for configuration key `{}`, \
+                           but found {} in {}",
+                          key_so_far, val.desc(), path.display())
                 }
             }
         }
@@ -151,6 +154,22 @@ impl Config {
             Some(CV::String(i, path)) => Ok(Some((i, path))),
             Some(val) => self.expected("string", key, val),
             None => Ok(None),
+        }
+    }
+
+    pub fn get_path(&self, key: &str) -> CargoResult<Option<PathBuf>> {
+        if let Some((specified_path, path_to_config)) = try!(self.get_string(&key)) {
+            if specified_path.contains("/") || (cfg!(windows) && specified_path.contains("\\")) {
+                // An absolute or a relative path
+                let prefix_path = path_to_config.parent().unwrap().parent().unwrap();
+                // Joining an absolute path to any path results in the given absolute path
+                Ok(Some(prefix_path.join(specified_path)))
+            } else {
+                // A pathless name
+                Ok(Some(PathBuf::from(specified_path)))
+            }
+        } else {
+            Ok(None)
         }
     }
 
@@ -219,9 +238,7 @@ impl Config {
     }
 
     fn scrape_rustc_version(&mut self) -> CargoResult<()> {
-        let (rustc_version, rustc_host) = try!(ops::rustc_version(&self.rustc));
-        self.rustc_version = rustc_version;
-        self.rustc_host = rustc_host;
+        self.rustc_info = try!(Rustc::new(&self.rustc));
         Ok(())
     }
 
@@ -231,25 +248,17 @@ impl Config {
             path.pop();
             path.pop();
             path.push(dir);
-            self.target_dir = Some(path);
+            *self.target_dir.borrow_mut() = Some(path);
         } else if let Some(dir) = env::var_os("CARGO_TARGET_DIR") {
-            self.target_dir = Some(self.cwd.join(dir));
+            *self.target_dir.borrow_mut() = Some(self.cwd.join(dir));
         }
         Ok(())
     }
 
     fn get_tool(&self, tool: &str) -> CargoResult<PathBuf> {
         let var = format!("build.{}", tool);
-        if let Some((tool, path)) = try!(self.get_string(&var)) {
-            // If this tool has a path separator in it, calculate the path
-            // relative to the config file (specified by `path`). To do that we
-            // chop off the `.cargo/config` at the end of the path and then join
-            // on the tool.
-            if tool.contains("/") || (cfg!(windows) && tool.contains("\\")) {
-                let path = path.parent().unwrap().parent().unwrap();
-                return Ok(path.join(tool))
-            }
-            return Ok(PathBuf::from(tool))
+        if let Some(tool_path) = try!(self.get_path(&var)) {
+            return Ok(tool_path);
         }
 
         let var = tool.chars().flat_map(|c| c.to_uppercase()).collect::<String>();
@@ -333,8 +342,8 @@ impl ConfigValue {
                     Ok((key, value))
                 }).collect::<CargoResult<_>>()), path.to_path_buf()))
             }
-            v => return Err(human(format!("found TOML configuration value of \
-                                           unknown type `{}`", v.type_str())))
+            v => bail!("found TOML configuration value of unknown type `{}`",
+                       v.type_str()),
         }
     }
 
@@ -511,11 +520,11 @@ pub fn set_config(cfg: &Config, loc: Location, key: &str,
         Location::Project => unimplemented!(),
     };
     try!(fs::create_dir_all(file.parent().unwrap()));
-    let mut contents = String::new();
-    let _ = File::open(&file).and_then(|mut f| f.read_to_string(&mut contents));
+    let contents = paths::read(&file).unwrap_or(String::new());
     let mut toml = try!(cargo_toml::parse(&contents, &file));
     toml.insert(key.to_string(), value.into_toml());
-    let mut out = try!(File::create(&file));
-    try!(out.write_all(toml::Value::Table(toml).to_string().as_bytes()));
+
+    let contents = toml::Value::Table(toml).to_string();
+    try!(paths::write(&file, contents.as_bytes()));
     Ok(())
 }
