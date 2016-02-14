@@ -1,3 +1,16 @@
+cargo (0.7.0-1) unstable; urgency=medium
+
+  * New upstream version 0.7.0
+    + Updated deps tarball and repack filter
+    + Refreshed patches
+  * Fixes to debian packaging
+    + Updated deps repack script
+    + index packing: use the same TAR format as cargo
+    + rules: ask cargo to build verbosely
+  * Update README.source to match current packaging
+
+ -- Luca Bruno <lucab@debian.org>  Sun, 14 Feb 2016 16:12:55 +0100
+
 cargo (0.6.0-2) unstable; urgency=medium
 
   * Introduce a cargo-doc package
