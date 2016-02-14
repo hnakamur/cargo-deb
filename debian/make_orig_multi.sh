@@ -1,6 +1,7 @@
 #!/bin/sh
 set -e
-echo "This needs python-dulwich python-pytoml installed"
+echo "This needs a local copy of cargo-vendor, and the following packages:"
+echo "python-dulwich python-pytoml devscripts"
 
 TMPDIR=`mktemp -d`
 echo "Using '${TMPDIR}'..."
@@ -9,17 +10,22 @@ include /usr/share/dpkg/pkg-info.mk
 all:
 	@echo $(DEB_VERSION_UPSTREAM)
 EOF
-CARGO_VER=$(make -f "${TMPDIR}/Makefile")
+WORKDIR=${PWD}
+
+if [ -z "$1" ]
+  then
+    USCAN_ARGS="";
+    CARGO_VER=$(make -f "${TMPDIR}/Makefile");
+  else
+    USCAN_ARGS="--download-version $1";
+    CARGO_VER="$1";
+fi;
+
 BOOTSTRAP_PY=$(find "${PWD}" -name bootstrap.py -type f)
 DEPS_FILTER=$(find "${PWD}" -name deps-tarball-filter.txt -type f)
 
 # Download cargo tarballs
-uscan --rename --force-download --destdir ${TMPDIR}
-
-# Download crates.io-index snapshotted for this cargo 
-. debian/crates.io-index
-echo "${DOWNLOAD_URL}"
-wget -O "${TMPDIR}/cargo_${CARGO_VER}.orig-index.tar.gz" "${DOWNLOAD_URL}"
+uscan --rename ${USCAN_ARGS} --force-download --destdir "${TMPDIR}/"
 
 # Extract cargo source
 cd "${TMPDIR}"
@@ -27,27 +33,24 @@ mkdir cargo
 tar -xaf "${TMPDIR}/cargo_${CARGO_VER}.orig.tar.gz" -C cargo --strip-components=1
 cd cargo
 
-# Extract crates.io-index snapshot
-mkdir index
-tar -xaf "${TMPDIR}/cargo_${CARGO_VER}.orig-index.tar.gz" -C index --strip-components=1
+# Trim the list of dependencies
+patch -p1 < ${WORKDIR}/debian/patches/clean-cargo-deps.patch
 
-# Download build-dep packages from crates.io
-# (target spec is dummy/unused here)
-mkdir deps
-${BOOTSTRAP_PY} --download \
-                --no-clean \
-                --no-clone \
-                --crate-index "${TMPDIR}/cargo/index/" \
-                --cargo-root "${TMPDIR}/cargo" \
-                --target-dir "${TMPDIR}/cargo/deps/" \
-                --target x86_64-unknown-linux-gnu
-cd deps && grep -v '^#' ${DEPS_FILTER} | xargs  -I% sh -c "rm -rf %" && cd ..
+# Download build-deps via cargo-vendor
+export GIT_AUTHOR_NAME="deb-build"
+export GIT_AUTHOR_EMAIL="<>"
+export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
+export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
+cargo vendor --verbose
+
+# Unpack artifacts and clean embedded libs
+${WORKDIR}/debian/cargo-vendor-unpack.py
+grep -v '^#' ${DEPS_FILTER} | xargs  -I% sh -c 'rm -rf deps/%' &&
 tar -czf "${TMPDIR}/cargo_${CARGO_VER}.orig-deps.tar.gz" deps
 
 # All is good, we are done!
 echo "Your files are available at:"
 echo "${TMPDIR}/cargo_${CARGO_VER}.orig.tar.gz \\"
-echo "${TMPDIR}/cargo_${CARGO_VER}.orig-index.tar.gz \\"
 echo "${TMPDIR}/cargo_${CARGO_VER}.orig-deps.tar.gz"
 echo ""
 echo "Unpacked cargo sources are availabe under:"
