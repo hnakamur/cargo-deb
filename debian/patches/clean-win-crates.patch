@@ -1,0 +1,45 @@
+Fromm: Luca Bruno <lucab@debian.org>
+Description: Remove extra dependencies for Windows
+ Some crates incorrectly wants to build Windows dependencies also
+ on Linux. As we don't want to build/embed those, we clean them
+ here.
+Forwarded: not-needed
+--- a/deps/time-0.1.34/Cargo.toml
++++ b/deps/time-0.1.34/Cargo.toml
+@@ -13,8 +13,8 @@
+ 
+ [dependencies]
+ libc = "0.2.1"
+-winapi = "0.2.0"
+-kernel32-sys = "0.2.0"
++#winapi = "0.2.0"
++#kernel32-sys = "0.2.0"
+ rustc-serialize = { version = "0.3", optional = true }
+ 
+ [dev-dependencies]
+--- a/deps/filetime-0.1.7/Cargo.toml
++++ b/deps/filetime-0.1.7/Cargo.toml
+@@ -14,8 +14,8 @@
+ 
+ [dependencies]
+ libc = "0.2"
+-kernel32-sys = "0.1"
+-winapi = "0.2"
++#kernel32-sys = "0.1"
++#winapi = "0.2"
+ 
+ [dev-dependencies]
+ tempdir = "0.3"
+--- a/deps/filetime-0.1.7/src/lib.rs
++++ b/deps/filetime-0.1.7/src/lib.rs
+@@ -35,8 +35,8 @@
+ //! ```
+ 
+ extern crate libc;
+-extern crate winapi;
+-extern crate kernel32;
++#[cfg(windows)] extern crate winapi;
++#[cfg(windows)] extern crate kernel32;
+ 
+ #[cfg(unix)] use std::os::unix::prelude::*;
+ #[cfg(windows)] use std::os::windows::prelude::*;
