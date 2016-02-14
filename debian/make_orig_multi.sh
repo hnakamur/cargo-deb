@@ -1,7 +1,9 @@
 #!/bin/sh
 set -e
+echo ""
 echo "This needs a local copy of cargo-vendor, and the following packages:"
 echo "python-dulwich python-pytoml devscripts"
+echo ""
 
 TMPDIR=`mktemp -d`
 echo "Using '${TMPDIR}'..."
@@ -24,7 +26,7 @@ fi;
 BOOTSTRAP_PY=$(find "${PWD}" -name bootstrap.py -type f)
 DEPS_FILTER=$(find "${PWD}" -name deps-tarball-filter.txt -type f)
 
-# Download cargo tarballs
+# Download cargo tarball
 uscan --rename ${USCAN_ARGS} --force-download --destdir "${TMPDIR}/"
 
 # Extract cargo source
@@ -34,6 +36,8 @@ tar -xaf "${TMPDIR}/cargo_${CARGO_VER}.orig.tar.gz" -C cargo --strip-components=
 cd cargo
 
 # Trim the list of dependencies
+echo ""
+echo "Applying clean-cargo-deps.patch... If this fails, remember to refresh the patch first!"
 patch -p1 < ${WORKDIR}/debian/patches/clean-cargo-deps.patch
 
 # Download build-deps via cargo-vendor
