@@ -12,8 +12,9 @@ use std::usize;
 
 use url::Url;
 use hamcrest as ham;
-use cargo::util::{process,ProcessBuilder};
+use cargo::util::ProcessBuilder;
 use cargo::util::ProcessError;
+use cargo::util::process;
 
 use support::paths::CargoPathExt;
 
@@ -103,8 +104,8 @@ impl ProjectBuilder {
         ProjectBuilder {
             name: name.to_string(),
             root: root,
-            files: vec!(),
-            symlinks: vec!()
+            files: vec![],
+            symlinks: vec![]
         }
     }
 
@@ -134,7 +135,7 @@ impl ProjectBuilder {
     }
 
     pub fn process<T: AsRef<OsStr>>(&self, program: T) -> ProcessBuilder {
-        let mut p = process(program).unwrap();
+        let mut p = process(program);
         p.cwd(&self.root())
          .env("HOME", &paths::home())
          .env_remove("CARGO_HOME")  // make sure we don't pick up an outer one

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::default::Default;
 use std::fmt;
 use std::fs;
@@ -74,10 +74,10 @@ fn try_add_files(files: &mut Vec<PathBuf>, root: PathBuf) {
 
 pub fn project_layout(root_path: &Path) -> Layout {
     let mut lib = None;
-    let mut bins = vec!();
-    let mut examples = vec!();
-    let mut tests = vec!();
-    let mut benches = vec!();
+    let mut bins = vec![];
+    let mut examples = vec![];
+    let mut tests = vec![];
+    let mut benches = vec![];
 
     let lib_canidate = root_path.join("src").join("lib.rs");
     if fs::metadata(&lib_canidate).is_ok() {
@@ -128,9 +128,9 @@ pub fn to_manifest(contents: &[u8],
         None => {}
     }
     if !manifest.targets().iter().any(|t| !t.is_custom_build()) {
-        return Err(human(format!("no targets specified in the manifest\n  either \
-                                  src/lib.rs, src/main.rs, a [lib] section, or [[bin]] \
-                                  section must be present")))
+        bail!("no targets specified in the manifest\n  \
+               either src/lib.rs, src/main.rs, a [lib] section, or [[bin]] \
+               section must be present")
     }
     return Ok((manifest, paths));
 
@@ -369,16 +369,16 @@ impl TomlManifest {
     pub fn to_manifest(&self, source_id: &SourceId, layout: &Layout,
                        config: &Config)
         -> CargoResult<(Manifest, Vec<PathBuf>)> {
-        let mut nested_paths = vec!();
-        let mut warnings = vec!();
+        let mut nested_paths = vec![];
+        let mut warnings = vec![];
 
         let project = self.project.as_ref().or_else(|| self.package.as_ref());
         let project = try!(project.chain_error(|| {
-            human("No `package` or `project` section found.")
+            human("no `package` or `project` section found.")
         }));
 
         if project.name.trim().is_empty() {
-            return Err(human("package name cannot be an empty string."))
+            bail!("package name cannot be an empty string.")
         }
 
         let pkgid = try!(project.to_package_id(source_id));
@@ -430,8 +430,8 @@ impl TomlManifest {
 
         for bin in bins.iter() {
             if blacklist.iter().find(|&x| *x == bin.name()) != None {
-                return Err(human(&format!("the binary target name `{}` is \
-                                           forbidden", bin.name())));
+                bail!("the binary target name `{}` is forbidden",
+                      bin.name())
             }
         }
 
@@ -464,6 +464,26 @@ impl TomlManifest {
             }
             None => inferred_bench_targets(layout)
         };
+
+        if let Err(e) = unique_names_in_targets(&bins) {
+            bail!("found duplicate binary name {}, but all binary targets \
+                   must have a unique name", e);
+        }
+
+        if let Err(e) = unique_names_in_targets(&examples) {
+            bail!("found duplicate example name {}, but all binary targets \
+                   must have a unique name", e);
+        }
+
+        if let Err(e) = unique_names_in_targets(&benches) {
+            bail!("found duplicate bench name {}, but all binary targets must \
+                   have a unique name", e);
+        }
+
+        if let Err(e) = unique_names_in_targets(&tests) {
+            bail!("found duplicate test name {}, but all binary targets must \
+                   have a unique name", e)
+        }
 
         // processing the custom build script
         let new_build = project.build.as_ref().map(PathBuf::from);
@@ -559,6 +579,19 @@ impl TomlManifest {
 
         Ok((manifest, nested_paths))
     }
+}
+
+/// Will check a list of toml targets, and make sure the target names are unique within a vector.
+/// If not, the name of the offending binary target is returned.
+fn unique_names_in_targets(targets: &[TomlTarget]) -> Result<(), String> {
+    let values = targets.iter().map(|e| e.name()).collect::<Vec<String>>();
+    let mut seen = HashSet::new();
+    for v in values {
+        if !seen.insert(v.clone()) {
+            return Err(v);
+        }
+    }
+    Ok(())
 }
 
 fn validate_library_name(target: &TomlTarget) -> CargoResult<()> {
@@ -941,6 +974,7 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
             lto: lto.unwrap_or(profile.lto),
             codegen_units: codegen_units,
             rustc_args: None,
+            rustdoc_args: None,
             debuginfo: debug.unwrap_or(profile.debuginfo),
             debug_assertions: debug_assertions.unwrap_or(profile.debug_assertions),
             rpath: rpath.unwrap_or(profile.rpath),

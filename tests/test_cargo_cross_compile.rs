@@ -74,7 +74,7 @@ test!(simple_cross {
                 execs().with_status(0));
     assert_that(&p.target_bin(&target, "foo"), existing_file());
 
-    assert_that(process(&p.target_bin(&target, "foo")).unwrap(),
+    assert_that(process(&p.target_bin(&target, "foo")),
                 execs().with_status(0));
 });
 
@@ -110,7 +110,7 @@ test!(simple_deps {
                 execs().with_status(0));
     assert_that(&p.target_bin(&target, "foo"), existing_file());
 
-    assert_that(process(&p.target_bin(&target, "foo")).unwrap(),
+    assert_that(process(&p.target_bin(&target, "foo")),
                 execs().with_status(0));
 });
 
@@ -153,10 +153,10 @@ test!(plugin_deps {
         .file("src/lib.rs", r#"
             #![feature(plugin_registrar, quote, rustc_private)]
 
-            extern crate rustc;
+            extern crate rustc_plugin;
             extern crate syntax;
 
-            use rustc::plugin::Registry;
+            use rustc_plugin::Registry;
             use syntax::ast::TokenTree;
             use syntax::codemap::Span;
             use syntax::ext::base::{ExtCtxt, MacEager, MacResult};
@@ -187,7 +187,7 @@ test!(plugin_deps {
                 execs().with_status(0));
     assert_that(&foo.target_bin(&target, "foo"), existing_file());
 
-    assert_that(process(&foo.target_bin(&target, "foo")).unwrap(),
+    assert_that(process(&foo.target_bin(&target, "foo")),
                 execs().with_status(0));
 });
 
@@ -233,11 +233,11 @@ test!(plugin_to_the_max {
         .file("src/lib.rs", r#"
             #![feature(plugin_registrar, quote, rustc_private)]
 
-            extern crate rustc;
+            extern crate rustc_plugin;
             extern crate syntax;
             extern crate baz;
 
-            use rustc::plugin::Registry;
+            use rustc_plugin::Registry;
             use syntax::ast::TokenTree;
             use syntax::codemap::Span;
             use syntax::ext::base::{ExtCtxt, MacEager, MacResult};
@@ -272,7 +272,7 @@ test!(plugin_to_the_max {
                 execs().with_status(0));
     assert_that(&foo.target_bin(&target, "foo"), existing_file());
 
-    assert_that(process(&foo.target_bin(&target, "foo")).unwrap(),
+    assert_that(process(&foo.target_bin(&target, "foo")),
                 execs().with_status(0));
 });
 
@@ -352,10 +352,10 @@ test!(plugin_with_extra_dylib_dep {
         .file("src/lib.rs", r#"
             #![feature(plugin_registrar, rustc_private)]
 
-            extern crate rustc;
+            extern crate rustc_plugin;
             extern crate baz;
 
-            use rustc::plugin::Registry;
+            use rustc_plugin::Registry;
 
             #[plugin_registrar]
             pub fn foo(reg: &mut Registry) {

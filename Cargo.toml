@@ -1,6 +1,6 @@
 [project]
 name = "cargo"
-version = "0.6.0"
+version = "0.7.0"
 authors = ["Yehuda Katz <wycats@gmail.com>",
            "Carl Lerche <me@carllerche.com>",
            "Alex Crichton <alex@alexcrichton.com>"]
@@ -35,7 +35,7 @@ log = "0.3"
 num_cpus = "0.2"
 regex = "0.1"
 rustc-serialize = "0.3"
-semver = "0.1"
+semver = "0.2.0"
 tar = "0.3"
 term = "0.2"
 time = "0.1"

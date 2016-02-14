@@ -1,5 +1,6 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::prelude::*;
+use std::thread;
 
 use support::{project, execs};
 use support::{COMPILING, RUNNING, DOCTEST, FRESH, DOCUMENTING};
@@ -362,17 +363,7 @@ test!(links_passes_env_vars {
         "#);
 
     assert_that(p.cargo_process("build").arg("-v"),
-                execs().with_status(0)
-                       .with_stdout(&format!("\
-{compiling} [..] v0.5.0 (file://[..])
-{running} `rustc [..]build.rs [..]`
-{compiling} [..] v0.5.0 (file://[..])
-{running} `rustc [..]build.rs [..]`
-{running} `[..]`
-{running} `[..]`
-{running} `[..]`
-{running} `rustc [..] --crate-name foo [..]`
-", compiling = COMPILING, running = RUNNING)));
+                execs().with_status(0));
 });
 
 test!(only_rerun_build_script {
@@ -1324,9 +1315,9 @@ test!(cfg_test {
 {compiling} foo v0.0.1 ({dir})
 {running} [..] build.rs [..]
 {running} [..]build-script-build[..]
-{running} [..] src[..]lib.rs [..] --cfg foo[..]
-{running} [..] src[..]lib.rs [..] --cfg foo[..]
-{running} [..] tests[..]test.rs [..] --cfg foo[..]
+{running} [..] --cfg foo[..]
+{running} [..] --cfg foo[..]
+{running} [..] --cfg foo[..]
 {running} [..]foo-[..]
 
 running 1 test
@@ -1439,9 +1430,9 @@ test!(cfg_override_test {
     assert_that(p.cargo_process("test").arg("-v"),
                 execs().with_stdout(format!("\
 {compiling} foo v0.0.1 ({dir})
-{running} [..] src[..]lib.rs [..] --cfg foo[..]
-{running} [..] src[..]lib.rs [..] --cfg foo[..]
-{running} [..] tests[..]test.rs [..] --cfg foo[..]
+{running} `[..]`
+{running} `[..]`
+{running} `[..]`
 {running} [..]foo-[..]
 
 running 1 test
@@ -1717,3 +1708,84 @@ test!(changing_an_override_invalidates {
 {running} `rustc [..] -L native=bar`
 ", compiling = COMPILING, running = RUNNING)));
 });
+
+test!(rebuild_only_on_explicit_paths {
+    let p = project("a")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+            build = "build.rs"
+        "#)
+        .file("src/lib.rs", "")
+        .file("build.rs", r#"
+            fn main() {
+                println!("cargo:rerun-if-changed=foo");
+                println!("cargo:rerun-if-changed=bar");
+            }
+        "#);
+    p.build();
+
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0));
+
+    // files don't exist, so should always rerun if they don't exist
+    println!("run without");
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+
+    thread::sleep_ms(1000);
+    File::create(p.root().join("foo")).unwrap();
+    File::create(p.root().join("bar")).unwrap();
+
+    // now the exist, so run once, catch the mtime, then shouldn't run again
+    println!("run with");
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+
+    println!("run with2");
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{fresh} a v0.5.0 ([..])
+", fresh = FRESH)));
+
+    thread::sleep_ms(1000);
+
+    // random other files do not affect freshness
+    println!("run baz");
+    File::create(p.root().join("baz")).unwrap();
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{fresh} a v0.5.0 ([..])
+", fresh = FRESH)));
+
+    // but changing dependent files does
+    println!("run foo change");
+    File::create(p.root().join("foo")).unwrap();
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+
+    // .. as does deleting a file
+    println!("run foo delete");
+    fs::remove_file(p.root().join("bar")).unwrap();
+    assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0).with_stdout(&format!("\
+{compiling} a v0.5.0 ([..])
+{running} `[..]build-script-build[..]`
+{running} `rustc src[..]lib.rs [..]`
+", running = RUNNING, compiling = COMPILING)));
+});
+

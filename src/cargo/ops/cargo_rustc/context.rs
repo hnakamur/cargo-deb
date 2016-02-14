@@ -9,7 +9,6 @@ use core::{SourceMap, Package, PackageId, PackageSet, Resolve, Target, Profile};
 use core::{TargetKind, LibKind, Profiles, Metadata, Dependency};
 use core::dependency::Kind as DepKind;
 use util::{self, CargoResult, ChainError, internal, Config, profile};
-use util::human;
 
 use super::TargetConfig;
 use super::custom_build::{BuildState, BuildScripts};
@@ -32,6 +31,7 @@ pub struct Context<'a, 'cfg: 'a> {
     pub sources: &'a SourceMap<'cfg>,
     pub compilation: Compilation<'cfg>,
     pub build_state: Arc<BuildState>,
+    pub build_explicit_deps: HashMap<Unit<'a>, (PathBuf, Vec<String>)>,
     pub exec_engine: Arc<Box<ExecEngine>>,
     pub fingerprints: HashMap<Unit<'a>, Arc<Fingerprint>>,
     pub compiled: HashSet<Unit<'a>>,
@@ -93,6 +93,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             profiles: profiles,
             compiled: HashSet::new(),
             build_scripts: HashMap::new(),
+            build_explicit_deps: HashMap::new(),
         })
     }
 
@@ -100,7 +101,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     /// specified as well as the exe suffix
     fn filename_parts(target: Option<&str>, cfg: &Config)
                       -> CargoResult<(Option<(String, String)>, String)> {
-        let mut process = try!(util::process(cfg.rustc()));
+        let mut process = util::process(cfg.rustc());
         process.arg("-")
                .arg("--crate-name").arg("_")
                .arg("--crate-type").arg("dylib")
@@ -196,8 +197,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             (&self.target_triple, &self.target_dylib)
         };
         match *pair {
-            None => return Err(human(format!("dylib outputs are not supported \
-                                              for {}", triple))),
+            None => bail!("dylib outputs are not supported for {}", triple),
             Some((ref s1, ref s2)) => Ok((s1, s2)),
         }
     }

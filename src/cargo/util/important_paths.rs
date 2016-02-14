@@ -1,7 +1,6 @@
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use util::{CargoResult, human, ChainError};
+use util::{CargoResult, human};
 
 /// Iteratively search for `file` in `pwd` and its parents, returning
 /// the path of the directory.
@@ -30,24 +29,21 @@ pub fn find_project_manifest(pwd: &Path, file: &str) -> CargoResult<PathBuf> {
         }
     }
 
-    Err(human(format!("Could not find `{}` in `{}` or any parent directory",
-                      file, pwd.display())))
+    bail!("could not find `{}` in `{}` or any parent directory",
+          file, pwd.display())
 }
 
 /// Find the root Cargo.toml
-pub fn find_root_manifest_for_cwd(manifest_path: Option<String>)
+pub fn find_root_manifest_for_wd(manifest_path: Option<String>, cwd: &Path)
                                   -> CargoResult<PathBuf> {
-    let cwd = try!(env::current_dir().chain_error(|| {
-        human("Couldn't determine the current working directory")
-    }));
     match manifest_path {
         Some(path) => {
             let absolute_path = cwd.join(&path);
             if !absolute_path.ends_with("Cargo.toml") {
-                return Err(human("the manifest-path must be a path to a Cargo.toml file"))
+                bail!("the manifest-path must be a path to a Cargo.toml file")
             }
             if !fs::metadata(&absolute_path).is_ok() {
-                return Err(human(format!("manifest path `{}` does not exist", path)))
+                bail!("manifest path `{}` does not exist", path)
             }
             Ok(absolute_path)
         },

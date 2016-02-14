@@ -10,7 +10,7 @@ use tar::Archive;
 
 use support::{project, execs, cargo_dir, paths, git, path2url};
 use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING, UPDATING, DOWNLOADING};
-use support::registry as r;
+use support::registry::{self, Package};
 use hamcrest::{assert_that, existing_file};
 
 fn setup() {
@@ -143,8 +143,6 @@ http://doc.crates.io/manifest.html#package-metadata for more info."));
 });
 
 test!(wildcard_deps {
-    r::init();
-
     let p = project("foo")
         .file("Cargo.toml", r#"
             [project]
@@ -166,9 +164,9 @@ test!(wildcard_deps {
         "#)
         .file("src/main.rs", "fn main() {}");
 
-    r::mock_pkg("baz", "0.0.1", &[]);
-    r::mock_pkg("bar", "0.0.1", &[("baz", "0.0.1", "normal")]);
-    r::mock_pkg("buz", "0.0.1", &[("bar", "0.0.1", "normal")]);
+    Package::new("baz", "0.0.1").publish();
+    Package::new("bar", "0.0.1").dep("baz", "0.0.1").publish();
+    Package::new("buz", "0.0.1").dep("bar", "0.0.1").publish();
 
     assert_that(p.cargo_process("package"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -188,9 +186,9 @@ test!(wildcard_deps {
         downloading = DOWNLOADING,
         compiling = COMPILING,
         dir = p.url(),
-        reg = r::registry()))
+        reg = registry::registry()))
                 .with_stderr("\
-warning: some dependencies have wildcard (\"*\") version constraints. On December 11th, 2015, \
+warning: some dependencies have wildcard (\"*\") version constraints. On January 22nd, 2016, \
 crates.io will begin rejecting packages with wildcard dependency constraints. See \
 http://doc.crates.io/crates-io.html#using-crates.io-based-crates for information on version \
 constraints.
@@ -217,7 +215,7 @@ test!(package_verbose {
         "#)
         .file("a/src/lib.rs", "");
     p.build();
-    let mut cargo = process(&cargo_dir().join("cargo")).unwrap();
+    let mut cargo = process(&cargo_dir().join("cargo"));
     cargo.cwd(&root).env("HOME", &paths::home());
     assert_that(cargo.clone().arg("build"), execs().with_status(0));
     assert_that(cargo.arg("package").arg("-v").arg("--no-verify"),
@@ -426,4 +424,28 @@ src[..]main.rs
                 fname == b"nested-0.0.1/src/main.rs",
                 "unexpected filename: {:?}", f.header().path())
     }
+});
+
+#[cfg(unix)] // windows doesn't allow these characters in filenames
+test!(package_weird_characters {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { println!("hello"); }
+        "#)
+        .file("src/:foo", "");
+
+    assert_that(p.cargo_process("package"),
+                execs().with_status(101).with_stderr("\
+warning: [..]
+failed to prepare local package for uploading
+
+Caused by:
+  cannot package a filename with a special character `:`: src/:foo
+"));
 });

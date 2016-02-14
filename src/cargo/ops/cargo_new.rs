@@ -47,8 +47,7 @@ struct CargoNewConfig {
 pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
     let path = config.cwd().join(opts.path);
     if fs::metadata(&path).is_ok() {
-        return Err(human(format!("Destination `{}` already exists",
-                                 path.display())))
+        bail!("destination `{}` already exists", path.display())
     }
     let name = match opts.name {
         Some(name) => name,
@@ -74,8 +73,7 @@ pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
     for c in name.chars() {
         if c.is_alphanumeric() { continue }
         if c == '_' || c == '-' { continue }
-        return Err(human(&format!("Invalid character `{}` in crate name: `{}`",
-                                  c, name)));
+        bail!("Invalid character `{}` in crate name: `{}`", c, name)
     }
     mk(config, &path, name, &opts).chain_error(|| {
         human(format!("Failed to create project `{}` at `{}`",
@@ -97,15 +95,15 @@ fn strip_rust_affixes(name: &str) -> &str {
     name
 }
 
-fn existing_vcs_repo(path: &Path) -> bool {
-    GitRepo::discover(path).is_ok() || HgRepo::discover(path).is_ok()
+fn existing_vcs_repo(path: &Path, cwd: &Path) -> bool {
+    GitRepo::discover(path, cwd).is_ok() || HgRepo::discover(path, cwd).is_ok()
 }
 
 fn mk(config: &Config, path: &Path, name: &str,
       opts: &NewOptions) -> CargoResult<()> {
     let cfg = try!(global_config(config));
     let mut ignore = "target\n".to_string();
-    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap());
+    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap(), config.cwd());
     if !opts.bin {
         ignore.push_str("Cargo.lock\n");
     }
@@ -119,11 +117,11 @@ fn mk(config: &Config, path: &Path, name: &str,
 
     match vcs {
         VersionControl::Git => {
-            try!(GitRepo::init(path));
+            try!(GitRepo::init(path, config.cwd()));
             try!(paths::write(&path.join(".gitignore"), ignore.as_bytes()));
         },
         VersionControl::Hg => {
-            try!(HgRepo::init(path));
+            try!(HgRepo::init(path, config.cwd()));
             try!(paths::write(&path.join(".hgignore"), ignore.as_bytes()));
         },
         VersionControl::NoVcs => {
@@ -147,6 +145,8 @@ r#"[package]
 name = "{}"
 version = "0.1.0"
 authors = [{}]
+
+[dependencies]
 "#, name, toml::Value::String(author)).as_bytes()));
 
     try!(fs::create_dir(&path.join("src")));
@@ -179,8 +179,8 @@ fn discover_author() -> CargoResult<(String, Option<String>)> {
         Some(name) => name,
         None => {
             let username_var = if cfg!(windows) {"USERNAME"} else {"USER"};
-            return Err(human(format!("could not determine the current \
-                                      user, please set ${}", username_var)))
+            bail!("could not determine the current user, please set ${}",
+                  username_var)
         }
     };
     let email = git_config.and_then(|g| g.get_string("user.email").ok())

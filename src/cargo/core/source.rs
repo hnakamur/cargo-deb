@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{self, Ordering};
 use std::collections::hash_map::{HashMap, Values, IterMut};
 use std::fmt::{self, Formatter};
 use std::hash;
@@ -253,17 +253,7 @@ impl PartialOrd for SourceId {
 
 impl Ord for SourceId {
     fn cmp(&self, other: &SourceId) -> Ordering {
-        match self.inner.kind.cmp(&other.inner.kind) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        if let Kind::Git(..) = self.inner.kind {
-            match self.inner.precise.cmp(&other.inner.precise) {
-                Ordering::Equal => {}
-                ord => return ord,
-            }
-        }
-        self.inner.url.cmp(&other.inner.url)
+        self.inner.cmp(&other.inner)
     }
 }
 
@@ -294,14 +284,12 @@ impl fmt::Display for SourceId {
                             ref precise, .. } => {
                 try!(write!(f, "{}{}", url, url_ref(reference)));
 
-                match *precise {
-                    Some(ref s) => {
-                        try!(write!(f, "#{}", &s[..8]));
-                    }
-                    None => {}
+                if let Some(ref s) = *precise {
+                    let len = cmp::min(s.len(), 8);
+                    try!(write!(f, "#{}", &s[..len]));
                 }
                 Ok(())
-            },
+            }
             SourceIdInner { kind: Kind::Registry, ref url, .. } => {
                 write!(f, "registry {}", url)
             }
@@ -322,6 +310,31 @@ impl PartialEq for SourceIdInner {
                 ref1 == ref2 && self.canonical_url == other.canonical_url
             }
             _ => false,
+        }
+    }
+}
+
+impl PartialOrd for SourceIdInner {
+    fn partial_cmp(&self, other: &SourceIdInner) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SourceIdInner {
+    fn cmp(&self, other: &SourceIdInner) -> Ordering {
+        match self.kind.cmp(&other.kind) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.url.cmp(&other.url) {
+            Ordering::Equal => {}
+            ord => return ord,
+        }
+        match (&self.kind, &other.kind) {
+            (&Kind::Git(ref ref1), &Kind::Git(ref ref2)) => {
+                (ref1, &self.canonical_url).cmp(&(ref2, &other.canonical_url))
+            }
+            _ => self.kind.cmp(&other.kind)
         }
     }
 }

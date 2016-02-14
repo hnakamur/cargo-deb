@@ -38,6 +38,12 @@ use term::color::{BLACK, RED};
 
 pub use util::{CargoError, CliError, CliResult, human, Config, ChainError};
 
+macro_rules! bail {
+    ($($fmt:tt)*) => (
+        return Err(::util::human(&format_args!($($fmt)*)))
+    )
+}
+
 pub mod core;
 pub mod ops;
 pub mod sources;
@@ -97,7 +103,7 @@ fn process<V, F>(mut callback: F)
 {
     let mut config = None;
     let result = (|| {
-        config = Some(try!(Config::new(shell(Verbose, Auto))));
+        config = Some(try!(Config::default()));
         let args: Vec<_> = try!(env::args_os().map(|s| {
             s.into_string().map_err(|s| {
                 human(format!("invalid unicode in argument: {:?}", s))

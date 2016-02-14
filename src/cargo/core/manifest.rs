@@ -3,11 +3,10 @@ use std::fmt;
 use std::path::{PathBuf, Path};
 
 use semver::Version;
-use rustc_serialize::{Encoder,Encodable};
+use rustc_serialize::{Encoder, Encodable};
 
 use core::{Dependency, PackageId, Summary};
 use core::package_id::Metadata;
-use core::dependency::SerializedDependency;
 use util::{CargoResult, human};
 
 /// Contains all the information about a package, as loaded from a Cargo.toml.
@@ -44,11 +43,11 @@ pub struct ManifestMetadata {
     pub documentation: Option<String>,  // url
 }
 
-#[derive(PartialEq,Clone,RustcEncodable)]
-pub struct SerializedManifest {
+#[derive(RustcEncodable)]
+struct SerializedManifest<'a> {
     name: String,
     version: String,
-    dependencies: Vec<SerializedDependency>,
+    dependencies: &'a [Dependency],
     targets: Vec<Target>,
 }
 
@@ -57,9 +56,7 @@ impl Encodable for Manifest {
         SerializedManifest {
             name: self.summary.name().to_string(),
             version: self.summary.version().to_string(),
-            dependencies: self.summary.dependencies().iter().map(|d| {
-                SerializedDependency::from_dependency(d)
-            }).collect(),
+            dependencies: self.summary.dependencies(),
             targets: self.targets.clone(),
         }.encode(s)
     }
@@ -112,6 +109,7 @@ pub struct Profile {
     pub lto: bool,
     pub codegen_units: Option<u32>,    // None = use rustc default
     pub rustc_args: Option<Vec<String>>,
+    pub rustdoc_args: Option<Vec<String>>,
     pub debuginfo: bool,
     pub debug_assertions: bool,
     pub rpath: bool,
@@ -160,7 +158,7 @@ impl Encodable for Target {
             TargetKind::Lib(ref kinds) => {
                 kinds.iter().map(|k| k.crate_type()).collect()
             }
-            TargetKind::Bin => vec!("bin"),
+            TargetKind::Bin => vec!["bin"],
             TargetKind::Example => vec!["example"],
             TargetKind::Test => vec!["test"],
             TargetKind::CustomBuild => vec!["custom-build"],
@@ -371,7 +369,7 @@ impl Target {
             TargetKind::Bench |
             TargetKind::Test |
             TargetKind::Example |
-            TargetKind::Bin => vec!("bin"),
+            TargetKind::Bin => vec!["bin"],
         }
     }
 
@@ -474,6 +472,7 @@ impl Default for Profile {
             lto: false,
             codegen_units: None,
             rustc_args: None,
+            rustdoc_args: None,
             debuginfo: false,
             debug_assertions: false,
             rpath: false,

@@ -2,7 +2,7 @@ use std::env;
 
 use cargo::ops;
 use cargo::util::{CliResult, CliError, Config};
-use cargo::util::important_paths::{find_root_manifest_for_cwd};
+use cargo::util::important_paths::{find_root_manifest_for_wd};
 
 #[derive(RustcDecodable)]
 struct Options {
@@ -12,6 +12,7 @@ struct Options {
     flag_verbose: bool,
     flag_quiet: bool,
     flag_color: Option<String>,
+    flag_release: bool,
 }
 
 pub const USAGE: &'static str = "
@@ -25,6 +26,7 @@ Options:
     -p SPEC, --package SPEC ...  Package to clean artifacts for
     --manifest-path PATH         Path to the manifest to the package to clean
     --target TRIPLE              Target triple to clean output for (default all)
+    --release                    Whether or not to clean release artifacts
     -v, --verbose                Use verbose output
     -q, --quiet                  No output printed to stdout
     --color WHEN                 Coloring: auto, always, never
@@ -40,11 +42,12 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
     debug!("executing; cmd=cargo-clean; args={:?}", env::args().collect::<Vec<_>>());
 
-    let root = try!(find_root_manifest_for_cwd(options.flag_manifest_path));
+    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path, config.cwd()));
     let opts = ops::CleanOptions {
         config: config,
         spec: &options.flag_package,
         target: options.flag_target.as_ref().map(|s| &s[..]),
+        release: options.flag_release,
     };
     ops::clean(&root, &opts).map(|_| None).map_err(|err| {
       CliError::from_boxed(err, 101)

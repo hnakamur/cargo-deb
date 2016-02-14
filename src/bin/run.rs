@@ -1,6 +1,6 @@
 use cargo::ops;
 use cargo::util::{CliResult, CliError, Config, Human};
-use cargo::util::important_paths::{find_root_manifest_for_cwd};
+use cargo::util::important_paths::{find_root_manifest_for_wd};
 
 #[derive(RustcDecodable)]
 struct Options {
@@ -52,7 +52,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
     try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
 
-    let root = try!(find_root_manifest_for_cwd(options.flag_manifest_path));
+    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path, config.cwd()));
 
     let (mut examples, mut bins) = (Vec::new(), Vec::new());
     if let Some(s) = options.flag_bin {
@@ -80,15 +80,11 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
                 bins: &bins, examples: &examples,
             }
         },
+        target_rustdoc_args: None,
         target_rustc_args: None,
     };
 
-    let err = try!(ops::run(&root,
-                            &compile_opts,
-                            &options.arg_args).map_err(|err| {
-        CliError::from_boxed(err, 101)
-    }));
-    match err {
+    match try!(ops::run(&root, &compile_opts, &options.arg_args)) {
         None => Ok(None),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {

@@ -8,7 +8,6 @@ use support::{git, project, execs, main_file, path2url};
 use support::{COMPILING, UPDATING, RUNNING};
 use support::paths::{self, CargoPathExt};
 use hamcrest::{assert_that,existing_file};
-use cargo;
 use cargo::util::process;
 
 fn setup() {
@@ -70,7 +69,7 @@ test!(cargo_compile_simple_git_dep {
     assert_that(&project.bin("foo"), existing_file());
 
     assert_that(
-      cargo::util::process(&project.bin("foo")).unwrap(),
+      process(&project.bin("foo")),
       execs().with_stdout("hello world\n"));
 });
 
@@ -137,7 +136,7 @@ test!(cargo_compile_git_dep_branch {
     assert_that(&project.bin("foo"), existing_file());
 
     assert_that(
-      cargo::util::process(&project.bin("foo")).unwrap(),
+      process(&project.bin("foo")),
       execs().with_stdout("hello world\n"));
 });
 
@@ -205,7 +204,7 @@ test!(cargo_compile_git_dep_tag {
 
     assert_that(&project.bin("foo"), existing_file());
 
-    assert_that(cargo::util::process(&project.bin("foo")).unwrap(),
+    assert_that(process(&project.bin("foo")),
                 execs().with_stdout("hello world\n"));
 
     assert_that(project.cargo("build"),
@@ -282,7 +281,7 @@ test!(cargo_compile_with_nested_paths {
 
     assert_that(&p.bin("parent"), existing_file());
 
-    assert_that(cargo::util::process(&p.bin("parent")).unwrap(),
+    assert_that(process(&p.bin("parent")),
                 execs().with_stdout("hello world\n"));
 });
 
@@ -354,7 +353,7 @@ test!(cargo_compile_with_meta_package {
 
     assert_that(&p.bin("parent"), existing_file());
 
-    assert_that(cargo::util::process(&p.bin("parent")).unwrap(),
+    assert_that(process(&p.bin("parent")),
                 execs().with_stdout("this is dep1 this is dep2\n"));
 });
 
@@ -646,6 +645,17 @@ test!(update_with_shared_deps {
     assert_that(p.cargo("update")
                  .arg("-p").arg("dep1"),
                 execs().with_stdout(""));
+
+    // Don't do anything bad on a weird --precise argument
+    println!("bar bad precise update");
+    assert_that(p.cargo("update")
+                 .arg("-p").arg("bar")
+                 .arg("--precise").arg("0.1.2"),
+                execs().with_status(101).with_stderr("\
+Unable to update [..]
+
+To learn more, run the command again with --verbose.
+"));
 
     // Specifying a precise rev to the old rev shouldn't actually update
     // anything because we already have the rev in the db.
@@ -1220,7 +1230,7 @@ test!(git_dep_build_cmd {
     assert_that(p.cargo("build"),
                 execs().with_status(0));
 
-    assert_that(cargo::util::process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("0\n"));
 
     // Touching bar.rs.in should cause the `build` command to run again.
@@ -1230,7 +1240,7 @@ test!(git_dep_build_cmd {
     assert_that(p.cargo("build"),
                 execs().with_status(0));
 
-    assert_that(cargo::util::process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("1\n"));
 });
 

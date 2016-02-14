@@ -9,17 +9,26 @@ use hamcrest::{assert_that, existing_file, is_not, Matcher, MatchResult};
 use support::{project, execs, cargo_dir};
 use support::{UPDATING, DOWNLOADING, COMPILING, INSTALLING, REMOVING};
 use support::paths;
-use support::registry as r;
+use support::registry::Package;
 use support::git;
 
 use self::InstalledExe as has_installed_exe;
 
 fn setup() {
-    r::init();
+}
+
+fn pkg(name: &str, vers: &str) {
+    Package::new(name, vers)
+        .file("src/lib.rs", "")
+        .file("src/main.rs", &format!("
+            extern crate {};
+            fn main() {{}}
+        ", name))
+        .publish()
 }
 
 fn cargo_process(s: &str) -> ProcessBuilder {
-    let mut p = process(&cargo_dir().join("cargo")).unwrap();
+    let mut p = process(&cargo_dir().join("cargo"));
     p.arg(s).cwd(&paths::root())
      .env("HOME", &paths::home())
      .env_remove("CARGO_HOME");
@@ -50,7 +59,7 @@ impl fmt::Display for InstalledExe {
 }
 
 test!(simple {
-    r::mock_pkg("foo", "0.0.1", &[]);
+    pkg("foo", "0.0.1");
 
     assert_that(cargo_process("install").arg("foo"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -76,8 +85,8 @@ test!(simple {
 });
 
 test!(pick_max_version {
-    r::mock_pkg("foo", "0.0.1", &[]);
-    r::mock_pkg("foo", "0.0.2", &[]);
+    pkg("foo", "0.0.1");
+    pkg("foo", "0.0.2");
 
     assert_that(cargo_process("install").arg("foo"),
                 execs().with_status(0).with_stdout(&format!("\
@@ -95,7 +104,7 @@ test!(pick_max_version {
 });
 
 test!(missing {
-    r::mock_pkg("foo", "0.0.1", &[]);
+    pkg("foo", "0.0.1");
     assert_that(cargo_process("install").arg("bar"),
                 execs().with_status(101).with_stderr("\
 could not find `bar` in `registry file://[..]`
@@ -103,7 +112,7 @@ could not find `bar` in `registry file://[..]`
 });
 
 test!(bad_version {
-    r::mock_pkg("foo", "0.0.1", &[]);
+    pkg("foo", "0.0.1");
     assert_that(cargo_process("install").arg("foo").arg("--vers=0.2.0"),
                 execs().with_status(101).with_stderr("\
 could not find `foo` in `registry file://[..]` with version `0.2.0`
@@ -113,12 +122,13 @@ could not find `foo` in `registry file://[..]` with version `0.2.0`
 test!(no_crate {
     assert_that(cargo_process("install"),
                 execs().with_status(101).with_stderr("\
-must specify a crate to install from crates.io
+must specify a crate to install from crates.io, or use --path or --git \
+to specify alternate source
 "));
 });
 
 test!(install_location_precedence {
-    r::mock_pkg("foo", "0.0.1", &[]);
+    pkg("foo", "0.0.1");
 
     let root = paths::root();
     let t1 = root.join("t1");
@@ -179,6 +189,10 @@ test!(install_path {
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
                 execs().with_status(0));
     assert_that(cargo_home(), has_installed_exe("foo"));
+    assert_that(cargo_process("install").arg("--path").arg(".").cwd(p.root()),
+                execs().with_status(101).with_stderr("\
+binary `foo[..]` already exists in destination as part of `foo v0.1.0 [..]`
+"));
 });
 
 test!(multiple_crates_error {
@@ -424,9 +438,9 @@ test!(git_repo {
 });
 
 test!(list {
-    r::mock_pkg("foo", "0.0.1", &[]);
-    r::mock_pkg("bar", "0.2.1", &[]);
-    r::mock_pkg("bar", "0.2.2", &[]);
+    pkg("foo", "0.0.1");
+    pkg("bar", "0.2.1");
+    pkg("bar", "0.2.2");
 
     assert_that(cargo_process("install").arg("--list"),
                 execs().with_status(0).with_stdout(""));
@@ -452,7 +466,7 @@ package id specification `foo` matched no packages
 });
 
 test!(uninstall_bin_does_not_exist {
-    r::mock_pkg("foo", "0.0.1", &[]);
+    pkg("foo", "0.0.1");
 
     assert_that(cargo_process("install").arg("foo"),
                 execs().with_status(0));
@@ -497,4 +511,20 @@ test!(uninstall_piecemeal {
                 execs().with_status(101).with_stderr("\
 package id specification `foo` matched no packages
 "));
+});
+
+test!(subcommand_works_out_of_the_box {
+    Package::new("cargo-foo", "1.0.0")
+        .file("src/main.rs", r#"
+            fn main() {
+                println!("bar");
+            }
+        "#)
+        .publish();
+    assert_that(cargo_process("install").arg("cargo-foo"),
+                execs().with_status(0));
+    assert_that(cargo_process("foo"),
+                execs().with_status(0).with_stdout("bar\n"));
+    assert_that(cargo_process("--list"),
+                execs().with_status(0).with_stdout_contains("  foo\n"));
 });

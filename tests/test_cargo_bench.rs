@@ -33,7 +33,7 @@ test!(cargo_bench_simple {
     assert_that(p.cargo_process("build"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("hello\n"));
 
     assert_that(p.cargo("bench"),
@@ -177,7 +177,7 @@ test!(cargo_bench_failing_test {
     assert_that(p.cargo_process("build"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
-    assert_that(process(&p.bin("foo")).unwrap(),
+    assert_that(process(&p.bin("foo")),
                 execs().with_stdout("hello\n"));
 
     assert_that(p.cargo("bench"),
@@ -859,10 +859,9 @@ test!(bench_with_examples {
                 execs().with_status(0)
                        .with_stdout(&format!("\
 {compiling} testbench v6.6.6 ({url})
-{running} `rustc src[..]lib.rs --crate-name testbench --crate-type lib [..]`
-{running} `rustc src[..]lib.rs --crate-name testbench --crate-type lib [..]`
-{running} `rustc benches[..]testb1.rs --crate-name testb1 --crate-type bin \
-        [..] --test [..]`
+{running} `rustc [..]`
+{running} `rustc [..]`
+{running} `rustc [..]`
 {running} `{dir}[..]target[..]release[..]testb1-[..] --bench`
 
 running 1 test

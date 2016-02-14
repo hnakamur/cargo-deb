@@ -56,7 +56,8 @@ pub fn install(root: Option<&str>,
         try!(select_pkg(RegistrySource::new(source_id, config),
                         source_id, krate, vers,
                         &mut |_| Err(human("must specify a crate to install from \
-                                            crates.io"))))
+                                            crates.io, or use --path or --git to \
+                                            specify alternate source"))))
     };
 
     let mut list = try!(read_crate_list(&root));
@@ -147,8 +148,8 @@ fn select_pkg<'a, T>(mut source: T,
                 None => {
                     match try!(one(examples, |v| multi_err("examples", v))) {
                         Some(p) => p,
-                        None => return Err(human("no packages found with \
-                                                  binaries or examples")),
+                        None => bail!("no packages found with binaries or \
+                                       examples"),
                     }
                 }
             };
@@ -201,7 +202,7 @@ fn check_overwrites(dst: &Path,
             // get checked during cargo_compile, we only care about the "build
             // everything" case here
             if pkg.targets().iter().filter(|t| t.is_bin()).next().is_none() {
-                return Err(human("specified package has no binaries"))
+                bail!("specified package has no binaries")
             }
 
             for target in pkg.targets().iter().filter(|t| t.is_bin()) {
@@ -283,9 +284,8 @@ pub fn uninstall(root: Option<&str>,
         for bin in installed.get() {
             let bin = dst.join(bin);
             if fs::metadata(&bin).is_err() {
-                return Err(human(format!("corrupt metadata, `{}` does not \
-                                          exist when it should",
-                                          bin.display())))
+                bail!("corrupt metadata, `{}` does not exist when it should",
+                      bin.display())
             }
         }
 
@@ -299,8 +299,7 @@ pub fn uninstall(root: Option<&str>,
 
         for bin in bins.iter() {
             if !installed.get().contains(bin) {
-                return Err(human(format!("binary `{}` not installed as part \
-                                          of `{}`", bin, result)))
+                bail!("binary `{}` not installed as part of `{}`", bin, result)
             }
         }
 
