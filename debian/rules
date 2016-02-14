@@ -12,6 +12,8 @@ DEB_TARGET_RUST_TYPE := $(call rust_cpu,$(DEB_TARGET_GNU_CPU))-unknown-$(DEB_TAR
 
 # Cargo looks for config in and writes cache to $CARGO_HOME/
 export CARGO_HOME = $(CURDIR)/.cargohome
+# Ask cargo to be verbose when building
+export VERBOSE = 1
 
 DEB_DESTDIR := $(CURDIR)/debian/tmp
 VENDORDIR := $(CURDIR)/vendor
