@@ -84,7 +84,7 @@ def main():
       destdir=(os.path.join(cachedir, name, ver))
       os.makedirs(destdir)
       tarcrate = os.path.join(destdir, "download")
-      tar = tarfile.open(tarcrate, "w:gz")
+      tar = tarfile.open(tarcrate, "w:gz", format=tarfile.USTAR_FORMAT)
       tar.add(os.path.join(depsdir, crate), arcname=crate)
       tar.close()
 
