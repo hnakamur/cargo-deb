@@ -1,8 +1,8 @@
 Fromm: Luca Bruno <lucab@debian.org>
 Description: Misc fixes to build libgit2-sys
 Forwarded: not-needed
---- a/deps/libgit2-sys-0.3.8/build.rs
-+++ b/deps/libgit2-sys-0.3.8/build.rs
+--- a/deps/libgit2-sys-0.3.7/build.rs
++++ b/deps/libgit2-sys-0.3.7/build.rs
 @@ -75,7 +75,6 @@
          cfg.define("USE_OPENSSL", "OFF");
      }
@@ -11,14 +11,3 @@ Forwarded: not-needed
      t!(fs::create_dir_all(env::var("OUT_DIR").unwrap()));
  
      let dst = cfg.define("BUILD_SHARED_LIBS", "OFF")
---- a/src/cargo/sources/path.rs
-+++ b/src/cargo/sources/path.rs
-@@ -144,7 +144,7 @@
-         // the untracked files are often part of a build and may become relevant
-         // as part of a future commit.
-         let index_files = index.iter().map(|entry| {
--            use libgit2_sys::git_filemode_t::GIT_FILEMODE_COMMIT;
-+            use libgit2_sys::GIT_FILEMODE_COMMIT;
-             let is_dir = entry.mode == GIT_FILEMODE_COMMIT as u32;
-             (join(&root, &entry.path), Some(is_dir))
-         });
