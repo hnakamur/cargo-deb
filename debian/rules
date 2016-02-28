@@ -24,6 +24,7 @@ DEPSDIR := $(CURDIR)/deps
 	dh $@ --with bash-completion
 
 override_dh_auto_configure:
+	cp -a $(CURDIR)/Cargo.lock $(CURDIR)/.Cargo.lock.orig
 	# Prepare a fake registry by packing all deps
 	./debian/cargo-vendor-pack.py
 
@@ -65,6 +66,7 @@ endif
 	mv $(CURDIR)/.deps $(DEPSDIR)
 
 override_dh_auto_clean:
+	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock
 	-mv $(CURDIR)/.deps $(DEPSDIR)
 	-$(RM) -r $(CURDIR)/deps/*.rlib \
 			$(CURDIR)/deps/build_script* \
