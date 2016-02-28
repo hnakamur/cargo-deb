@@ -68,15 +68,19 @@ endif
 override_dh_auto_clean:
 	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock
 	-mv $(CURDIR)/.deps $(DEPSDIR)
+	dh_auto_clean
 	-$(RM) -r $(CURDIR)/deps/*.rlib \
 			$(CURDIR)/deps/build_script* \
 			$(CURDIR)/deps/cargo* \
 			$(CURDIR)/deps/*.o \
 			$(CURDIR)/target/ \
+			$(CURDIR)/.cargo/ \
+			$(CURDIR)/config.mk \
+			$(CURDIR)/config.stamp \
+			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0 \
 			$(CARGO_HOME) \
 			$(VENDORDIR)
-	dh_auto_clean
 
 override_dh_auto_install:
 	# We pick stuff directly from target/
