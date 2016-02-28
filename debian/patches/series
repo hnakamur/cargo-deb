@@ -1,3 +1,4 @@
 clean-cargo-deps.patch
 libgit2-fixes.patch
 clean-win-crates.patch
+local-jquery.patch

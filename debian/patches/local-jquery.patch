@@ -1,0 +1,11 @@
+From: Luca Bruno <lucab@debian.org>
+Description: Remove remote jquery references
+Forwarded: no
+--- a/src/doc/header.html
++++ b/src/doc/header.html
+@@ -1,4 +1,4 @@
+-<script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
++<script src="jquery.js"></script>
+ 
+ <a href='https://github.com/rust-lang/cargo' class='fork-me'>
+   <img src='images/forkme.png'/>
