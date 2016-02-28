@@ -56,8 +56,10 @@ endif
 		--local-cargo=$(CURDIR)/cargo-stage0
 	# Build final cargo binary and docs
 	$(MAKE)
+ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 	$(MAKE) doc
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
+endif
 
 	# Restore from workarounds
 	mv $(CURDIR)/.deps $(DEPSDIR)

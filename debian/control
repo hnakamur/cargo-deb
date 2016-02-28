@@ -53,6 +53,7 @@ Description: Rust package manager
 Package: cargo-doc
 Section: doc
 Architecture: all
+Build-Profiles: <!nodoc>
 Depends: ${misc:Depends}, libjs-jquery
 Description: Rust package manager, documentation
  Cargo is a tool that allows Rust projects to declare their various
