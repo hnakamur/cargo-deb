@@ -4,5 +4,5 @@ Abstract: The Cargo guide
 Section: Programming/Rust
 
 Format: HTML
-Index: /usr/share/doc/cargo/doc/index.html
-Files: /usr/share/doc/cargo/doc/*.html
+Index: /usr/share/doc/cargo-doc/doc/index.html
+Files: /usr/share/doc/cargo-doc/doc/*.html
