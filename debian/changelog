@@ -1,3 +1,18 @@
+cargo (0.7.0-2) unstable; urgency=medium
+
+  * Bump standards version
+  * cargo:
+    + add a new stage2 profile
+    + preserve original Cargo.lock for clean
+    + clean environment to allow multiple builds
+  * cargo-doc:
+    + update docbase paths after package split
+    + do not reference remote jquery
+    + do not build under nodoc profile
+  * control: update build-deps for build-profiles
+
+ -- Luca Bruno <lucab@debian.org>  Thu, 03 Mar 2016 22:18:32 +0100
+
 cargo (0.7.0-1) unstable; urgency=medium
 
   * New upstream version 0.7.0
