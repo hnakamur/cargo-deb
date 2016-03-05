@@ -1,5 +1,5 @@
 use cargo::ops;
-use cargo::util::{CliResult, CliError, Config};
+use cargo::util::{CliResult, Config};
 use cargo::util::important_paths::find_root_manifest_for_wd;
 
 #[derive(RustcDecodable)]
@@ -24,7 +24,7 @@ Options:
     --host HOST              Host to upload the package to
     --token TOKEN            Token to use when uploading
     --no-verify              Don't verify package tarball before publish
-    --manifest-path PATH     Path to the manifest to compile
+    --manifest-path PATH     Path to the manifest of the package to publish
     -v, --verbose            Use verbose output
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
@@ -43,7 +43,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     } = options;
 
     let root = try!(find_root_manifest_for_wd(flag_manifest_path.clone(), config.cwd()));
-    ops::publish(&root, config, token, host, !no_verify).map(|_| None).map_err(|err| {
-        CliError::from_boxed(err, 101)
-    })
+    try!(ops::publish(&root, config, token, host, !no_verify));
+    Ok(None)
 }

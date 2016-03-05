@@ -12,6 +12,8 @@ struct Options {
 }
 
 pub const USAGE: &'static str = "
+Checkout a copy of a Git repository
+
 Usage:
     cargo git-checkout [options] --url=URL --reference=REF
     cargo git-checkout -h | --help
@@ -34,7 +36,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
                    })
                    .map_err(|e| CliError::from_boxed(e, 1)));
 
-    let reference = GitReference::Branch(reference.to_string());
+    let reference = GitReference::Branch(reference.clone());
     let source_id = SourceId::for_git(&url, reference);
 
     let mut source = GitSource::new(&source_id, config);

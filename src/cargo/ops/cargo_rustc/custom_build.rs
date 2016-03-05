@@ -11,7 +11,7 @@ use util::{internal, ChainError, profile, paths};
 use util::Freshness;
 
 use super::job::Work;
-use super::{fingerprint, process, Kind, Context, Unit};
+use super::{fingerprint, Kind, Context, Unit};
 use super::CommandType;
 
 /// Contains the parsed output of a custom build script.
@@ -131,10 +131,11 @@ fn build_work<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
     // Check to see if the build script as already run, and if it has keep
     // track of whether it has told us about some explicit dependencies
     let prev_output = BuildOutput::parse_file(&output_file, &pkg_name).ok();
-    if let Some(ref prev) = prev_output {
-        let val = (output_file.clone(), prev.rerun_if_changed.clone());
-        cx.build_explicit_deps.insert(*unit, val);
-    }
+    let rerun_if_changed = match prev_output {
+        Some(ref prev) => prev.rerun_if_changed.clone(),
+        None => Vec::new(),
+    };
+    cx.build_explicit_deps.insert(*unit, (output_file.clone(), rerun_if_changed));
 
     try!(fs::create_dir_all(&cx.layout(unit.pkg, Kind::Host).build(unit.pkg)));
     try!(fs::create_dir_all(&cx.layout(unit.pkg, unit.kind).build(unit.pkg)));

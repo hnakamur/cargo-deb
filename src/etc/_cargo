@@ -55,22 +55,11 @@ case $state in
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--manifest-path=[path to manifest]' \
                     '(-p,--package)'{-p=,--package=}'[package to clean]:packages:_get_package_names' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--release[whether or not to clean release artifacts]' \
                     '--target=[target triple(default:all)]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
-                    ;;
-
-            config-for-key)
-                _arguments \
-                    '(-h, --help)'{-h,--help}'[show help message]' \
-                    '--human[]' \
-                    '--key=[key]' \
-                    ;;
-
-            config-list)
-                _arguments \
-                    '(-h, --help)'{-h,--help}'[show help message]' \
-                    '--human[]' \
                     ;;
 
             doc)
@@ -82,6 +71,10 @@ case $state in
                     '--no-deps[do not build docs for dependencies]' \
                     '--no-default-features[do not build the default features]' \
                     '--open[open docs in browser after the build]' \
+                    '(-p, --package)'{-p,--package}'=[package to document]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--release[build artifacts in release mode, with optimizations]' \
+                    '--target=[build for the target triple]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -90,6 +83,7 @@ case $state in
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--manifest-path=[path to manifest]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -98,6 +92,7 @@ case $state in
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--manifest-path=[path to manifest]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -105,6 +100,7 @@ case $state in
             git-checkout)
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
+                    'q(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '--reference=[REF]' \
                     '--url=[URL]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
@@ -117,6 +113,27 @@ case $state in
                     '*: :_cargo_cmds' \
                     ;;
 
+            install)
+                _arguments \
+                    '--bin=[only install the specified binary]' \
+                    '--branch=[branch to use when installing from git]' \
+                    '--color=:colorization option:(auto always never)' \
+                    '--debug[build in debug mode instead of release mode]' \
+                    '--example[install the specified example instead of binaries]' \
+                    '--features=[space separated feature list]' \
+                    '--git=[URL from which to install the crate]' \
+                    '(-h, --help)'{-h,--help}'[show help message]' \
+                    '(-j, --jobs)'{-j,--jobs}'[number of jobs to run in parallel]' \
+                    '--no-default-features[do not build the default features]' \
+                    '--path=[local filesystem path to crate to install]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--rev=[specific commit to use when installing from git]' \
+                    '--root=[directory to install packages into]' \
+                    '--tag=[tag to use when installing from git]' \
+                    '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
+                    '--vers=[version to install from crates.io]' \
+                    ;;
+
             locate-project)
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
@@ -127,6 +144,7 @@ case $state in
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--host=[Host to set the token for]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -136,6 +154,8 @@ case $state in
                     '--bin[use binary template]' \
                     '--vcs:initialize a new repo with a given VCS:(git hg none)' \
                     '(-h, --help)'{-h,--help}'[show help message]' \
+                    '--name=[set the resulting package name]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -145,8 +165,10 @@ case $state in
                     '(-a, --add)'{-a,--add}'[add owner LOGIN]' \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--index[registry index]' \
+                    '(-l, --list)'{-l,--list}'[list owners of a crate]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-r, --remove)'{-r,--remove}'[remove owner LOGIN]' \
-                    '--token[API token]' \
+                    '--token[API token to use when authenticating]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -154,8 +176,11 @@ case $state in
             package)
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
+                    '(-l, --list)'{-l,--list}'[print files included in a package without making one]' \
                     '--manifest-path=[path to manifest]' \
+                    '--no-metadata[ignore warnings about a lack of human-usable metadata]' \
                     '--no-verify[do not build to verify contents]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -164,6 +189,7 @@ case $state in
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--manifest-path=[path to manifest]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -174,7 +200,8 @@ case $state in
                     '--host=[Host to set the token for]' \
                     '--manifest-path=[path to manifest]' \
                     '--no-verify[Do not verify tarball until before publish]' \
-                    '--token[Token to use when uploading]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--token[token to use when uploading]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -196,12 +223,56 @@ case $state in
                     '--manifest-path=[path to manifest]' \
                     '--bin=[name of the bin target]' \
                     '--no-default-features[do not build the default features]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '--release=[build in release mode]' \
                     '--target=[target triple]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     '*: :_normal' \
-                ;;
+                    ;;
+
+            rustc)
+                _arguments \
+                    '--color=:colorization option:(auto always never)' \
+                    '--features=[features to compile for the package]' \
+                    '(-h, --help)'{-h,--help}'[show help message]' \
+                    '(-j, --jobs)'{-j,--jobs}'=[number of jobs to run in parallel]' \
+                    '--manifest-path=[path to the manifest to fetch dependencies for]' \
+                    '--no-default-features[do not compile default features for the package]' \
+                    '(-p, --package)'{-p,--package}'=[profile to compile for]' \
+                    '--profile=[profile to build the selected target for]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--release[build artifacts in release mode, with optimizations]' \
+                    '--target=[target triple which compiles will be for]' \
+                    '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
+                    "${command_scope_spec[@]}" \
+                    ;;
+
+            rustdoc)
+                _arguments \
+                    '--color=:colorization option:(auto always never)' \
+                    '--features=[space-separated list of features to also build]' \
+                    '(-h, --help)'{-h,--help}'[show help message]' \
+                    '(-j, --jobs)'{-j,--jobs}'=[number of jobs to run in parallel]' \
+                    '--manifest-path=[path to the manifest to document]' \
+                    '--no-default-features[do not build the `default` feature]' \
+                    '--open[open the docs in a browser after the operation]' \
+                    '(-p, --package)'{-p,--package}'=[package to document]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--release[build artifacts in release mode, with optimizations]' \
+                    '--target=[build for the target triple]' \
+                    '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
+                    "${command_scope_spec[@]}" \
+                    ;;
+
+            search)
+                _arguments \
+                    '--color=:colorization option:(auto always never)' \
+                    '(-h, --help)'{-h,--help}'[show help message]' \
+                    '--host=[host of a registry to search in]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
+                    ;;
 
             test)
                 _arguments \
@@ -211,12 +282,25 @@ case $state in
                     '--manifest-path=[path to manifest]' \
                     '--test=[test name]: :_test_names' \
                     '--no-default-features[do not build the default features]' \
+                    '--no-fail-fast[run all tests regardless of failure]' \
                     '--no-run[compile but do not run]' \
                     '(-p,--package)'{-p=,--package=}'[package to run tests for]:packages:_get_package_names' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--release[build artifacts in release mode, with optimizations]' \
                     '--target=[target triple]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     '1: :_test_names' \
+                    ;;
+
+            uninstall)
+                _arguments \
+                    '--bin=[only uninstall the binary NAME]' \
+                    '--color=:colorization option:(auto always never)' \
+                    '(-h, --help)'{-h,--help}'[show help message]' \
+                    '(-q, --quiet)'{-q,--quiet}'[less output printed to stdout]' \
+                    '--root=[directory to uninstall packages from]' \
+                    '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     ;;
 
             update)
@@ -226,6 +310,7 @@ case $state in
                     '--manifest-path=[path to manifest]' \
                     '(-p,--package)'{-p=,--package=}'[package to update]:packages:__get_package_names' \
                     '--precise=[update single dependency to PRECISE]: :' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -234,6 +319,7 @@ case $state in
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--manifest-path=[path to manifest]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     ;;
@@ -249,8 +335,9 @@ case $state in
                 _arguments \
                     '(-h, --help)'{-h,--help}'[show help message]' \
                     '--index[registry index]' \
-                    '--token[API token]' \
-                    '--undo[undo yank]' \
+                    '(-q, --quiet)'{-q,--quiet}'[no output printed to stdout]' \
+                    '--token[API token to use when authenticating]' \
+                    '--undo[undo a yank, putting a version back into the index]' \
                     '(-v, --verbose)'{-v,--verbose}'[use verbose output]' \
                     '--color=:colorization option:(auto always never)' \
                     '--vers[yank version]' \
@@ -265,13 +352,12 @@ local -a commands;commands=(
 'bench:execute all benchmarks of a local package'
 'build:compile the current project'
 'clean:remove generated artifacts'
-'config-for-key:print key from cargo config file'
-'config-list:print all config from cargo config file'
 'doc:build package documentation'
 'fetch:fetch package dependencies'
 'generate-lockfile:create lockfile'
 'git-checkout:git checkout'
 'help:get help for commands'
+'install:install a Rust binary'
 'locate-project:print "Cargo.toml" location'
 'login:login to remote server'
 'new:create a new project'
@@ -281,7 +367,11 @@ local -a commands;commands=(
 'publish:upload package to the registry'
 'read-manifest:print manifest in JSON format'
 'run:run the main binary of the local package'
+'rustc:compile a package and all of its dependencies'
+'rustdoc:build documentation for a package'
+'search:search packages on crates.io'
 'test:execute all unit and tests of a local package'
+'uninstall:remove a Rust binary'
 'update:update dependencies'
 'verify-project:check Cargo.toml'
 'version:show version information'
@@ -365,7 +455,7 @@ command_scope_spec=(
     '(--bench --bin --test --lib)--example=[example name]'
     '(--bench --example --test --lib)--bin=[binary name]'
     '(--bench --bin --example --test)--lib=[library name]'
-    '(--bench --bin --example --test)--test=[test name]'
+    '(--bench --bin --example --lib)--test=[test name]'
 )
 
 
