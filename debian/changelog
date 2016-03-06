@@ -1,9 +1,9 @@
-cargo (0.8.0-1) UNRELEASED; urgency=medium
+cargo (0.8.0-1) unstable; urgency=medium
 
   * New upstream version 0.8.0
-    + Updated deps tarball and repack filter
+    + Updated deps tarball
     + Refreshed patches
-  * cargo: remove unused lintian overrides
+  * cargo: removed unused lintian overrides
 
  -- Luca Bruno <lucab@debian.org>  Sat, 05 Mar 2016 22:39:06 +0100
 
