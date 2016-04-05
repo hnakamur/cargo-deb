@@ -1,3 +1,9 @@
+cargo (0.8.0-2) unstable; urgency=low
+
+  * Prefer libcurl4-gnutls-dev for building (Closes: #819831)
+
+ -- Luca Bruno <lucab@debian.org>  Tue, 05 Apr 2016 22:23:44 +0200
+
 cargo (0.8.0-1) unstable; urgency=medium
 
   * New upstream version 0.8.0
