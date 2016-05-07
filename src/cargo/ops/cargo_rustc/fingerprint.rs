@@ -141,7 +141,7 @@ impl Fingerprint {
         }
         let ret = util::hash_u64(self);
         *self.memoized_hash.lock().unwrap() = Some(ret);
-        return ret
+        ret
     }
 
     fn compare(&self, old: &Fingerprint) -> CargoResult<()> {
@@ -315,7 +315,8 @@ fn calculate<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
     // elsewhere. Also skip fingerprints of binaries because they don't actually
     // induce a recompile, they're just dependencies in the sense that they need
     // to be built.
-    let deps = try!(cx.dep_targets(unit).iter().filter(|u| {
+    let deps = try!(cx.dep_targets(unit));
+    let deps = try!(deps.iter().filter(|u| {
         !u.target.is_custom_build() && !u.target.is_bin()
     }).map(|unit| {
         calculate(cx, unit).map(|fingerprint| {
@@ -398,7 +399,7 @@ pub fn prepare_build_cmd<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
             None => {
                 let &(ref output, ref deps) = &cx.build_explicit_deps[unit];
 
-                let local = if deps.len() == 0 {
+                let local = if deps.is_empty() {
                     let s = try!(pkg_fingerprint(cx, unit.pkg));
                     LocalFingerprint::Precalculated(s)
                 } else {
@@ -440,7 +441,7 @@ pub fn prepare_build_cmd<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
     let write_fingerprint = Work::new(move |_| {
         if let Some(output_path) = output_path {
             let outputs = state.outputs.lock().unwrap();
-            if outputs[&key].rerun_if_changed.len() > 0 {
+            if !outputs[&key].rerun_if_changed.is_empty() {
                 let slot = MtimeSlot(Mutex::new(None));
                 fingerprint.local = LocalFingerprint::MtimeBased(slot,
                                                                  output_path);
@@ -562,7 +563,8 @@ fn dep_info_mtime_if_fresh(dep_info: &Path) -> CargoResult<Option<FileTime>> {
 
 fn pkg_fingerprint(cx: &Context, pkg: &Package) -> CargoResult<String> {
     let source_id = pkg.package_id().source_id();
-    let source = try!(cx.sources.get(source_id).chain_error(|| {
+    let sources = cx.packages.sources();
+    let source = try!(sources.get(source_id).chain_error(|| {
         internal("missing package source")
     }));
     source.fingerprint(pkg)

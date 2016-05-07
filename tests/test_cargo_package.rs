@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::Cursor;
 use std::io::prelude::*;
 use std::path::Path;
 
@@ -8,8 +7,7 @@ use git2;
 use tar::Archive;
 
 use support::{project, execs, paths, git, path2url};
-use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING, UPDATING, DOWNLOADING};
-use support::registry::{self, Package};
+use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING};
 use hamcrest::{assert_that, existing_file};
 
 fn setup() {
@@ -54,8 +52,8 @@ src[..]main.rs
     let mut rdr = GzDecoder::new(f).unwrap();
     let mut contents = Vec::new();
     rdr.read_to_end(&mut contents).unwrap();
-    let ar = Archive::new(Cursor::new(contents));
-    for f in ar.files().unwrap() {
+    let mut ar = Archive::new(&contents[..]);
+    for f in ar.entries().unwrap() {
         let f = f.unwrap();
         let fname = f.header().path_bytes();
         let fname = &*fname;
@@ -139,59 +137,6 @@ http://doc.crates.io/manifest.html#package-metadata for more info."));
         verifying = VERIFYING,
         compiling = COMPILING,
         dir = p.url())));
-});
-
-test!(wildcard_deps {
-    let p = project("foo")
-        .file("Cargo.toml", r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-            license = "MIT"
-            description = "foo"
-            repository = "bar"
-
-            [dependencies]
-            bar = "*"
-
-            [build-dependencies]
-            baz = "*"
-
-            [dev-dependencies]
-            buz = "*"
-        "#)
-        .file("src/main.rs", "fn main() {}");
-
-    Package::new("baz", "0.0.1").publish();
-    Package::new("bar", "0.0.1").dep("baz", "0.0.1").publish();
-    Package::new("buz", "0.0.1").dep("bar", "0.0.1").publish();
-
-    assert_that(p.cargo_process("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ({dir})
-{verifying} foo v0.0.1 ({dir})
-{updating} registry `{reg}`
-{downloading} [..] v0.0.1 (registry file://[..])
-{downloading} [..] v0.0.1 (registry file://[..])
-{downloading} [..] v0.0.1 (registry file://[..])
-{compiling} baz v0.0.1 (registry file://[..])
-{compiling} bar v0.0.1 (registry file://[..])
-{compiling} foo v0.0.1 ({dir}[..])
-",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        updating = UPDATING,
-        downloading = DOWNLOADING,
-        compiling = COMPILING,
-        dir = p.url(),
-        reg = registry::registry()))
-                .with_stderr("\
-warning: some dependencies have wildcard (\"*\") version constraints. On January 22nd, 2016, \
-crates.io will begin rejecting packages with wildcard dependency constraints. See \
-http://doc.crates.io/crates-io.html#using-crates.io-based-crates for information on version \
-constraints.
-dependencies for these crates have wildcard constraints: bar, baz"));
 });
 
 test!(package_verbose {
@@ -440,8 +385,8 @@ src[..]main.rs
     let mut rdr = GzDecoder::new(f).unwrap();
     let mut contents = Vec::new();
     rdr.read_to_end(&mut contents).unwrap();
-    let ar = Archive::new(Cursor::new(contents));
-    for f in ar.files().unwrap() {
+    let mut ar = Archive::new(&contents[..]);
+    for f in ar.entries().unwrap() {
         let f = f.unwrap();
         let fname = f.header().path_bytes();
         let fname = &*fname;

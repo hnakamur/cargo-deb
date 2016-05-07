@@ -187,7 +187,6 @@ pub struct RegistrySource<'cfg> {
     src_path: PathBuf,
     config: &'cfg Config,
     handle: Option<http::Handle>,
-    sources: HashMap<PackageId, PathSource<'cfg>>,
     hashes: HashMap<(String, String), String>, // (name, vers) => cksum
     cache: HashMap<String, Vec<(Summary, bool)>>,
     updated: bool,
@@ -239,7 +238,6 @@ impl<'cfg> RegistrySource<'cfg> {
             config: config,
             source_id: source_id.clone(),
             handle: None,
-            sources: HashMap::new(),
             hashes: HashMap::new(),
             cache: HashMap::new(),
             updated: false,
@@ -435,6 +433,11 @@ impl<'cfg> RegistrySource<'cfg> {
             _ => Kind::Normal,
         };
 
+        let platform = match target {
+            Some(target) => Some(try!(target.parse())),
+            None => None,
+        };
+
         // Unfortunately older versions of cargo and/or the registry ended up
         // publishing lots of entries where the features array contained the
         // empty feature, "", inside. This confuses the resolution process much
@@ -445,7 +448,7 @@ impl<'cfg> RegistrySource<'cfg> {
         Ok(dep.set_optional(optional)
               .set_default_features(default_features)
               .set_features(features)
-              .set_only_for_platform(target)
+              .set_platform(platform)
               .set_kind(kind)
               .into_dependency())
     }
@@ -487,7 +490,7 @@ impl<'cfg> Registry for RegistrySource<'cfg> {
             let mut summaries = try!(self.summaries(dep.name())).iter().map(|s| {
                 s.0.clone()
             }).collect::<Vec<_>>();
-            if try!(summaries.query(dep)).len() == 0 {
+            if try!(summaries.query(dep)).is_empty() {
                 try!(self.do_update());
             }
         }
@@ -505,7 +508,8 @@ impl<'cfg> Registry for RegistrySource<'cfg> {
         // version requested (agument to `--precise`).
         summaries.retain(|s| {
             match self.source_id.precise() {
-                Some(p) if p.starts_with(dep.name()) => {
+                Some(p) if p.starts_with(dep.name()) &&
+                           p[dep.name().len()..].starts_with("=") => {
                     let vers = &p[dep.name().len() + 1..];
                     s.version().to_string() == vers
                 }
@@ -531,37 +535,24 @@ impl<'cfg> Source for RegistrySource<'cfg> {
         Ok(())
     }
 
-    fn download(&mut self, packages: &[PackageId]) -> CargoResult<()> {
+    fn download(&mut self, package: &PackageId) -> CargoResult<Package> {
         let config = try!(self.config());
         let url = try!(config.dl.to_url().map_err(internal));
-        for package in packages.iter() {
-            if self.source_id != *package.source_id() { continue }
-            if self.sources.contains_key(package) { continue }
+        let mut url = url.clone();
+        url.path_mut().unwrap().push(package.name().to_string());
+        url.path_mut().unwrap().push(package.version().to_string());
+        url.path_mut().unwrap().push("download".to_string());
+        let path = try!(self.download_package(package, &url).chain_error(|| {
+            internal(format!("failed to download package `{}` from {}",
+                             package, url))
+        }));
+        let path = try!(self.unpack_package(package, path).chain_error(|| {
+            internal(format!("failed to unpack package `{}`", package))
+        }));
 
-            let mut url = url.clone();
-            url.path_mut().unwrap().push(package.name().to_string());
-            url.path_mut().unwrap().push(package.version().to_string());
-            url.path_mut().unwrap().push("download".to_string());
-            let path = try!(self.download_package(package, &url).chain_error(|| {
-                internal(format!("failed to download package `{}` from {}",
-                                 package, url))
-            }));
-            let path = try!(self.unpack_package(package, path).chain_error(|| {
-                internal(format!("failed to unpack package `{}`", package))
-            }));
-            let mut src = PathSource::new(&path, &self.source_id, self.config);
-            try!(src.update());
-            self.sources.insert(package.clone(), src);
-        }
-        Ok(())
-    }
-
-    fn get(&self, packages: &[PackageId]) -> CargoResult<Vec<Package>> {
-        let mut ret = Vec::new();
-        for src in self.sources.values() {
-            ret.extend(try!(src.get(packages)).into_iter());
-        }
-        return Ok(ret);
+        let mut src = PathSource::new(&path, &self.source_id, self.config);
+        try!(src.update());
+        src.download(package)
     }
 
     fn fingerprint(&self, pkg: &Package) -> CargoResult<String> {

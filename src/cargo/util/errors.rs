@@ -2,14 +2,16 @@ use std::error::Error;
 use std::ffi;
 use std::fmt;
 use std::io;
+use std::num;
 use std::process::{Output, ExitStatus};
 use std::str;
-
-use semver;
-use rustc_serialize::json;
+use std::string;
 
 use curl;
 use git2;
+use rustc_serialize::json;
+use semver;
+use term;
 use toml;
 use url;
 
@@ -140,14 +142,13 @@ pub struct CargoTestError {
 }
 
 impl CargoTestError {
-    #[allow(deprecated)] // connect => join in 1.3
     pub fn new(errors: Vec<ProcessError>) -> Self {
-        if errors.len() == 0 {
+        if errors.is_empty() {
             panic!("Cannot create CargoTestError from empty Vec")
         }
         let desc = errors.iter().map(|error| error.desc.clone())
                                 .collect::<Vec<String>>()
-                                .connect("\n");
+                                .join("\n");
         CargoTestError {
             desc: desc,
             exit: errors[0].exit,
@@ -308,6 +309,15 @@ from_error! {
     url::ParseError,
     toml::DecodeError,
     ffi::NulError,
+    term::Error,
+    num::ParseIntError,
+    str::ParseBoolError,
+}
+
+impl From<string::ParseError> for Box<CargoError> {
+    fn from(t: string::ParseError) -> Box<CargoError> {
+        match t {}
+    }
 }
 
 impl<E: CargoError> From<Human<E>> for Box<CargoError> {
@@ -327,6 +337,9 @@ impl CargoError for toml::Error {}
 impl CargoError for toml::DecodeError {}
 impl CargoError for url::ParseError {}
 impl CargoError for ffi::NulError {}
+impl CargoError for term::Error {}
+impl CargoError for num::ParseIntError {}
+impl CargoError for str::ParseBoolError {}
 
 // =============================================================================
 // Construction helpers
@@ -336,7 +349,7 @@ pub fn process_error(msg: &str,
                      status: Option<&ExitStatus>,
                      output: Option<&Output>) -> ProcessError {
     let exit = match status {
-        Some(s) => s.to_string(),
+        Some(s) => status_to_string(s),
         None => "never executed".to_string(),
     };
     let mut desc = format!("{} ({})", &msg, exit);
@@ -358,11 +371,45 @@ pub fn process_error(msg: &str,
         }
     }
 
-    ProcessError {
+    return ProcessError {
         desc: desc,
-        exit: status.map(|a| a.clone()),
-        output: output.map(|a| a.clone()),
+        exit: status.cloned(),
+        output: output.cloned(),
         cause: cause,
+    };
+
+    #[cfg(unix)]
+    fn status_to_string(status: &ExitStatus) -> String {
+        use std::os::unix::process::*;
+        use libc;
+
+        if let Some(signal) = status.signal() {
+            let name = match signal as libc::c_int {
+                libc::SIGABRT => ", SIGABRT: process abort signal",
+                libc::SIGALRM => ", SIGALRM: alarm clock",
+                libc::SIGFPE => ", SIGFPE: erroneous arithmetic operation",
+                libc::SIGHUP => ", SIGHUP: hangup",
+                libc::SIGILL => ", SIGILL: illegal instruction",
+                libc::SIGINT => ", SIGINT: terminal interrupt signal",
+                libc::SIGKILL => ", SIGKILL: kill",
+                libc::SIGPIPE => ", SIGPIPE: write on a pipe with no one to read",
+                libc::SIGQUIT => ", SIGQUIT: terminal quite signal",
+                libc::SIGSEGV => ", SIGSEGV: invalid memory reference",
+                libc::SIGTERM => ", SIGTERM: termination signal",
+                libc::SIGBUS => ", SIGBUS: access to undefined memory",
+                libc::SIGSYS => ", SIGSYS: bad system call",
+                libc::SIGTRAP => ", SIGTRAP: trace/breakpoint trap",
+                _ => "",
+            };
+            format!("signal: {}{}", signal, name)
+        } else {
+            status.to_string()
+        }
+    }
+
+    #[cfg(windows)]
+    fn status_to_string(status: &ExitStatus) -> String {
+        status.to_string()
     }
 }
 

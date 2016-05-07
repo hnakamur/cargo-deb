@@ -6,15 +6,15 @@ use cargo::util::important_paths::{find_root_manifest_for_wd};
 use cargo::util::{CliResult, Config};
 
 #[derive(RustcDecodable)]
-struct Options {
+pub struct Options {
     flag_package: Vec<String>,
     flag_jobs: Option<u32>,
     flag_features: Vec<String>,
     flag_no_default_features: bool,
     flag_target: Option<String>,
     flag_manifest_path: Option<String>,
-    flag_verbose: bool,
-    flag_quiet: bool,
+    flag_verbose: Option<bool>,
+    flag_quiet: Option<bool>,
     flag_color: Option<String>,
     flag_release: bool,
     flag_lib: bool,
@@ -61,8 +61,9 @@ the --release flag will use the `release` profile instead.
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     debug!("executing; cmd=cargo-build; args={:?}",
            env::args().collect::<Vec<_>>());
-    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
-    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
+    try!(config.configure_shell(options.flag_verbose,
+                                options.flag_quiet,
+                                &options.flag_color));
 
     let root = try!(find_root_manifest_for_wd(options.flag_manifest_path, config.cwd()));
 

@@ -28,11 +28,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use core::registry::PackageRegistry;
-use core::{Source, SourceId, SourceMap, PackageSet, Package, Target};
+use core::{Source, SourceId, PackageSet, Package, Target};
 use core::{Profile, TargetKind, Profiles};
 use core::resolver::{Method, Resolve};
 use ops::{self, BuildOutput, ExecEngine};
-use util::config::{ConfigValue, Config};
+use util::config::Config;
 use util::{CargoResult, internal, ChainError, profile};
 
 /// Contains information about how a package should be compiled.
@@ -102,7 +102,7 @@ pub fn resolve_dependencies<'a>(root_package: &Package,
                                 source: Option<Box<Source + 'a>>,
                                 features: Vec<String>,
                                 no_default_features: bool)
-                                -> CargoResult<(Vec<Package>, Resolve, SourceMap<'a>)> {
+                                -> CargoResult<(PackageSet<'a>, Resolve)> {
 
     let override_ids = try!(source_ids_from_config(config, root_package.root()));
 
@@ -133,13 +133,12 @@ pub fn resolve_dependencies<'a>(root_package: &Package,
             try!(ops::resolve_with_previous(&mut registry, root_package,
                                             method, Some(&resolve), None));
 
-    let packages = try!(ops::get_resolved_packages(&resolved_with_overrides,
-                                                   &mut registry));
+    let packages = ops::get_resolved_packages(&resolved_with_overrides,
+                                              registry);
 
-    Ok((packages, resolved_with_overrides, registry.move_sources()))
+    Ok((packages, resolved_with_overrides))
 }
 
-#[allow(deprecated)] // connect => join in 1.3
 pub fn compile_pkg<'a>(root_package: &Package,
                        source: Option<Box<Source + 'a>>,
                        options: &CompileOptions<'a>)
@@ -159,7 +158,7 @@ pub fn compile_pkg<'a>(root_package: &Package,
         bail!("jobs must be at least 1")
     }
 
-    let (packages, resolve_with_overrides, sources) = {
+    let (packages, resolve_with_overrides) = {
         try!(resolve_dependencies(root_package, config, source, features,
                                   no_default_features))
     };
@@ -176,13 +175,14 @@ pub fn compile_pkg<'a>(root_package: &Package,
         vec![root_package.package_id()]
     };
 
-    if spec.len() > 0 && invalid_spec.len() > 0 {
+    if !spec.is_empty() && !invalid_spec.is_empty() {
         bail!("could not find package matching spec `{}`",
-              invalid_spec.connect(", "))
+              invalid_spec.join(", "))
     }
 
-    let to_builds = packages.iter().filter(|p| pkgids.contains(&p.package_id()))
-                            .collect::<Vec<_>>();
+    let to_builds = try!(pkgids.iter().map(|id| {
+        packages.get(id)
+    }).collect::<CargoResult<Vec<_>>>());
 
     let mut general_targets = Vec::new();
     let mut package_targets = Vec::new();
@@ -246,9 +246,8 @@ pub fn compile_pkg<'a>(root_package: &Package,
         }
 
         try!(ops::compile_targets(&package_targets,
-                                  &PackageSet::new(&packages),
+                                  &packages,
                                   &resolve_with_overrides,
-                                  &sources,
                                   config,
                                   build_config,
                                   root_package.manifest().profiles(),
@@ -257,7 +256,7 @@ pub fn compile_pkg<'a>(root_package: &Package,
 
     ret.to_doc_test = to_builds.iter().map(|&p| p.clone()).collect();
 
-    return Ok(ret);
+    Ok(ret)
 }
 
 impl<'a> CompileFilter<'a> {
@@ -311,7 +310,7 @@ fn generate_targets<'a>(pkg: &'a Package,
         CompileMode::Build => build,
         CompileMode::Doc { .. } => &profiles.doc,
     };
-    return match *filter {
+    match *filter {
         CompileFilter::Everything => {
             match mode {
                 CompileMode::Bench => {
@@ -379,7 +378,7 @@ fn generate_targets<'a>(pkg: &'a Package,
             }
             Ok(targets)
         }
-    };
+    }
 }
 
 /// Read the `paths` configuration variable to discover all path overrides that
@@ -413,6 +412,7 @@ fn source_ids_from_config(config: &Config, cur_path: &Path)
 /// configured options are:
 ///
 /// * build.jobs
+/// * build.target
 /// * target.$target.ar
 /// * target.$target.linker
 /// * target.$target.libfoo.metadata
@@ -421,18 +421,22 @@ fn scrape_build_config(config: &Config,
                        target: Option<String>)
                        -> CargoResult<ops::BuildConfig> {
     let cfg_jobs = match try!(config.get_i64("build.jobs")) {
-        Some((n, p)) => {
-            if n <= 0 {
-                bail!("build.jobs must be positive, but found {} in {:?}", n, p)
-            } else if n >= u32::max_value() as i64 {
-                bail!("build.jobs is too large: found {} in {:?}", n, p)
+        Some(v) => {
+            if v.val <= 0 {
+                bail!("build.jobs must be positive, but found {} in {}",
+                      v.val, v.definition)
+            } else if v.val >= u32::max_value() as i64 {
+                bail!("build.jobs is too large: found {} in {}", v.val,
+                      v.definition)
             } else {
-                Some(n as u32)
+                Some(v.val as u32)
             }
         }
         None => None,
     };
     let jobs = jobs.or(cfg_jobs).unwrap_or(::num_cpus::get() as u32);
+    let cfg_target = try!(config.get_string("build.target")).map(|s| s.val);
+    let target = target.or(cfg_target);
     let mut base = ops::BuildConfig {
         jobs: jobs,
         requested_target: target.clone(),
@@ -451,16 +455,18 @@ fn scrape_target_config(config: &Config, triple: &str)
 
     let key = format!("target.{}", triple);
     let mut ret = ops::TargetConfig {
-        ar: try!(config.get_path(&format!("{}.ar", key))),
-        linker: try!(config.get_path(&format!("{}.linker", key))),
+        ar: try!(config.get_path(&format!("{}.ar", key))).map(|v| v.val),
+        linker: try!(config.get_path(&format!("{}.linker", key))).map(|v| v.val),
         overrides: HashMap::new(),
     };
     let table = match try!(config.get_table(&key)) {
-        Some((table, _)) => table,
+        Some(table) => table.val,
         None => return Ok(ret),
     };
     for (lib_name, _) in table.into_iter() {
-        if lib_name == "ar" || lib_name == "linker" { continue }
+        if lib_name == "ar" || lib_name == "linker" {
+            continue
+        }
 
         let mut output = BuildOutput {
             library_paths: Vec::new(),
@@ -470,40 +476,39 @@ fn scrape_target_config(config: &Config, triple: &str)
             rerun_if_changed: Vec::new(),
         };
         let key = format!("{}.{}", key, lib_name);
-        let table = try!(config.get_table(&key)).unwrap().0;
+        let table = try!(config.get_table(&key)).unwrap().val;
         for (k, _) in table.into_iter() {
             let key = format!("{}.{}", key, k);
-            match try!(config.get(&key)).unwrap() {
-                ConfigValue::String(v, path) => {
-                    if k == "rustc-flags" {
-                        let whence = format!("in `{}` (in {})", key,
-                                             path.display());
-                        let (paths, links) = try!(
-                            BuildOutput::parse_rustc_flags(&v, &whence)
-                        );
-                        output.library_paths.extend(paths.into_iter());
-                        output.library_links.extend(links.into_iter());
-                    } else {
-                        output.metadata.push((k, v));
-                    }
-                },
-                ConfigValue::List(a, p) => {
-                    if k == "rustc-link-lib" {
-                        output.library_links.extend(a.into_iter().map(|v| v.0));
-                    } else if k == "rustc-link-search" {
-                        output.library_paths.extend(a.into_iter().map(|v| {
-                            PathBuf::from(&v.0)
-                        }));
-                    } else if k == "rustc-cfg" {
-                        output.cfgs.extend(a.into_iter().map(|v| v.0));
-                    } else {
-                        try!(config.expected("string", &k,
-                                             ConfigValue::List(a, p)));
-                    }
-                },
-                // technically could be a list too, but that's the exception to
-                // the rule...
-                cv => { try!(config.expected("string", &k, cv)); }
+            match &k[..] {
+                "rustc-flags" => {
+                    let flags = try!(config.get_string(&key)).unwrap();
+                    let whence = format!("in `{}` (in {})", key,
+                                         flags.definition);
+                    let (paths, links) = try!(
+                        BuildOutput::parse_rustc_flags(&flags.val, &whence)
+                    );
+                    output.library_paths.extend(paths.into_iter());
+                    output.library_links.extend(links.into_iter());
+                }
+                "rustc-link-lib" => {
+                    let list = try!(config.get_list(&key)).unwrap();
+                    output.library_links.extend(list.val.into_iter()
+                                                        .map(|v| v.0));
+                }
+                "rustc-link-search" => {
+                    let list = try!(config.get_list(&key)).unwrap();
+                    output.library_paths.extend(list.val.into_iter().map(|v| {
+                        PathBuf::from(&v.0)
+                    }));
+                }
+                "rustc-cfg" => {
+                    let list = try!(config.get_list(&key)).unwrap();
+                    output.cfgs.extend(list.val.into_iter().map(|v| v.0));
+                }
+                _ => {
+                    let val = try!(config.get_string(&key)).unwrap();
+                    output.metadata.push((k, val.val));
+                }
             }
         }
         ret.overrides.insert(lib_name, output);

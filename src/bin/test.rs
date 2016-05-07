@@ -3,7 +3,7 @@ use cargo::util::{CliResult, CliError, Human, Config};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 
 #[derive(RustcDecodable)]
-struct Options {
+pub struct Options {
     arg_args: Vec<String>,
     flag_features: Vec<String>,
     flag_jobs: Option<u32>,
@@ -17,8 +17,8 @@ struct Options {
     flag_example: Vec<String>,
     flag_test: Vec<String>,
     flag_bench: Vec<String>,
-    flag_verbose: bool,
-    flag_quiet: bool,
+    flag_verbose: Option<bool>,
+    flag_quiet: Option<bool>,
     flag_color: Option<String>,
     flag_release: bool,
     flag_no_fail_fast: bool,
@@ -74,9 +74,10 @@ by passing `--nocapture` to the test binaries:
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+    try!(config.configure_shell(options.flag_verbose,
+                                options.flag_quiet,
+                                &options.flag_color));
     let root = try!(find_root_manifest_for_wd(options.flag_manifest_path, config.cwd()));
-    try!(config.shell().set_verbosity(options.flag_verbose, options.flag_quiet));
-    try!(config.shell().set_color_config(options.flag_color.as_ref().map(|s| &s[..])));
 
     let ops = ops::TestOptions {
         no_run: options.flag_no_run,

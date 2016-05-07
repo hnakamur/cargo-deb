@@ -7,15 +7,9 @@ use support::{execs, paths};
 use support::paths::CargoPathExt;
 use hamcrest::{assert_that, existing_file, existing_dir, is_not};
 
-use cargo::util::{process, ProcessBuilder};
+use cargo::util::ProcessBuilder;
 
 fn setup() {
-}
-
-fn my_process(s: &str) -> ProcessBuilder {
-    let mut p = process(s);
-    p.cwd(&paths::root()).env("HOME", &paths::home());
-    return p;
 }
 
 fn cargo_process(s: &str) -> ProcessBuilder {
@@ -94,7 +88,9 @@ test!(existing {
 test!(invalid_characters {
     assert_that(cargo_process("new").arg("foo.rs"),
                 execs().with_status(101)
-                       .with_stderr("Invalid character `.` in crate name: `foo.rs`"));
+                       .with_stderr("\
+Invalid character `.` in crate name: `foo.rs`
+use --name to override crate name"));
 });
 
 test!(rust_prefix_stripped {
@@ -186,10 +182,10 @@ test!(finds_author_email {
 });
 
 test!(finds_author_git {
-    my_process("git").args(&["config", "--global", "user.name", "bar"])
-                     .exec().unwrap();
-    my_process("git").args(&["config", "--global", "user.email", "baz"])
-                     .exec().unwrap();
+    ::process("git").args(&["config", "--global", "user.name", "bar"])
+                    .exec().unwrap();
+    ::process("git").args(&["config", "--global", "user.email", "baz"])
+                    .exec().unwrap();
     assert_that(cargo_process("new").arg("foo").env("USER", "foo"),
                 execs().with_status(0));
 
@@ -200,10 +196,10 @@ test!(finds_author_git {
 });
 
 test!(author_prefers_cargo {
-    my_process("git").args(&["config", "--global", "user.name", "foo"])
-                     .exec().unwrap();
-    my_process("git").args(&["config", "--global", "user.email", "bar"])
-                     .exec().unwrap();
+    ::process("git").args(&["config", "--global", "user.name", "foo"])
+                    .exec().unwrap();
+    ::process("git").args(&["config", "--global", "user.email", "bar"])
+                    .exec().unwrap();
     let root = paths::root();
     fs::create_dir(&root.join(".cargo")).unwrap();
     File::create(&root.join(".cargo/config")).unwrap().write_all(br#"

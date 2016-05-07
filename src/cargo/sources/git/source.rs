@@ -101,13 +101,10 @@ pub fn canonicalize_url(url: &Url) -> Url {
     let mut url = url.clone();
 
     // Strip a trailing slash
-    match url.scheme_data {
-        url::SchemeData::Relative(ref mut rel) => {
-            if rel.path.last().map(|s| s.is_empty()).unwrap_or(false) {
-                rel.path.pop();
-            }
+    if let url::SchemeData::Relative(ref mut rel) = url.scheme_data {
+        if rel.path.last().map(|s| s.is_empty()).unwrap_or(false) {
+            rel.path.pop();
         }
-        _ => {}
     }
 
     // HACKHACK: For github URL's specifically just lowercase
@@ -117,35 +114,29 @@ pub fn canonicalize_url(url: &Url) -> Url {
     // same case conversion rules that GitHub does. (#84)
     if url.domain() == Some("github.com") {
         url.scheme = "https".to_string();
-        match url.scheme_data {
-            url::SchemeData::Relative(ref mut rel) => {
-                rel.port = Some(443);
-                rel.default_port = Some(443);
-                let path = mem::replace(&mut rel.path, Vec::new());
-                rel.path = path.into_iter().map(|s| {
-                    s.chars().flat_map(|c| c.to_lowercase()).collect()
-                }).collect();
-            }
-            _ => {}
+        if let url::SchemeData::Relative(ref mut rel) = url.scheme_data {
+            rel.port = Some(443);
+            rel.default_port = Some(443);
+            let path = mem::replace(&mut rel.path, Vec::new());
+            rel.path = path.into_iter().map(|s| {
+                s.chars().flat_map(|c| c.to_lowercase()).collect()
+            }).collect();
         }
     }
 
     // Repos generally can be accessed with or w/o '.git'
-    match url.scheme_data {
-        url::SchemeData::Relative(ref mut rel) => {
-            let needs_chopping = {
-                let last = rel.path.last().map(|s| &s[..]).unwrap_or("");
-                last.ends_with(".git")
-            };
-            if needs_chopping {
-                let last = rel.path.pop().unwrap();
-                rel.path.push(last[..last.len() - 4].to_string())
-            }
+    if let url::SchemeData::Relative(ref mut rel) = url.scheme_data {
+        let needs_chopping = {
+            let last = rel.path.last().map(|s| &s[..]).unwrap_or("");
+            last.ends_with(".git")
+        };
+        if needs_chopping {
+            let last = rel.path.pop().unwrap();
+            rel.path.push(last[..last.len() - 4].to_string())
         }
-        _ => {}
     }
 
-    return url;
+    url
 }
 
 impl<'cfg> Debug for GitSource<'cfg> {
@@ -196,16 +187,12 @@ impl<'cfg> Source for GitSource<'cfg> {
         self.path_source.as_mut().unwrap().update()
     }
 
-    fn download(&mut self, _: &[PackageId]) -> CargoResult<()> {
-        // TODO: assert! that the PackageId is contained by the source
-        Ok(())
-    }
-
-    fn get(&self, ids: &[PackageId]) -> CargoResult<Vec<Package>> {
-        trace!("getting packages for package ids `{:?}` from `{:?}`", ids,
-             self.remote);
-        self.path_source.as_ref().expect("BUG: update() must be called \
-                                          before get()").get(ids)
+    fn download(&mut self, id: &PackageId) -> CargoResult<Package> {
+        trace!("getting packages for package id `{}` from `{:?}`", id,
+               self.remote);
+        self.path_source.as_mut()
+                        .expect("BUG: update() must be called before get()")
+                        .download(id)
     }
 
     fn fingerprint(&self, _pkg: &Package) -> CargoResult<String> {

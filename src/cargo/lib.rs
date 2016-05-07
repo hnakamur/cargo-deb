@@ -241,15 +241,14 @@ pub fn version() -> String {
     })
 }
 
-fn flags_from_args<'a, T>(usage: &str, args: &[String],
+fn flags_from_args<T>(usage: &str, args: &[String],
                           options_first: bool) -> CliResult<T>
     where T: Decodable
 {
     let docopt = Docopt::new(usage).unwrap()
                                    .options_first(options_first)
                                    .argv(args.iter().map(|s| &s[..]))
-                                   .help(true)
-                                   .version(Some(version()));
+                                   .help(true);
     docopt.decode().map_err(|e| {
         let code = if e.fatal() {1} else {0};
         CliError::from_error(human(e.to_string()), code)

@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use support::paths::CargoPathExt;
 
 use cargo::util::ProcessBuilder;
 use hamcrest::{assert_that, existing_file, is_not, Matcher, MatchResult};
@@ -120,8 +121,10 @@ could not find `foo` in `registry file://[..]` with version `0.2.0`
 test!(no_crate {
     assert_that(cargo_process("install"),
                 execs().with_status(101).with_stderr("\
-must specify a crate to install from crates.io, or use --path or --git \
-to specify alternate source
+`[..]` is not a crate root; specify a crate to install [..]
+
+Caused by:
+  Could not find Cargo.toml in `[..]`
 "));
 });
 
@@ -401,7 +404,7 @@ test!(compile_failure {
 error: main function not found
 error: aborting due to previous error
 failed to compile `foo v0.1.0 (file://[..])`, intermediate artifacts can be \
-    found at `[..]target-install`
+    found at `[..]target`
 
 Caused by:
   Could not compile `foo`.
@@ -525,4 +528,65 @@ test!(subcommand_works_out_of_the_box {
                 execs().with_status(0).with_stdout("bar\n"));
     assert_that(cargo_process("--list"),
                 execs().with_status(0).with_stdout_contains("  foo\n"));
+});
+
+test!(installs_from_cwd_by_default {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install"), execs().with_status(0));
+    assert_that(cargo_home(), has_installed_exe("foo"));
+});
+
+test!(do_not_rebuilds_on_local_install {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}");
+
+    assert_that(p.cargo_process("build").arg("--release"),
+                execs().with_status(0));
+    assert_that(cargo_process("install").arg("--path").arg(p.root()),
+                execs().with_status(0).with_stdout("\
+  Installing [..]
+").with_stderr("\
+be sure to add `[..]` to your PATH to be able to run the installed binaries
+"));
+
+    assert!(p.build_dir().c_exists());
+    assert!(p.release_bin("foo").c_exists());
+    assert_that(cargo_home(), has_installed_exe("foo"));
+});
+
+test!(reports_unsuccessful_subcommand_result {
+    Package::new("cargo-fail", "1.0.0")
+        .file("src/main.rs", r#"
+            fn main() {
+                panic!();
+            }
+        "#)
+        .publish();
+    assert_that(cargo_process("install").arg("cargo-fail"),
+                execs().with_status(0));
+    assert_that(cargo_process("--list"),
+                execs().with_status(0).with_stdout_contains("  fail\n"));
+    assert_that(cargo_process("fail"),
+                execs().with_status(101).with_stderr_contains("\
+thread '<main>' panicked at 'explicit panic', [..]
+").with_stderr_contains("\
+third party subcommand `cargo-fail[..]` exited unsuccessfully
+
+To learn more, run the command again with --verbose.
+"));
 });

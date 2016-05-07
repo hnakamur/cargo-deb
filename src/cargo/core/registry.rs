@@ -1,7 +1,7 @@
-use std::collections::HashSet;
-use std::collections::hash_map::HashMap;
+use std::collections::{HashSet, HashMap};
 
 use core::{Source, SourceId, SourceMap, Summary, Dependency, PackageId, Package};
+use core::PackageSet;
 use util::{CargoResult, ChainError, Config, human, profile};
 
 /// Source of information about a group of packages.
@@ -15,7 +15,7 @@ pub trait Registry {
 impl Registry for Vec<Summary> {
     fn query(&mut self, dep: &Dependency) -> CargoResult<Vec<Summary>> {
         Ok(self.iter().filter(|summary| dep.matches(*summary))
-               .map(|summary| summary.clone()).collect())
+               .cloned().collect())
     }
 }
 
@@ -85,30 +85,9 @@ impl<'cfg> PackageRegistry<'cfg> {
         }
     }
 
-    pub fn get(&mut self, package_ids: &[PackageId]) -> CargoResult<Vec<Package>> {
+    pub fn get(self, package_ids: &[PackageId]) -> PackageSet<'cfg> {
         trace!("getting packages; sources={}", self.sources.len());
-
-        // TODO: Only call source with package ID if the package came from the
-        // source
-        let mut ret = Vec::new();
-
-        for (_, source) in self.sources.sources_mut() {
-            try!(source.download(package_ids));
-            let packages = try!(source.get(package_ids));
-
-            ret.extend(packages.into_iter());
-        }
-
-        // TODO: Return earlier if fail
-        assert!(package_ids.len() == ret.len(),
-                "could not get packages from registry; ids={:?}; ret={:?}",
-                package_ids, ret);
-
-        Ok(ret)
-    }
-
-    pub fn move_sources(self) -> SourceMap<'cfg> {
-        self.sources
+        PackageSet::new(package_ids, self.sources)
     }
 
     fn ensure_loaded(&mut self, namespace: &SourceId, kind: Kind) -> CargoResult<()> {
@@ -295,7 +274,7 @@ impl<'cfg> Registry for PackageRegistry<'cfg> {
     fn query(&mut self, dep: &Dependency) -> CargoResult<Vec<Summary>> {
         let overrides = try!(self.query_overrides(dep));
 
-        let ret = if overrides.len() == 0 {
+        let ret = if overrides.is_empty() {
             // Ensure the requested source_id is loaded
             try!(self.ensure_loaded(dep.source_id(), Kind::Normal));
             let mut ret = Vec::new();

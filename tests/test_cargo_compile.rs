@@ -1,7 +1,6 @@
 use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::thread;
 use tempdir::TempDir;
 
 use support::{project, execs, main_file, basic_bin_manifest};
@@ -1648,7 +1647,7 @@ test!(compile_then_delete {
     assert_that(&p.bin("foo"), existing_file());
     if cfg!(windows) {
         // On windows unlinking immediately after running often fails, so sleep
-        thread::sleep_ms(100);
+        ::sleep_ms(100);
     }
     fs::remove_file(&p.bin("foo")).unwrap();
     assert_that(p.cargo("run"),
@@ -1739,13 +1738,12 @@ test!(predictable_filenames {
 
             [lib]
             name = "foo"
-            crate-type = ["staticlib", "dylib", "rlib"]
+            crate-type = ["dylib", "rlib"]
         "#)
         .file("src/lib.rs", "");
 
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0));
-    assert_that(&p.root().join("target/debug/libfoo.a"), existing_file());
     assert_that(&p.root().join("target/debug/libfoo.rlib"), existing_file());
     let dylib_name = format!("{}foo{}", env::consts::DLL_PREFIX,
                              env::consts::DLL_SUFFIX);
@@ -1915,9 +1913,9 @@ test!(custom_target_dir {
     fs::create_dir(p.root().join(".cargo")).unwrap();
     File::create(p.root().join(".cargo/config")).unwrap().write_all(br#"
         [build]
-        target-dir = "bar/target"
+        target-dir = "foo/target"
     "#).unwrap();
-    assert_that(p.cargo("build").env("CARGO_TARGET_DIR", "foo/target"),
+    assert_that(p.cargo("build").env("CARGO_TARGET_DIR", "bar/target"),
                 execs().with_status(0));
     assert_that(&p.root().join("bar/target/debug").join(&exe_name),
                 existing_file());

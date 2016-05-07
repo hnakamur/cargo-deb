@@ -6,7 +6,7 @@ use flate2::Compression::Default;
 use flate2::write::GzEncoder;
 use git2;
 use rustc_serialize::hex::ToHex;
-use tar::{Archive, Header};
+use tar::{Builder, Header};
 use url::Url;
 
 use support::paths;
@@ -21,7 +21,7 @@ pub fn dl_url() -> Url { Url::from_file_path(&*dl_path()).ok().unwrap() }
 pub struct Package {
     name: String,
     vers: String,
-    deps: Vec<(String, String, &'static str)>,
+    deps: Vec<(String, String, &'static str, String)>,
     files: Vec<(String, String)>,
     yanked: bool,
 }
@@ -64,12 +64,23 @@ impl Package {
     }
 
     pub fn dep(&mut self, name: &str, vers: &str) -> &mut Package {
-        self.deps.push((name.to_string(), vers.to_string(), "normal"));
+        self.deps.push((name.to_string(), vers.to_string(), "normal",
+                        "null".to_string()));
+        self
+    }
+
+    pub fn target_dep(&mut self,
+                      name: &str,
+                      vers: &str,
+                      target: &str) -> &mut Package {
+        self.deps.push((name.to_string(), vers.to_string(), "normal",
+                        format!("\"{}\"", target)));
         self
     }
 
     pub fn dev_dep(&mut self, name: &str, vers: &str) -> &mut Package {
-        self.deps.push((name.to_string(), vers.to_string(), "dev"));
+        self.deps.push((name.to_string(), vers.to_string(), "dev",
+                        "null".to_string()));
         self
     }
 
@@ -83,14 +94,14 @@ impl Package {
         self.make_archive();
 
         // Figure out what we're going to write into the index
-        let deps = self.deps.iter().map(|&(ref name, ref req, ref kind)| {
+        let deps = self.deps.iter().map(|&(ref name, ref req, ref kind, ref target)| {
             format!("{{\"name\":\"{}\",\
                        \"req\":\"{}\",\
                        \"features\":[],\
                        \"default_features\":false,\
-                       \"target\":null,\
+                       \"target\":{},\
                        \"optional\":false,\
-                       \"kind\":\"{}\"}}", name, req, kind)
+                       \"kind\":\"{}\"}}", name, req, target, kind)
         }).collect::<Vec<_>>().connect(",");
         let cksum = {
             let mut c = Vec::new();
@@ -141,39 +152,43 @@ impl Package {
             version = "{}"
             authors = []
         "#, self.name, self.vers);
-        for &(ref dep, ref req, kind) in self.deps.iter() {
-            manifest.push_str(&format!(r#"
-                [{}dependencies.{}]
-                version = "{}"
-            "#, match kind {
+        for &(ref dep, ref req, kind, ref target) in self.deps.iter() {
+            let target = match &target[..] {
+                "null" => String::new(),
+                t => format!("target.{}.", t),
+            };
+            let kind = match kind {
                 "build" => "build-",
                 "dev" => "dev-",
                 _ => ""
-            }, dep, req));
+            };
+            manifest.push_str(&format!(r#"
+                [{}{}dependencies.{}]
+                version = "{}"
+            "#, target, kind, dep, req));
         }
 
         let dst = self.archive_dst();
         fs::create_dir_all(dst.parent().unwrap()).unwrap();
         let f = File::create(&dst).unwrap();
-        let a = Archive::new(GzEncoder::new(f, Default));
-        self.append(&a, "Cargo.toml", &manifest);
-        if self.files.len() == 0 {
-            self.append(&a, "src/lib.rs", "");
+        let mut a = Builder::new(GzEncoder::new(f, Default));
+        self.append(&mut a, "Cargo.toml", &manifest);
+        if self.files.is_empty() {
+            self.append(&mut a, "src/lib.rs", "");
         } else {
             for &(ref name, ref contents) in self.files.iter() {
-                self.append(&a, name, contents);
+                self.append(&mut a, name, contents);
             }
         }
-        a.finish().unwrap();
     }
 
-    fn append<W: Write>(&self, ar: &Archive<W>, file: &str, contents: &str) {
-        let mut header = Header::new();
+    fn append<W: Write>(&self, ar: &mut Builder<W>, file: &str, contents: &str) {
+        let mut header = Header::new_ustar();
         header.set_size(contents.len() as u64);
         header.set_path(format!("{}-{}/{}", self.name, self.vers, file)).unwrap();
         header.set_cksum();
 
-        ar.append(&header, &mut contents.as_bytes()).unwrap();
+        ar.append(&header, contents.as_bytes()).unwrap();
     }
 
     pub fn archive_dst(&self) -> PathBuf {

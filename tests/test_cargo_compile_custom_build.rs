@@ -1,6 +1,5 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::thread;
 
 use support::{project, execs};
 use support::{COMPILING, RUNNING, DOCTEST, FRESH, DOCUMENTING};
@@ -1136,7 +1135,8 @@ test!(build_script_with_dynamic_native_dependency {
         "#)
         .file("bar/src/lib.rs", r#"
             pub fn bar() {
-                #[link(name = "builder")]
+                #[cfg_attr(not(target_env = "msvc"), link(name = "builder"))]
+                #[cfg_attr(target_env = "msvc", link(name = "builder.dll"))]
                 extern { fn foo(); }
                 unsafe { foo() }
             }
@@ -1739,7 +1739,7 @@ test!(rebuild_only_on_explicit_paths {
 {running} `rustc src[..]lib.rs [..]`
 ", running = RUNNING, compiling = COMPILING)));
 
-    thread::sleep_ms(1000);
+    ::sleep_ms(1000);
     File::create(p.root().join("foo")).unwrap();
     File::create(p.root().join("bar")).unwrap();
 
@@ -1758,7 +1758,7 @@ test!(rebuild_only_on_explicit_paths {
 {fresh} a v0.5.0 ([..])
 ", fresh = FRESH)));
 
-    thread::sleep_ms(1000);
+    ::sleep_ms(1000);
 
     // random other files do not affect freshness
     println!("run baz");
@@ -1820,5 +1820,45 @@ test!(doctest_recieves_build_link_args {
                 execs().with_status(0)
                        .with_stdout_contains(&format!("\
 {running} `rustdoc --test [..] --crate-name foo [..]-L native=bar[..]`
+", running = RUNNING)));
+});
+
+test!(please_respect_the_dag {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+            build = "build.rs"
+
+            [dependencies]
+            a = { path = 'a' }
+        "#)
+        .file("src/lib.rs", "")
+        .file("build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-link-search=native=foo");
+            }
+        "#)
+        .file("a/Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+            links = "bar"
+            build = "build.rs"
+        "#)
+        .file("a/src/lib.rs", "")
+        .file("a/build.rs", r#"
+            fn main() {
+                println!("cargo:rustc-link-search=native=bar");
+            }
+        "#);
+
+    assert_that(p.cargo_process("build").arg("-v"),
+                execs().with_status(0)
+                       .with_stdout_contains(&format!("\
+{running} `rustc [..] -L native=foo -L native=bar[..]`
 ", running = RUNNING)));
 });
