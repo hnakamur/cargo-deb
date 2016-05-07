@@ -1,0 +1,35 @@
+From e362e1382784ccf455533183fde0d12666aa3fac Mon Sep 17 00:00:00 2001
+From: James Sanderson <zofrex@gmail.com>
+Date: Sun, 17 Apr 2016 04:25:27 +0100
+Subject: [PATCH] Make Cargo.toml compatible with TOML spec
+
+---
+ Cargo.toml | 15 ++++++++++-----
+ 1 file changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/deps/url-0.5.5/toml b/deps/url-0.5.5/Cargo.toml
+index 9cf4efe..b2458c0 100644
+--- a/deps/url-0.5.5/Cargo.toml
++++ b/deps/url-0.5.5/Cargo.toml
+@@ -11,11 +11,16 @@ readme = "README.md"
+ keywords = ["url", "parser"]
+ license = "MIT/Apache-2.0"
+ 
+-[[test]] name = "format"
+-[[test]] name = "form_urlencoded"
+-[[test]] name = "idna"
+-[[test]] name = "punycode"
+-[[test]] name = "tests"
++[[test]]
++name = "format"
++[[test]]
++name = "form_urlencoded"
++[[test]]
++name = "idna"
++[[test]]
++name = "punycode"
++[[test]]
++name = "tests"
+ [[test]]
+ name = "wpt"
+ harness = false
