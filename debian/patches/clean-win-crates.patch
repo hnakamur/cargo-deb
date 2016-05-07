@@ -17,29 +17,3 @@ Forwarded: not-needed
  rustc-serialize = { version = "0.3", optional = true }
  
  [dev-dependencies]
---- a/deps/filetime-0.1.8/Cargo.toml
-+++ b/deps/filetime-0.1.8/Cargo.toml
-@@ -14,8 +14,8 @@
- 
- [dependencies]
- libc = "0.2"
--kernel32-sys = "0.2"
--winapi = "0.2"
-+#kernel32-sys = "0.2"
-+#winapi = "0.2"
- 
- [dev-dependencies]
- tempdir = "0.3"
---- a/deps/filetime-0.1.8/src/lib.rs
-+++ b/deps/filetime-0.1.8/src/lib.rs
-@@ -35,8 +35,8 @@
- //! ```
- 
- extern crate libc;
--extern crate winapi;
--extern crate kernel32;
-+#[cfg(windows)] extern crate winapi;
-+#[cfg(windows)] extern crate kernel32;
- 
- #[cfg(unix)] use std::os::unix::prelude::*;
- #[cfg(windows)] use std::os::windows::prelude::*;
