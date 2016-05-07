@@ -71,6 +71,18 @@ necessary source files may not be included.
 
 [globs]: http://doc.rust-lang.org/glob/glob/struct.Pattern.html
 
+
+## The `publish`  Field (optional)
+
+The `publish` field can be used to prevent a package from being
+published to a repository by mistake.
+
+```toml
+[package]
+# ...
+publish = false
+```
+
 ## Package metadata
 
 There are a number of optional metadata fields also accepted under the
@@ -154,7 +166,29 @@ The syntax of the requirement strings is described in the [crates.io
 guide](crates-io.html#using-cratesio-based-crates).
 
 Platform-specific dependencies take the same format, but are listed under the
-`target.$triple` section:
+`target` section. Normally Rust-like `#[cfg]` syntax will be used to define
+these sections:
+
+```toml
+[target.'cfg(windows)'.dependencies]
+winhttp = "0.4.0"
+
+[target.'cfg(unix)'.dependencies]
+openssl = "1.0.1"
+
+[target.'cfg(target_pointer_width = "32")'.dependencies]
+native = { path = "native/i686" }
+
+[target.'cfg(target_pointer_width = "64")'.dependencies]
+native = { path = "native/i686" }
+```
+
+Like with Rust, the syntax here supports the `not`, `any`, and `all` operators
+to combine various cfg name/value pairs. Note that the `cfg` syntax has only
+been available since Cargo 0.9.0 (Rust 1.8.0).
+
+In addition to `#[cfg]` syntax, Cargo also supports listing out the full target
+the dependencies would apply to:
 
 ```toml
 [target.x86_64-pc-windows-gnu.dependencies]
@@ -162,11 +196,6 @@ winhttp = "0.4.0"
 
 [target.i686-unknown-linux-gnu.dependencies]
 openssl = "1.0.1"
-native = { path = "native/i686" }
-
-[target.x86_64-unknown-linux-gnu.dependencies]
-openssl = "1.0.1"
-native = { path = "native/x86_64" }
 ```
 
 If you’re using a custom target specification, quote the full path and file

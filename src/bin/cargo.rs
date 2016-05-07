@@ -11,13 +11,14 @@ use std::fs;
 use std::path::PathBuf;
 
 use cargo::execute_main_without_stdin;
-use cargo::util::{self, CliResult, lev_distance, Config, human, CargoResult};
+use cargo::util::{self, CliResult, lev_distance, Config, human, CargoResult, ChainError};
 
 #[derive(RustcDecodable)]
-struct Flags {
+pub struct Flags {
     flag_list: bool,
-    flag_verbose: bool,
-    flag_quiet: bool,
+    flag_version: bool,
+    flag_verbose: Option<bool>,
+    flag_quiet: Option<bool>,
     flag_color: Option<String>,
     arg_command: String,
     arg_args: Vec<String>,
@@ -43,6 +44,7 @@ Some common cargo commands are:
     clean       Remove the target directory
     doc         Build this project's and its dependencies' documentation
     new         Create a new cargo project
+    init        Create a new cargo project in an existing directory
     run         Build and execute src/main.rs
     test        Run the tests
     bench       Run the benchmarks
@@ -60,7 +62,7 @@ fn main() {
 }
 
 macro_rules! each_subcommand{
-    ($mac:ident) => ({
+    ($mac:ident) => {
         $mac!(bench);
         $mac!(build);
         $mac!(clean);
@@ -69,9 +71,11 @@ macro_rules! each_subcommand{
         $mac!(generate_lockfile);
         $mac!(git_checkout);
         $mac!(help);
+        $mac!(init);
         $mac!(install);
         $mac!(locate_project);
         $mac!(login);
+        $mac!(metadata);
         $mac!(new);
         $mac!(owner);
         $mac!(package);
@@ -88,7 +92,14 @@ macro_rules! each_subcommand{
         $mac!(verify_project);
         $mac!(version);
         $mac!(yank);
-    })
+    }
+}
+
+mod subcommands {
+    macro_rules! declare_mod {
+        ($name:ident) => ( pub mod $name; )
+    }
+    each_subcommand!(declare_mod);
 }
 
 /**
@@ -97,10 +108,17 @@ macro_rules! each_subcommand{
   on this top-level information.
 */
 fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
-    try!(config.shell().set_verbosity(flags.flag_verbose, flags.flag_quiet));
-    try!(config.shell().set_color_config(flags.flag_color.as_ref().map(|s| &s[..])));
+    try!(config.configure_shell(flags.flag_verbose,
+                                flags.flag_quiet,
+                                &flags.flag_color));
 
     init_git_transports(config);
+    cargo::util::job::setup();
+
+    if flags.flag_version {
+        println!("{}", cargo::version());
+        return Ok(None)
+    }
 
     if flags.flag_list {
         println!("Installed Commands:");
@@ -143,10 +161,9 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
 
     macro_rules! cmd{
         ($name:ident) => (if args[1] == stringify!($name).replace("_", "-") {
-            mod $name;
             config.shell().set_verbose(true);
-            let r = cargo::call_main_without_stdin($name::execute, config,
-                                                   $name::USAGE,
+            let r = cargo::call_main_without_stdin(subcommands::$name::execute, config,
+                                                   subcommands::$name::USAGE,
                                                    &args,
                                                    false);
             cargo::process_executed(r, &mut config.shell());
@@ -189,7 +206,9 @@ fn execute_subcommand(config: &Config,
             }))
         }
     };
-    try!(util::process(&command).args(&args[1..]).exec());
+    try!(util::process(&command).args(&args[1..]).exec().chain_error(|| {
+        human(format!("third party subcommand `{}` exited unsuccessfully", command_exe))
+    }));
     Ok(())
 }
 
@@ -223,7 +242,7 @@ fn list_commands(config: &Config) -> BTreeSet<String> {
     }
 
     macro_rules! add_cmd {
-        ($cmd:ident) => (commands.insert(stringify!($cmd).replace("_", "-")))
+        ($cmd:ident) => ({ commands.insert(stringify!($cmd).replace("_", "-")); })
     }
     each_subcommand!(add_cmd);
     commands

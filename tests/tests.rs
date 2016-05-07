@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 extern crate bufstream;
 extern crate cargo;
 extern crate filetime;
@@ -49,7 +51,9 @@ mod test_cargo_features;
 mod test_cargo_fetch;
 mod test_cargo_freshness;
 mod test_cargo_generate_lockfile;
+mod test_cargo_init;
 mod test_cargo_install;
+mod test_cargo_metadata;
 mod test_cargo_new;
 mod test_cargo_package;
 mod test_cargo_profiles;
@@ -62,9 +66,12 @@ mod test_cargo_rustdoc;
 mod test_cargo_search;
 mod test_cargo_test;
 mod test_cargo_tool_paths;
+mod test_cargo_config;
 mod test_cargo_verify_project;
 mod test_cargo_version;
 mod test_shell;
+mod test_cargo_death;
+mod test_cargo_cfg;
 
 thread_local!(static RUSTC: Rustc = Rustc::new("rustc").unwrap());
 
@@ -79,20 +86,23 @@ fn is_nightly() -> bool {
     })
 }
 
-fn can_panic() -> bool {
-    RUSTC.with(|r| !(r.host.contains("msvc") && !r.host.contains("x86_64")))
-}
-
 fn process<T: AsRef<OsStr>>(t: T) -> cargo::util::ProcessBuilder {
     let mut p = cargo::util::process(t.as_ref());
     p.cwd(&support::paths::root())
      .env("HOME", &support::paths::home())
      .env_remove("CARGO_HOME")
-     .env_remove("CARGO_TARGET_DIR") // we assume 'target'
-     .env_remove("MSYSTEM");    // assume cmd.exe everywhere on windows
+     .env_remove("XDG_CONFIG_HOME")      // see #2345
+     .env("GIT_CONFIG_NOSYSTEM", "1")    // keep trying to sandbox ourselves
+     .env_remove("CARGO_TARGET_DIR")     // we assume 'target'
+     .env_remove("MSYSTEM");             // assume cmd.exe everywhere on windows
     return p
 }
 
 fn cargo_process() -> cargo::util::ProcessBuilder {
     process(&support::cargo_dir().join("cargo"))
+}
+
+#[allow(deprecated)] // sleep_ms is now deprecated in favor of sleep()
+fn sleep_ms(ms: u32) {
+    std::thread::sleep_ms(ms);
 }

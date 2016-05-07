@@ -1,19 +1,20 @@
 use std::collections::{HashSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::str;
+use std::str::{self, FromStr};
 use std::sync::Arc;
 
 use regex::Regex;
 
-use core::{SourceMap, Package, PackageId, PackageSet, Resolve, Target, Profile};
+use core::{Package, PackageId, PackageSet, Resolve, Target, Profile};
 use core::{TargetKind, LibKind, Profiles, Metadata, Dependency};
 use core::dependency::Kind as DepKind;
-use util::{self, CargoResult, ChainError, internal, Config, profile};
+use util::{self, CargoResult, ChainError, internal, Config, profile, Cfg, human};
 
 use super::TargetConfig;
 use super::custom_build::{BuildState, BuildScripts};
 use super::fingerprint::Fingerprint;
 use super::layout::{Layout, LayoutProxy};
+use super::links::Links;
 use super::{Kind, Compilation, BuildConfig};
 use super::{ProcessEngine, ExecEngine};
 
@@ -28,8 +29,8 @@ pub struct Unit<'a> {
 pub struct Context<'a, 'cfg: 'a> {
     pub config: &'cfg Config,
     pub resolve: &'a Resolve,
-    pub sources: &'a SourceMap<'cfg>,
     pub compilation: Compilation<'cfg>,
+    pub packages: &'a PackageSet<'cfg>,
     pub build_state: Arc<BuildState>,
     pub build_explicit_deps: HashMap<Unit<'a>, (PathBuf, Vec<String>)>,
     pub exec_engine: Arc<Box<ExecEngine>>,
@@ -37,22 +38,27 @@ pub struct Context<'a, 'cfg: 'a> {
     pub compiled: HashSet<Unit<'a>>,
     pub build_config: BuildConfig,
     pub build_scripts: HashMap<Unit<'a>, Arc<BuildScripts>>,
+    pub links: Links<'a>,
 
     host: Layout,
     target: Option<Layout>,
     target_triple: String,
-    host_dylib: Option<(String, String)>,
-    host_exe: String,
-    package_set: &'a PackageSet,
-    target_dylib: Option<(String, String)>,
-    target_exe: String,
+    target_info: TargetInfo,
+    host_info: TargetInfo,
     profiles: &'a Profiles,
+}
+
+#[derive(Clone)]
+struct TargetInfo {
+    dylib: Option<(String, String)>,
+    staticlib: Option<(String, String)>,
+    exe: String,
+    cfg: Option<Vec<Cfg>>,
 }
 
 impl<'a, 'cfg> Context<'a, 'cfg> {
     pub fn new(resolve: &'a Resolve,
-               sources: &'a SourceMap<'cfg>,
-               deps: &'a PackageSet,
+               packages: &'a PackageSet<'cfg>,
                config: &'cfg Config,
                host: Layout,
                target_layout: Option<Layout>,
@@ -60,12 +66,11 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                profiles: &'a Profiles) -> CargoResult<Context<'a, 'cfg>> {
         let target = build_config.requested_target.clone();
         let target = target.as_ref().map(|s| &s[..]);
-        let (target_dylib, target_exe) = try!(Context::filename_parts(target,
-                                                                      config));
-        let (host_dylib, host_exe) = if build_config.requested_target.is_none() {
-            (target_dylib.clone(), target_exe.clone())
+        let target_info = try!(Context::target_info(target, config));
+        let host_info = if build_config.requested_target.is_none() {
+            target_info.clone()
         } else {
-            try!(Context::filename_parts(None, config))
+            try!(Context::target_info(None, config))
         };
         let target_triple = target.unwrap_or_else(|| {
             &config.rustc_info().host[..]
@@ -78,15 +83,12 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             host: host,
             target: target_layout,
             resolve: resolve,
-            sources: sources,
-            package_set: deps,
+            packages: packages,
             config: config,
-            target_dylib: target_dylib,
-            target_exe: target_exe,
-            host_dylib: host_dylib,
-            host_exe: host_exe,
+            target_info: target_info,
+            host_info: host_info,
             compilation: Compilation::new(config),
-            build_state: Arc::new(BuildState::new(&build_config, deps)),
+            build_state: Arc::new(BuildState::new(&build_config)),
             build_config: build_config,
             exec_engine: engine,
             fingerprints: HashMap::new(),
@@ -94,29 +96,43 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             compiled: HashSet::new(),
             build_scripts: HashMap::new(),
             build_explicit_deps: HashMap::new(),
+            links: Links::new(),
         })
     }
 
     /// Run `rustc` to discover the dylib prefix/suffix for the target
     /// specified as well as the exe suffix
-    fn filename_parts(target: Option<&str>, cfg: &Config)
-                      -> CargoResult<(Option<(String, String)>, String)> {
+    fn target_info(target: Option<&str>, cfg: &Config)
+                   -> CargoResult<TargetInfo> {
         let mut process = util::process(cfg.rustc());
         process.arg("-")
                .arg("--crate-name").arg("_")
                .arg("--crate-type").arg("dylib")
+               .arg("--crate-type").arg("staticlib")
                .arg("--crate-type").arg("bin")
                .arg("--print=file-names")
                .env_remove("RUST_LOG");
         if let Some(s) = target {
             process.arg("--target").arg(s);
         };
-        let output = try!(process.exec_with_output());
+
+        let mut with_cfg = process.clone();
+        with_cfg.arg("--print=cfg");
+
+        let mut has_cfg = true;
+        let output = try!(with_cfg.exec_with_output().or_else(|_| {
+            has_cfg = false;
+            process.exec_with_output()
+        }).chain_error(|| {
+            human(format!("failed to run `rustc` to learn about \
+                           target-specific information"))
+        }));
 
         let error = str::from_utf8(&output.stderr).unwrap();
         let output = str::from_utf8(&output.stdout).unwrap();
         let mut lines = output.lines();
         let nodylib = Regex::new("unsupported crate type.*dylib").unwrap();
+        let nostaticlib = Regex::new("unsupported crate type.*staticlib").unwrap();
         let nobin = Regex::new("unsupported crate type.*bin").unwrap();
         let dylib = if nodylib.is_match(error) {
             None
@@ -127,14 +143,35 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                     "rustc --print-file-name output has changed");
             Some((dylib_parts[0].to_string(), dylib_parts[1].to_string()))
         };
+        let staticlib = if nostaticlib.is_match(error) {
+            None
+        } else {
+            let staticlib_parts: Vec<&str> = lines.next().unwrap().trim()
+                                              .split('_').collect();
+            assert!(staticlib_parts.len() == 2,
+                    "rustc --print-file-name output has changed");
+            Some((staticlib_parts[0].to_string(), staticlib_parts[1].to_string()))
+        };
 
-        let exe_suffix = if nobin.is_match(error) {
+        let exe = if nobin.is_match(error) {
             String::new()
         } else {
             lines.next().unwrap().trim()
                  .split('_').skip(1).next().unwrap().to_string()
         };
-        Ok((dylib, exe_suffix.to_string()))
+
+        let cfg = if has_cfg {
+            Some(try!(lines.map(Cfg::from_str).collect()))
+        } else {
+            None
+        };
+
+        Ok(TargetInfo {
+            dylib: dylib,
+            staticlib: staticlib,
+            exe: exe,
+            cfg: cfg,
+        })
     }
 
     /// Prepare this context, ensuring that all filesystem directories are in
@@ -159,7 +196,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         self.compilation.deps_output =
                 self.layout(root, Kind::Target).proxy().deps().to_path_buf();
 
-        return Ok(());
+        Ok(())
     }
 
     /// Returns the appropriate directory layout for either a plugin or not.
@@ -176,14 +213,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     /// Returns the appropriate output directory for the specified package and
     /// target.
     pub fn out_dir(&self, unit: &Unit) -> PathBuf {
-        let out_dir = self.layout(unit.pkg, unit.kind);
-        if unit.target.is_custom_build() {
-            out_dir.build(unit.pkg)
-        } else if unit.target.is_example() {
-            out_dir.examples().to_path_buf()
-        } else {
-            out_dir.root().to_path_buf()
-        }
+        self.layout(unit.pkg, unit.kind).out_dir(unit.pkg, unit.target)
     }
 
     /// Return the (prefix, suffix) pair for dynamic libraries.
@@ -192,12 +222,28 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     /// otherwise it corresponds to the target platform.
     fn dylib(&self, kind: Kind) -> CargoResult<(&str, &str)> {
         let (triple, pair) = if kind == Kind::Host {
-            (&self.config.rustc_info().host, &self.host_dylib)
+            (&self.config.rustc_info().host, &self.host_info.dylib)
         } else {
-            (&self.target_triple, &self.target_dylib)
+            (&self.target_triple, &self.target_info.dylib)
         };
         match *pair {
             None => bail!("dylib outputs are not supported for {}", triple),
+            Some((ref s1, ref s2)) => Ok((s1, s2)),
+        }
+    }
+
+    /// Return the (prefix, suffix) pair for static libraries.
+    ///
+    /// If `plugin` is true, the pair corresponds to the host platform,
+    /// otherwise it corresponds to the target platform.
+    pub fn staticlib(&self, kind: Kind) -> CargoResult<(&str, &str)> {
+        let (triple, pair) = if kind == Kind::Host {
+            (&self.config.rustc_info().host, &self.host_info.staticlib)
+        } else {
+            (&self.target_triple, &self.target_info.staticlib)
+        };
+        match *pair {
+            None => bail!("staticlib outputs are not supported for {}", triple),
             Some((ref s1, ref s2)) => Ok((s1, s2)),
         }
     }
@@ -213,7 +259,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         if unit.target.is_lib() && unit.profile.test {
             // Libs and their tests are built in parallel, so we need to make
             // sure that their metadata is different.
-            metadata.map(|m| m.clone()).map(|mut m| {
+            metadata.cloned().map(|mut m| {
                 m.mix(&"test");
                 m
             })
@@ -232,7 +278,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             // file names like `target/debug/libfoo.{a,so,rlib}` and such.
             None
         } else {
-            metadata.map(|m| m.clone())
+            metadata.cloned()
         }
     }
 
@@ -244,7 +290,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             None if unit.target.allows_underscores() => {
                 unit.target.name().to_string()
             }
-            None => unit.target.crate_name().to_string(),
+            None => unit.target.crate_name(),
         }
     }
 
@@ -253,9 +299,9 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     pub fn target_filenames(&self, unit: &Unit) -> CargoResult<Vec<String>> {
         let stem = self.file_stem(unit);
         let suffix = if unit.target.for_host() {
-            &self.host_exe
+            &self.host_info.exe
         } else {
-            &self.target_exe
+            &self.target_info.exe
         };
 
         let mut ret = Vec::new();
@@ -277,18 +323,22 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                         }
                         LibKind::Lib |
                         LibKind::Rlib => ret.push(format!("lib{}.rlib", stem)),
-                        LibKind::StaticLib => ret.push(format!("lib{}.a", stem)),
+                        LibKind::StaticLib => {
+                            if let Ok((prefix, suffix)) = self.staticlib(unit.kind) {
+                                ret.push(format!("{}{}{}", prefix, stem, suffix));
+                            }
+                        }
                     }
                 }
             }
         }
-        assert!(ret.len() > 0);
-        return Ok(ret);
+        assert!(!ret.is_empty());
+        Ok(ret)
     }
 
     /// For a package, return all targets which are registered as dependencies
     /// for that package.
-    pub fn dep_targets(&self, unit: &Unit<'a>) -> Vec<Unit<'a>> {
+    pub fn dep_targets(&self, unit: &Unit<'a>) -> CargoResult<Vec<Unit<'a>>> {
         if unit.profile.run_custom_build {
             return self.dep_run_custom_build(unit)
         } else if unit.profile.doc {
@@ -297,7 +347,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
         let id = unit.pkg.package_id();
         let deps = self.resolve.deps(id).into_iter().flat_map(|a| a);
-        let mut ret = deps.map(|id| self.get_package(id)).filter(|dep| {
+        let mut ret = try!(deps.filter(|dep| {
             unit.pkg.dependencies().iter().filter(|d| {
                 d.name() == dep.name()
             }).any(|d| {
@@ -334,22 +384,27 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                 // actually used!
                 true
             })
-        }).filter_map(|pkg| {
-            pkg.targets().iter().find(|t| t.is_lib()).map(|t| {
-                Unit {
-                    pkg: pkg,
-                    target: t,
-                    profile: self.lib_profile(id),
-                    kind: unit.kind.for_target(t),
+        }).filter_map(|id| {
+            match self.get_package(id) {
+                Ok(pkg) => {
+                    pkg.targets().iter().find(|t| t.is_lib()).map(|t| {
+                        Ok(Unit {
+                            pkg: pkg,
+                            target: t,
+                            profile: self.lib_profile(id),
+                            kind: unit.kind.for_target(t),
+                        })
+                    })
                 }
-            })
-        }).collect::<Vec<_>>();
+                Err(e) => Some(Err(e))
+            }
+        }).collect::<CargoResult<Vec<_>>>());
 
         // If this target is a build script, then what we've collected so far is
         // all we need. If this isn't a build script, then it depends on the
         // build script if there is one.
         if unit.target.is_custom_build() {
-            return ret
+            return Ok(ret)
         }
         ret.extend(self.dep_build_script(unit));
 
@@ -358,7 +413,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // didn't include `pkg` in the return values, so we need to special case
         // it here and see if we need to push `(pkg, pkg_lib_target)`.
         if unit.target.is_lib() {
-            return ret
+            return Ok(ret)
         }
         ret.extend(self.maybe_lib(unit));
 
@@ -374,20 +429,21 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                 }
             }));
         }
-        return ret
+        Ok(ret)
     }
 
     /// Returns the dependencies needed to run a build script.
     ///
     /// The `unit` provided must represent an execution of a build script, and
     /// the returned set of units must all be run before `unit` is run.
-    pub fn dep_run_custom_build(&self, unit: &Unit<'a>) -> Vec<Unit<'a>> {
+    pub fn dep_run_custom_build(&self, unit: &Unit<'a>)
+                                -> CargoResult<Vec<Unit<'a>>> {
         // If this build script's execution has been overridden then we don't
         // actually depend on anything, we've reached the end of the dependency
         // chain as we've got all the info we're gonna get.
         let key = (unit.pkg.package_id().clone(), unit.kind);
         if self.build_state.outputs.lock().unwrap().contains_key(&key) {
-            return Vec::new()
+            return Ok(Vec::new())
         }
 
         // When not overridden, then the dependencies to run a build script are:
@@ -403,7 +459,8 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             profile: &self.profiles.dev,
             ..*unit
         };
-        self.dep_targets(&tmp).iter().filter_map(|unit| {
+        let deps = try!(self.dep_targets(&tmp));
+        Ok(deps.iter().filter_map(|unit| {
             if !unit.target.linkable() || unit.pkg.manifest().links().is_none() {
                 return None
             }
@@ -412,15 +469,13 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             profile: self.build_script_profile(unit.pkg.package_id()),
             kind: Kind::Host, // build scripts always compiled for the host
             ..*unit
-        })).collect()
+        })).collect())
     }
 
     /// Returns the dependencies necessary to document a package
-    fn doc_deps(&self, unit: &Unit<'a>) -> Vec<Unit<'a>> {
+    fn doc_deps(&self, unit: &Unit<'a>) -> CargoResult<Vec<Unit<'a>>> {
         let deps = self.resolve.deps(unit.pkg.package_id()).into_iter();
-        let deps = deps.flat_map(|a| a).map(|id| {
-            self.get_package(id)
-        }).filter(|dep| {
+        let deps = deps.flat_map(|a| a).filter(|dep| {
             unit.pkg.dependencies().iter().filter(|d| {
                 d.name() == dep.name()
             }).any(|dep| {
@@ -430,15 +485,20 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                     _ => false,
                 }
             })
-        }).filter_map(|dep| {
-            dep.targets().iter().find(|t| t.is_lib()).map(|t| (dep, t))
+        }).map(|dep| {
+            self.get_package(dep)
         });
 
         // To document a library, we depend on dependencies actually being
         // built. If we're documenting *all* libraries, then we also depend on
         // the documentation of the library being built.
         let mut ret = Vec::new();
-        for (dep, lib) in deps {
+        for dep in deps {
+            let dep = try!(dep);
+            let lib = match dep.targets().iter().find(|t| t.is_lib()) {
+                Some(lib) => lib,
+                None => continue,
+            };
             ret.push(Unit {
                 pkg: dep,
                 target: lib,
@@ -462,7 +522,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         if unit.target.is_bin() {
             ret.extend(self.maybe_lib(unit));
         }
-        return ret
+        Ok(ret)
     }
 
     /// If a build script is scheduled to be run for the package specified by
@@ -497,22 +557,20 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     fn dep_platform_activated(&self, dep: &Dependency, kind: Kind) -> bool {
         // If this dependency is only available for certain platforms,
         // make sure we're only enabling it for that platform.
-        match (dep.only_for_platform(), kind) {
-            (Some(ref platform), Kind::Host) => {
-                *platform == self.config.rustc_info().host
-            },
-            (Some(ref platform), Kind::Target) => {
-                *platform == self.target_triple
-            },
-            (None, _) => true
-        }
+        let platform = match dep.platform() {
+            Some(p) => p,
+            None => return true,
+        };
+        let (name, info) = match kind {
+            Kind::Host => (&self.config.rustc_info().host, &self.host_info),
+            Kind::Target => (&self.target_triple, &self.target_info),
+        };
+        platform.matches(name, info.cfg.as_ref().map(|cfg| &cfg[..]))
     }
 
     /// Gets a package for the given package id.
-    pub fn get_package(&self, id: &PackageId) -> &'a Package {
-        self.package_set.iter()
-            .find(|pkg| id == pkg.package_id())
-            .expect("Should have found package")
+    pub fn get_package(&self, id: &PackageId) -> CargoResult<&'a Package> {
+        self.packages.get(id)
     }
 
     /// Get the user-specified linker for a particular host or target

@@ -50,6 +50,12 @@ pub fn install(root: Option<&str>,
     } else if source_id.is_path() {
         let path = source_id.url().to_file_path().ok()
                             .expect("path sources must have a valid path");
+        let mut src = PathSource::new(&path, source_id, config);
+        try!(src.update().chain_error(|| {
+            human(format!("`{}` is not a crate root; specify a crate to \
+                           install from crates.io, or use --path or --git to \
+                           specify an alternate source", path.display()))
+        }));
         try!(select_pkg(PathSource::new(&path, source_id, config),
                         source_id, krate, vers,
                         &mut |path| path.read_packages()))
@@ -65,7 +71,11 @@ pub fn install(root: Option<&str>,
     let dst = root.join("bin");
     try!(check_overwrites(&dst, &pkg, &opts.filter, &list));
 
-    let target_dir = config.cwd().join("target-install");
+    let target_dir = if source_id.is_path() {
+        config.target_dir(&pkg)
+    } else {
+        config.cwd().join("target-install")
+    };
     config.set_target_dir(&target_dir);
     let compile = try!(ops::compile_pkg(&pkg, Some(source), opts).chain_error(|| {
         human(format!("failed to compile `{}`, intermediate artifacts can be \
@@ -83,7 +93,10 @@ pub fn install(root: Option<&str>,
         }));
         t.bins.push(dst);
     }
-    try!(fs::remove_dir_all(&target_dir));
+
+    if !source_id.is_path() {
+        try!(fs::remove_dir_all(&target_dir));
+    }
 
     list.v1.entry(pkg.package_id().clone()).or_insert_with(|| {
         BTreeSet::new()
@@ -124,9 +137,8 @@ fn select_pkg<'a, T>(mut source: T,
             let deps = try!(source.query(&dep));
             match deps.iter().map(|p| p.package_id()).max() {
                 Some(pkgid) => {
-                    try!(source.download(&[pkgid.clone()]));
-                    Ok((try!(source.get(&[pkgid.clone()])).remove(0),
-                        Box::new(source)))
+                    let pkg = try!(source.download(pkgid));
+                    Ok((pkg, Box::new(source)))
                 }
                 None => {
                     let vers_info = vers.map(|v| format!(" with version `{}`", v))
@@ -156,12 +168,11 @@ fn select_pkg<'a, T>(mut source: T,
             };
             return Ok((pkg.clone(), Box::new(source)));
 
-            #[allow(deprecated)] // connect => join in 1.3
             fn multi_err(kind: &str, mut pkgs: Vec<&Package>) -> String {
                 pkgs.sort_by(|a, b| a.name().cmp(b.name()));
                 format!("multiple packages with {} found: {}", kind,
                         pkgs.iter().map(|p| p.name()).collect::<Vec<_>>()
-                            .connect(", "))
+                            .join(", "))
             }
         }
     }
@@ -312,7 +323,7 @@ pub fn uninstall(root: Option<&str>,
             }
         }
 
-        if bins.len() == 0 {
+        if bins.is_empty() {
             to_remove.extend(installed.get().iter().map(|b| dst.join(b)));
             installed.get_mut().clear();
         } else {
@@ -321,7 +332,7 @@ pub fn uninstall(root: Option<&str>,
                 installed.get_mut().remove(bin);
             }
         }
-        if installed.get().len() == 0 {
+        if installed.get().is_empty() {
             installed.remove();
         }
     }
@@ -335,11 +346,11 @@ pub fn uninstall(root: Option<&str>,
 }
 
 fn resolve_root(flag: Option<&str>, config: &Config) -> CargoResult<PathBuf> {
-    let config_root = try!(config.get_string("install.root"));
+    let config_root = try!(config.get_path("install.root"));
     Ok(flag.map(PathBuf::from).or_else(|| {
         env::var_os("CARGO_INSTALL_ROOT").map(PathBuf::from)
-    }).or_else(|| {
-        config_root.clone().map(|(v, _)| PathBuf::from(v))
+    }).or_else(move || {
+        config_root.map(|v| v.val)
     }).unwrap_or_else(|| {
         config.home().to_owned()
     }))

@@ -12,7 +12,6 @@ pub struct TestOptions<'a> {
 
 
 
-#[allow(deprecated)] // connect => join in 1.3
 pub fn run_tests(manifest_path: &Path,
                  options: &TestOptions,
                  test_args: &[String]) -> CargoResult<Option<CargoTestError>> {
@@ -24,7 +23,7 @@ pub fn run_tests(manifest_path: &Path,
     let mut errors = try!(run_unit_tests(options, test_args, &compilation));
 
     // If we have an error and want to fail fast, return
-    if errors.len() > 0 && !options.no_fail_fast {
+    if !errors.is_empty() && !options.no_fail_fast {
         return Ok(Some(CargoTestError::new(errors)))
     }
 
@@ -38,7 +37,7 @@ pub fn run_tests(manifest_path: &Path,
     }
 
     errors.extend(try!(run_doc_tests(options, test_args, &compilation)));
-    if errors.len() == 0 {
+    if errors.is_empty() {
         Ok(None)
     } else {
         Ok(Some(CargoTestError::new(errors)))
@@ -51,6 +50,10 @@ pub fn run_benches(manifest_path: &Path,
     let mut args = args.to_vec();
     args.push("--bench".to_string());
     let compilation = try!(compile_tests(manifest_path, options));
+
+    if options.no_run {
+        return Ok(None)
+    }
     let errors = try!(run_unit_tests(options, &args, &compilation));
     match errors.len() {
         0 => Ok(None),
@@ -93,7 +96,7 @@ fn run_unit_tests(options: &TestOptions,
             shell.status("Running", cmd.to_string())
         }));
 
-        if let Err(e) = ExecEngine::exec(&mut ProcessEngine, cmd) {
+        if let Err(e) = ExecEngine::exec(&ProcessEngine, cmd) {
             errors.push(e);
             if !options.no_fail_fast {
                 break
@@ -103,7 +106,6 @@ fn run_unit_tests(options: &TestOptions,
     Ok(errors)
 }
 
-#[allow(deprecated)] // connect => join in 1.3
 fn run_doc_tests(options: &TestOptions,
                  test_args: &[String],
                  compilation: &Compilation)
@@ -133,7 +135,7 @@ fn run_doc_tests(options: &TestOptions,
             }
 
             if test_args.len() > 0 {
-                p.arg("--test-args").arg(&test_args.connect(" "));
+                p.arg("--test-args").arg(&test_args.join(" "));
             }
 
             for cfg in compilation.cfgs.iter() {
@@ -166,7 +168,7 @@ fn run_doc_tests(options: &TestOptions,
             try!(config.shell().verbose(|shell| {
                 shell.status("Running", p.to_string())
             }));
-            if let Err(e) = ExecEngine::exec(&mut ProcessEngine, p) {
+            if let Err(e) = ExecEngine::exec(&ProcessEngine, p) {
                 errors.push(e);
                 if !options.no_fail_fast {
                     return Ok(errors);

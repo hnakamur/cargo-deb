@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::str;
-use std::thread;
 
 use support::{project, execs, basic_bin_manifest, basic_lib_manifest};
 use support::{COMPILING, RUNNING, DOCTEST};
@@ -167,8 +166,6 @@ test!(many_similar_names {
 });
 
 test!(cargo_test_failing_test {
-    if !::can_panic() { return }
-
     let p = project("foo")
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file("src/foo.rs", r#"
@@ -1857,7 +1854,6 @@ test!(dev_dep_with_build_script {
 });
 
 test!(no_fail_fast {
-    if !::can_panic() { return }
     let p = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -2009,7 +2005,7 @@ test!(bin_does_not_rebuild_tests {
     assert_that(p.cargo("test").arg("-v"),
                 execs().with_status(0));
 
-    thread::sleep_ms(1000);
+    ::sleep_ms(1000);
     File::create(&p.root().join("src/main.rs")).unwrap()
          .write_all(b"fn main() { 3; }").unwrap();
 

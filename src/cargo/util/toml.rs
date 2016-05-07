@@ -12,7 +12,7 @@ use rustc_serialize::{Decodable, Decoder};
 use core::{SourceId, Profiles};
 use core::{Summary, Manifest, Target, Dependency, DependencyInner, PackageId,
            GitReference};
-use core::dependency::Kind;
+use core::dependency::{Kind, Platform};
 use core::manifest::{LibKind, Profile, ManifestMetadata};
 use core::package_id::Metadata;
 use util::{self, CargoResult, human, ToUrl, ToSemver, ChainError, Config};
@@ -138,7 +138,7 @@ pub fn to_manifest(contents: &[u8],
         match *toml {
             toml::Value::Table(ref table) => {
                 for (k, v) in table.iter() {
-                    add_unused_keys(m, v, if key.len() == 0 {
+                    add_unused_keys(m, v, if key.is_empty() {
                         k.clone()
                     } else {
                         key.clone() + "." + k
@@ -254,6 +254,7 @@ pub struct TomlProject {
     links: Option<String>,
     exclude: Option<Vec<String>>,
     include: Option<Vec<String>>,
+    publish: Option<bool>,
 
     // package metadata
     description: Option<String>,
@@ -292,6 +293,8 @@ struct Context<'a, 'b> {
     source_id: &'a SourceId,
     nested_paths: &'a mut Vec<PathBuf>,
     config: &'b Config,
+    warnings: &'a mut Vec<String>,
+    platform: Option<Platform>,
 }
 
 // These functions produce the equivalent of specific manifest entries. One
@@ -511,35 +514,30 @@ impl TomlManifest {
                 source_id: source_id,
                 nested_paths: &mut nested_paths,
                 config: config,
+                warnings: &mut warnings,
+                platform: None,
             };
 
             // Collect the deps
             try!(process_dependencies(&mut cx, self.dependencies.as_ref(),
-                                      |dep| dep));
+                                      None));
             try!(process_dependencies(&mut cx, self.dev_dependencies.as_ref(),
-                                      |dep| dep.set_kind(Kind::Development)));
+                                      Some(Kind::Development)));
             try!(process_dependencies(&mut cx, self.build_dependencies.as_ref(),
-                                      |dep| dep.set_kind(Kind::Build)));
+                                      Some(Kind::Build)));
 
             if let Some(targets) = self.target.as_ref() {
                 for (name, platform) in targets.iter() {
+                    cx.platform = Some(try!(name.parse()));
                     try!(process_dependencies(&mut cx,
                                               platform.dependencies.as_ref(),
-                                              |dep| {
-                        dep.set_only_for_platform(Some(name.clone()))
-                    }));
+                                              None));
                     try!(process_dependencies(&mut cx,
                                               platform.build_dependencies.as_ref(),
-                                              |dep| {
-                        dep.set_only_for_platform(Some(name.clone()))
-                           .set_kind(Kind::Build)
-                    }));
+                                              Some(Kind::Build)));
                     try!(process_dependencies(&mut cx,
                                               platform.dev_dependencies.as_ref(),
-                                              |dep| {
-                        dep.set_only_for_platform(Some(name.clone()))
-                           .set_kind(Kind::Development)
-                    }));
+                                              Some(Kind::Development)));
                 }
             }
         }
@@ -562,13 +560,15 @@ impl TomlManifest {
             keywords: project.keywords.clone().unwrap_or(Vec::new()),
         };
         let profiles = build_profiles(&self.profile);
+        let publish = project.publish.unwrap_or(true);
         let mut manifest = Manifest::new(summary,
                                          targets,
                                          exclude,
                                          include,
                                          project.links.clone(),
                                          metadata,
-                                         profiles);
+                                         profiles,
+                                         publish);
         if project.license_file.is_some() && project.license.is_some() {
             manifest.add_warning(format!("warning: only one of `license` or \
                                                    `license-file` is necessary"));
@@ -662,11 +662,10 @@ fn validate_bench_name(target: &TomlTarget) -> CargoResult<()> {
     }
 }
 
-fn process_dependencies<F>(cx: &mut Context,
-                           new_deps: Option<&HashMap<String, TomlDependency>>,
-                           mut f: F) -> CargoResult<()>
-    where F: FnMut(DependencyInner) -> DependencyInner
-{
+fn process_dependencies(cx: &mut Context,
+                        new_deps: Option<&HashMap<String, TomlDependency>>,
+                        kind: Option<Kind>)
+                        -> CargoResult<()> {
     let dependencies = match new_deps {
         Some(ref dependencies) => dependencies,
         None => return Ok(())
@@ -680,6 +679,16 @@ fn process_dependencies<F>(cx: &mut Context,
             }
             TomlDependency::Detailed(ref details) => details.clone(),
         };
+
+        if details.version.is_none() && details.path.is_none() &&
+           details.git.is_none() {
+            cx.warnings.push(format!("warning: dependency ({}) specified \
+                                      without providing a local path, Git \
+                                      repository, or version to use. This will \
+                                      be considered an error in future \
+                                      versions", n));
+        }
+
         let reference = details.branch.clone().map(GitReference::Branch)
             .or_else(|| details.tag.clone().map(GitReference::Tag))
             .or_else(|| details.rev.clone().map(GitReference::Rev))
@@ -700,16 +709,16 @@ fn process_dependencies<F>(cx: &mut Context,
             }
         }.unwrap_or(try!(SourceId::for_central(cx.config)));
 
-        let dep = try!(DependencyInner::parse(&n,
-                                              details.version.as_ref()
-                                                  .map(|v| &v[..]),
-                                              &new_source_id));
-        let dep = f(dep)
-                     .set_features(details.features.unwrap_or(Vec::new()))
-                     .set_default_features(details.default_features.unwrap_or(true))
-                     .set_optional(details.optional.unwrap_or(false))
-                     .into_dependency();
-        cx.deps.push(dep);
+        let version = details.version.as_ref().map(|v| &v[..]);
+        let mut dep = try!(DependencyInner::parse(&n, version, &new_source_id));
+        dep = dep.set_features(details.features.unwrap_or(Vec::new()))
+                 .set_default_features(details.default_features.unwrap_or(true))
+                 .set_optional(details.optional.unwrap_or(false))
+                 .set_platform(cx.platform.clone());
+        if let Some(kind) = kind {
+            dep = dep.set_kind(kind);
+        }
+        cx.deps.push(dep.into_dependency());
     }
 
     Ok(())

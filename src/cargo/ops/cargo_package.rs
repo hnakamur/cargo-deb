@@ -2,13 +2,11 @@ use std::io::prelude::*;
 use std::fs::{self, File};
 use std::path::{self, Path, PathBuf};
 
-use semver::VersionReq;
-use tar::Archive;
+use tar::{Archive, Builder, Header};
 use flate2::{GzBuilder, Compression};
 use flate2::read::GzDecoder;
 
 use core::{SourceId, Package, PackageId};
-use core::dependency::Kind;
 use sources::PathSource;
 use util::{self, CargoResult, human, internal, ChainError, Config};
 use ops;
@@ -25,8 +23,6 @@ pub fn package(manifest_path: &Path,
     if metadata {
         try!(check_metadata(&pkg, config));
     }
-
-    try!(check_dependencies(&pkg, config));
 
     if list {
         let root = pkg.root();
@@ -70,7 +66,6 @@ pub fn package(manifest_path: &Path,
 
 // check that the package has some piece of metadata that a human can
 // use to tell what the package is about.
-#[allow(deprecated)] // connect => join in 1.3
 fn check_metadata(pkg: &Package, config: &Config) -> CargoResult<()> {
     let md = pkg.manifest().metadata();
 
@@ -88,7 +83,7 @@ fn check_metadata(pkg: &Package, config: &Config) -> CargoResult<()> {
     lacking!(description, license || license_file, documentation || homepage || repository);
 
     if !missing.is_empty() {
-        let mut things = missing[..missing.len() - 1].connect(", ");
+        let mut things = missing[..missing.len() - 1].join(", ");
         // things will be empty if and only if length == 1 (i.e. the only case
         // to have no `or`).
         if !things.is_empty() {
@@ -100,32 +95,6 @@ fn check_metadata(pkg: &Package, config: &Config) -> CargoResult<()> {
             &format!("warning: manifest has no {things}. \
                     See http://doc.crates.io/manifest.html#package-metadata for more info.",
                     things = things)))
-    }
-    Ok(())
-}
-
-// Warn about wildcard deps which will soon be prohibited on crates.io
-#[allow(deprecated)] // connect => join in 1.3
-fn check_dependencies(pkg: &Package, config: &Config) -> CargoResult<()> {
-    let wildcard = VersionReq::parse("*").unwrap();
-
-    let mut wildcard_deps = vec![];
-    for dep in pkg.dependencies() {
-        if dep.kind() != Kind::Development && dep.version_req() == &wildcard {
-            wildcard_deps.push(dep.name());
-        }
-    }
-
-    if !wildcard_deps.is_empty() {
-        let deps = wildcard_deps.connect(", ");
-        try!(config.shell().warn(
-            "warning: some dependencies have wildcard (\"*\") version constraints. \
-             On January 22nd, 2016, crates.io will begin rejecting packages with \
-             wildcard dependency constraints. See \
-             http://doc.crates.io/crates-io.html#using-crates.io-based-crates \
-             for information on version constraints."));
-        try!(config.shell().warn(
-            &format!("dependencies for these crates have wildcard constraints: {}", deps)));
     }
     Ok(())
 }
@@ -149,7 +118,7 @@ fn tar(pkg: &Package,
                                   .write(tmpfile, Compression::Best);
 
     // Put all package files into a compressed archive
-    let ar = Archive::new(encoder);
+    let mut ar = Builder::new(encoder);
     let root = pkg.root();
     for file in try!(src.list_files(pkg)).iter() {
         if &**file == dst { continue }
@@ -165,11 +134,41 @@ fn tar(pkg: &Package,
         }));
         let path = format!("{}-{}{}{}", pkg.name(), pkg.version(),
                            path::MAIN_SEPARATOR, relative);
-        try!(ar.append_file(&path, &mut file).chain_error(|| {
+
+        // The tar::Builder type by default will build GNU archives, but
+        // unfortunately we force it here to use UStar archives instead. The
+        // UStar format has more limitations on the length of path name that it
+        // can encode, so it's not quite as nice to use.
+        //
+        // Older cargos, however, had a bug where GNU archives were interpreted
+        // as UStar archives. This bug means that if we publish a GNU archive
+        // which has fully filled out metadata it'll be corrupt when unpacked by
+        // older cargos.
+        //
+        // Hopefully in the future after enough cargos have been running around
+        // with the bugfixed tar-rs library we'll be able to switch this over to
+        // GNU archives, but for now we'll just say that you can't encode paths
+        // in archives that are *too* long.
+        //
+        // For an instance of this in the wild, use the tar-rs 0.3.3 library to
+        // unpack the selectors 0.4.0 crate on crates.io. Either that or take a
+        // look at rust-lang/cargo#2326
+        let mut header = Header::new_ustar();
+        let metadata = try!(file.metadata().chain_error(|| {
+            human(format!("could not learn metadata for: `{}`", relative))
+        }));
+        try!(header.set_path(&path).chain_error(|| {
+            human(format!("failed to add to archive: `{}`", relative))
+        }));
+        header.set_metadata(&metadata);
+        header.set_cksum();
+
+        try!(ar.append(&header, &mut file).chain_error(|| {
             internal(format!("could not archive source file `{}`", relative))
         }));
     }
-    try!(ar.finish());
+    let encoder = try!(ar.into_inner());
+    try!(encoder.finish());
     Ok(())
 }
 

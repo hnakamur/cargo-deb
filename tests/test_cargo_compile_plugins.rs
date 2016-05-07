@@ -111,9 +111,6 @@ test!(plugin_with_dynamic_native_dependency {
         lib.starts_with(env::consts::DLL_PREFIX) &&
             lib.ends_with(env::consts::DLL_SUFFIX)
     }).unwrap();
-    let libname = lib.file_name().unwrap().to_str().unwrap();
-    let libname = &libname[env::consts::DLL_PREFIX.len()..
-                           libname.len() - env::consts::DLL_SUFFIX.len()];
 
     let foo = project("foo")
         .file("Cargo.toml", r#"
@@ -152,20 +149,21 @@ test!(plugin_with_dynamic_native_dependency {
                                                        .display());
             }
         "#)
-        .file("bar/src/lib.rs", &format!(r#"
+        .file("bar/src/lib.rs", r#"
             #![feature(plugin_registrar, rustc_private)]
             extern crate rustc_plugin;
 
             use rustc_plugin::Registry;
 
-            #[link(name = "{}")]
-            extern {{ fn foo(); }}
+            #[cfg_attr(not(target_env = "msvc"), link(name = "builder"))]
+            #[cfg_attr(target_env = "msvc", link(name = "builder.dll"))]
+            extern { fn foo(); }
 
             #[plugin_registrar]
-            pub fn bar(_reg: &mut Registry) {{
-                unsafe {{ foo() }}
-            }}
-        "#, libname));
+            pub fn bar(_reg: &mut Registry) {
+                unsafe { foo() }
+            }
+        "#);
 
     assert_that(foo.cargo_process("build").env("SRC", &lib).arg("-v"),
                 execs().with_status(0));
