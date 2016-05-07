@@ -1,3 +1,12 @@
+cargo (0.9.0-1) unstable; urgency=medium
+
+  * New upstream version
+    + Fix deprecation errors (Closes: #822178, #823652)
+    + Updated deps tarball
+    + Refreshed patches
+
+ -- Luca Bruno <lucab@debian.org>  Sat, 07 May 2016 17:56:28 +0200
+
 cargo (0.8.0-2) unstable; urgency=low
 
   * Prefer libcurl4-gnutls-dev for building (Closes: #819831)
