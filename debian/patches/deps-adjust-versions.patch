@@ -1,0 +1,50 @@
+From: Luca Bruno <lucab@debian.org>
+Description: Adjust deps dependencies
+ This is a workaround for bugs in the embedding script
+Forwarded: not-needed
+--- a/deps/semver-0.2.2/Cargo.toml
++++ b/deps/semver-0.2.2/Cargo.toml
+@@ -12,7 +12,7 @@
+ """
+ 
+ [dependencies]
+-nom = "1.0.1"
++nom = "1.2.0"
+ 
+ [features]
+ default = []
+--- a/deps/flate2-0.2.13/Cargo.toml
++++ b/deps/flate2-0.2.13/Cargo.toml
+@@ -17,12 +17,12 @@
+ 
+ [dependencies]
+ libc = "0.2"
+-miniz-sys = { path = "miniz-sys", version = "0.1.7", optional = true }
++miniz-sys = { path = "miniz-sys", version = "0.1.7" }
+ libz-sys = { version = "1.0", optional = true }
+ 
+ [dev-dependencies]
+ rand = "0.3"
+ 
+ [features]
+-default = ["miniz-sys"]
++default = []
+ zlib = ["libz-sys"]
+--- a/deps/log-0.3.5/Cargo.toml
++++ b/deps/log-0.3.5/Cargo.toml
+@@ -17,7 +17,7 @@
+ harness = false
+ 
+ [dependencies]
+-libc = {version = "0.2", optional = true}
++libc = {version = "0.2" }
+ 
+ [features]
+ max_level_off   = []
+@@ -35,5 +35,5 @@
+ release_max_level_trace = []
+ 
+ nightly = []
+-use_std = ["libc"]
++use_std = []
+ default = ["use_std"]
