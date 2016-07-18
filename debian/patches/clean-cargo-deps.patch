@@ -4,21 +4,20 @@ Description: Remove stage1 extra dependencies
  and they are not need to build. However, cargo will try to download
  them before building stage1.
 Forwarded: not-needed
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -17,8 +17,9 @@
+Index: cargo/Cargo.toml
+===================================================================
+--- cargo.orig/Cargo.toml	2016-08-14 21:44:57.968086257 +0000
++++ cargo/Cargo.toml	2016-08-14 21:45:07.994531762 +0000
+@@ -17,7 +17,7 @@
  path = "src/cargo/lib.rs"
  
  [dependencies]
 -advapi32-sys = "0.1"
--crates-io = { path = "src/crates-io", version = "0.1" }
 +#advapi32-sys = "0.1"
-+#crates-io = { path = "src/crates-io", version = "0.1" }
-+crates-io = "0.1"
+ crates-io = { path = "src/crates-io", version = "0.2" }
  crossbeam = "0.2"
  curl = "0.2"
- docopt = "0.6"
-@@ -28,7 +29,7 @@
+@@ -30,7 +30,7 @@
  git2 = "0.4"
  git2-curl = "0.4"
  glob = "0.2"
@@ -27,20 +26,18 @@ Forwarded: not-needed
  libc = "0.2"
  libgit2-sys = "0.4"
  log = "0.3"
-@@ -41,13 +42,13 @@
- time = "0.1"
+@@ -43,12 +43,12 @@
+ term = "0.4.4"
  toml = "0.1"
- url = "0.2"
+ url = "1.1"
 -winapi = "0.2"
 +#winapi = "0.2"
  
 -[dev-dependencies]
--tempdir = "0.3"
 -hamcrest = "0.1"
 -bufstream = "0.1"
 -filetime = "0.1"
 +#[dev-dependencies]
-+#tempdir = "0.3"
 +#hamcrest = "0.1"
 +#bufstream = "0.1"
 +#filetime = "0.1"
