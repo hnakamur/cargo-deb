@@ -39,6 +39,7 @@ else
 		--no-clean \
 		--no-clone \
 		--no-git \
+		--no-download \
 		--crate-index $(INDEXDIR)/ \
 		--cargo-root $(CURDIR)/ \
 		--target-dir $(DEPSDIR)/ \
