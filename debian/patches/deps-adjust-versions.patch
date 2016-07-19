@@ -2,19 +2,10 @@ From: Luca Bruno <lucab@debian.org>
 Description: Adjust deps dependencies
  This is a workaround for bugs in the embedding script
 Forwarded: not-needed
---- a/deps/semver-0.2.2/Cargo.toml
-+++ b/deps/semver-0.2.2/Cargo.toml
-@@ -12,7 +12,7 @@
- """
- 
- [dependencies]
--nom = "1.0.1"
-+nom = "1.2.0"
- 
- [features]
- default = []
---- a/deps/flate2-0.2.13/Cargo.toml
-+++ b/deps/flate2-0.2.13/Cargo.toml
+Index: cargo/deps/flate2-0.2.13/Cargo.toml
+===================================================================
+--- cargo.orig/deps/flate2-0.2.13/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
++++ cargo/deps/flate2-0.2.13/Cargo.toml	2016-08-14 21:49:43.797702736 +0000
 @@ -17,12 +17,12 @@
  
  [dependencies]
@@ -30,8 +21,10 @@ Forwarded: not-needed
 -default = ["miniz-sys"]
 +default = []
  zlib = ["libz-sys"]
---- a/deps/log-0.3.5/Cargo.toml
-+++ b/deps/log-0.3.5/Cargo.toml
+Index: cargo/deps/log-0.3.5/Cargo.toml
+===================================================================
+--- cargo.orig/deps/log-0.3.5/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
++++ cargo/deps/log-0.3.5/Cargo.toml	2016-08-14 21:49:43.797702736 +0000
 @@ -17,7 +17,7 @@
  harness = false
  
@@ -48,3 +41,55 @@ Forwarded: not-needed
 -use_std = ["libc"]
 +use_std = []
  default = ["use_std"]
+Index: cargo/deps/semver-0.2.3/Cargo.toml
+===================================================================
+--- cargo.orig/deps/semver-0.2.3/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
++++ cargo/deps/semver-0.2.3/Cargo.toml	2016-08-14 21:49:43.797702736 +0000
+@@ -12,7 +12,7 @@
+ """
+ 
+ [dependencies]
+-nom = "1.0.1"
++nom = "1.2.0"
+ 
+ [features]
+ default = []
+Index: cargo/deps/git2-0.4.3/Cargo.toml
+===================================================================
+--- cargo.orig/deps/git2-0.4.3/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
++++ cargo/deps/git2-0.4.3/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
+@@ -16,7 +16,7 @@
+ """
+ 
+ [dependencies]
+-url = "1.0"
++url = "1.1.0"
+ bitflags = "0.1"
+ libc = "0.2"
+ libgit2-sys = { path = "libgit2-sys", version = "0.4.3" }
+Index: cargo/deps/curl-0.2.19/Cargo.toml
+===================================================================
+--- cargo.orig/deps/curl-0.2.19/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
++++ cargo/deps/curl-0.2.19/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
+@@ -8,7 +8,7 @@
+ description = "Rust bindings to libcurl for making HTTP requests"
+ 
+ [dependencies]
+-url = ">= 0.5, < 2.0"
++url = "1.1.0"
+ log = "0.3.0"
+ libc = "0.2"
+ curl-sys = { path = "curl-sys", version = "0.1.0" }
+Index: cargo/deps/git2-curl-0.4.1/Cargo.toml
+===================================================================
+--- cargo.orig/deps/git2-curl-0.4.1/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
++++ cargo/deps/git2-curl-0.4.1/Cargo.toml	2016-08-14 21:49:43.801702645 +0000
+@@ -15,7 +15,7 @@
+ 
+ [dependencies]
+ curl = "0.2"
+-url = "1.0"
++url = "1.1.0"
+ log = "0.3"
+ git2 = { path = "..", version = "0.4" }
+ 
