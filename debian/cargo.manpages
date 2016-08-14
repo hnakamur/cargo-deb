@@ -1,1 +1,14 @@
-src/etc/cargo.1
+src/etc/man/cargo-bench.1
+src/etc/man/cargo-build.1
+src/etc/man/cargo-clean.1
+src/etc/man/cargo-doc.1
+src/etc/man/cargo-init.1
+src/etc/man/cargo-install.1
+src/etc/man/cargo-new.1
+src/etc/man/cargo-package.1
+src/etc/man/cargo-publish.1
+src/etc/man/cargo-run.1
+src/etc/man/cargo-search.1
+src/etc/man/cargo-test.1
+src/etc/man/cargo-update.1
+src/etc/man/cargo.1
