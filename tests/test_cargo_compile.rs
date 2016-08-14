@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use tempdir::TempDir;
 
 use support::{project, execs, main_file, basic_bin_manifest};
-use support::{COMPILING, RUNNING, ProjectBuilder};
+use support::{ProjectBuilder};
 use hamcrest::{assert_that, existing_file, is_not};
 use support::paths::{CargoPathExt,root};
 use cargo::util::process;
@@ -44,7 +44,7 @@ test!(cargo_compile_with_invalid_manifest {
         execs()
         .with_status(101)
         .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   no `package` or `project` section found.
@@ -62,7 +62,7 @@ test!(cargo_compile_with_invalid_manifest2 {
         execs()
         .with_status(101)
         .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   could not parse input as TOML
@@ -86,7 +86,7 @@ test!(cargo_compile_with_invalid_manifest3 {
         execs()
         .with_status(101)
         .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   could not parse input as TOML\n\
@@ -106,7 +106,7 @@ test!(cargo_compile_with_invalid_version {
                 execs()
                 .with_status(101)
                 .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   cannot parse '1.0' as a semver for the key `project.version`
@@ -127,7 +127,7 @@ test!(cargo_compile_with_invalid_package_name {
                 execs()
                 .with_status(101)
                 .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   package name cannot be an empty string.
@@ -150,7 +150,7 @@ test!(cargo_compile_with_invalid_bin_target_name {
                 execs()
                 .with_status(101)
                 .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   binary target names cannot be empty.
@@ -173,7 +173,7 @@ test!(cargo_compile_with_forbidden_bin_target_name {
                 execs()
                 .with_status(101)
                 .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   the binary target name `build` is forbidden
@@ -196,7 +196,7 @@ test!(cargo_compile_with_invalid_lib_target_name {
                 execs()
                 .with_status(101)
                 .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   library target names cannot be empty.
@@ -210,7 +210,7 @@ test!(cargo_compile_without_manifest {
     assert_that(p.cargo_process("build"),
                 execs().with_status(101)
                        .with_stderr("\
-could not find `Cargo.toml` in `[..]` or any parent directory
+[ERROR] could not find `Cargo.toml` in `[..]` or any parent directory
 "));
 });
 
@@ -228,7 +228,7 @@ src[..]foo.rs:1 invalid rust code!
              ^~~~~~~
 ")
         .with_stderr_contains("\
-Could not compile `foo`.
+[ERROR] Could not compile `foo`.
 
 To learn more, run the command again with --verbose.\n"));
     assert_that(&p.root().join("Cargo.lock"), existing_file());
@@ -267,6 +267,7 @@ test!(cargo_compile_with_warnings_in_the_root_package {
     assert_that(p.cargo_process("build"),
         execs()
         .with_stderr("\
+[COMPILING] foo [..]
 src[..]foo.rs:1:14: 1:26 warning: function is never used: `dead`, \
     #[warn(dead_code)] on by default
 src[..]foo.rs:1 fn main() {} fn dead() {}
@@ -314,16 +315,13 @@ test!(cargo_compile_with_warnings_in_a_dep_package {
         "#);
 
     assert_that(p.cargo_process("build"),
-        execs()
-        .with_stdout(&format!("{} bar v0.5.0 ({})\n\
-                              {} foo v0.5.0 ({})\n",
-                             COMPILING, p.url(),
-                             COMPILING, p.url()))
-        .with_stderr("\
+        execs().with_stderr(&format!("\
+[COMPILING] bar v0.5.0 ({url}/bar)
 [..]warning: function is never used: `dead`[..]
-[..]fn dead() {}
+[..]fn dead() {{}}
 [..]^~~~~~~~~~~~
-"));
+[COMPILING] foo v0.5.0 ({url})
+", url = p.url())));
 
     assert_that(&p.bin("foo"), existing_file());
 
@@ -606,10 +604,48 @@ test!(cargo_compile_with_dep_name_mismatch {
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(101).with_stderr(&format!(
-r#"no matching package named `notquitebar` found (required by `foo`)
-location searched: {proj_dir}
+r#"[ERROR] no matching package named `notquitebar` found (required by `foo`)
+location searched: {proj_dir}/bar
 version required: *
 "#, proj_dir = p.url())));
+});
+
+test!(cargo_compile_with_filename{
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/lib.rs", "")
+        .file("src/bin/a.rs", r#"
+            extern crate foo;
+            fn main() { println!("hello a.rs"); }
+        "#)
+        .file("examples/a.rs", r#"
+            fn main() { println!("example"); }
+        "#);
+
+    assert_that(p.cargo_process("build").arg("--bin").arg("bin.rs"),
+                execs().with_status(101).with_stderr("\
+[ERROR] no bin target named `bin.rs`"));
+
+    assert_that(p.cargo_process("build").arg("--bin").arg("a.rs"),
+                execs().with_status(101).with_stderr("\
+[ERROR] no bin target named `a.rs`
+
+Did you mean `a`?"));
+
+    assert_that(p.cargo_process("build").arg("--example").arg("example.rs"),
+                execs().with_status(101).with_stderr("\
+[ERROR] no example target named `example.rs`"));
+
+    assert_that(p.cargo_process("build").arg("--example").arg("a.rs"),
+                execs().with_status(101).with_stderr("\
+[ERROR] no example target named `a.rs`
+
+Did you mean `a`?"));
 });
 
 test!(compile_path_dep_then_change_version {
@@ -643,7 +679,7 @@ test!(compile_path_dep_then_change_version {
 
     assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr("\
-no matching package named `bar` found (required by `foo`)
+[ERROR] no matching package named `bar` found (required by `foo`)
 location searched: [..]
 version required: = 0.0.1
 versions found: 0.0.2
@@ -676,31 +712,40 @@ test!(ignores_carriage_return_in_lockfile {
                 execs().with_status(0));
 });
 
-test!(crate_version_env_vars {
+test!(crate_env_vars {
     let p = project("foo")
         .file("Cargo.toml", r#"
-            [project]
-            name = "foo"
-            version = "0.5.1-alpha.1"
-            authors = ["wycats@example.com"]
+	    [project]
+	    name = "foo"
+	    version = "0.5.1-alpha.1"
+	    description = "This is foo"
+	    homepage = "http://example.com"
+	    authors = ["wycats@example.com"]
         "#)
         .file("src/main.rs", r#"
             extern crate foo;
 
-            static VERSION_MAJOR: &'static str = env!("CARGO_PKG_VERSION_MAJOR");
-            static VERSION_MINOR: &'static str = env!("CARGO_PKG_VERSION_MINOR");
-            static VERSION_PATCH: &'static str = env!("CARGO_PKG_VERSION_PATCH");
-            static VERSION_PRE: &'static str = env!("CARGO_PKG_VERSION_PRE");
-            static VERSION: &'static str = env!("CARGO_PKG_VERSION");
-            static CARGO_MANIFEST_DIR: &'static str = env!("CARGO_MANIFEST_DIR");
+
+	    static VERSION_MAJOR: &'static str = env!("CARGO_PKG_VERSION_MAJOR");
+	    static VERSION_MINOR: &'static str = env!("CARGO_PKG_VERSION_MINOR");
+	    static VERSION_PATCH: &'static str = env!("CARGO_PKG_VERSION_PATCH");
+	    static VERSION_PRE: &'static str = env!("CARGO_PKG_VERSION_PRE");
+	    static VERSION: &'static str = env!("CARGO_PKG_VERSION");
+	    static CARGO_MANIFEST_DIR: &'static str = env!("CARGO_MANIFEST_DIR");
+	    static PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
+	    static HOMEPAGE: &'static str = env!("CARGO_PKG_HOMEPAGE");
+	    static DESCRIPTION: &'static str = env!("CARGO_PKG_DESCRIPTION");
 
             fn main() {
                 let s = format!("{}-{}-{} @ {} in {}", VERSION_MAJOR,
                                 VERSION_MINOR, VERSION_PATCH, VERSION_PRE,
                                 CARGO_MANIFEST_DIR);
-                assert_eq!(s, foo::version());
-                println!("{}", s);
-                assert_eq!(s, VERSION);
+		 assert_eq!(s, foo::version());
+		 println!("{}", s);
+		 assert_eq!("foo", PKG_NAME);
+		 assert_eq!("http://example.com", HOMEPAGE);
+		 assert_eq!("This is foo", DESCRIPTION);
+		 assert_eq!(s, VERSION);
             }
         "#)
         .file("src/lib.rs", r#"
@@ -721,6 +766,44 @@ test!(crate_version_env_vars {
     assert_that(process(&p.bin("foo")),
                 execs().with_stdout(&format!("0-5-1 @ alpha.1 in {}\n",
                                             p.root().display())));
+
+    println!("test");
+    assert_that(p.cargo("test").arg("-v"),
+                execs().with_status(0));
+});
+
+test!(crate_authors_env_vars {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.1-alpha.1"
+            authors = ["wycats@example.com", "neikos@example.com"]
+        "#)
+        .file("src/main.rs", r#"
+            extern crate foo;
+
+            static AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
+
+            fn main() {
+                let s = "wycats@example.com:neikos@example.com";
+                assert_eq!(AUTHORS, foo::authors());
+                println!("{}", AUTHORS);
+                assert_eq!(s, AUTHORS);
+            }
+        "#)
+        .file("src/lib.rs", r#"
+            pub fn authors() -> String {
+                format!("{}", env!("CARGO_PKG_AUTHORS"))
+            }
+        "#);
+
+    println!("build");
+    assert_that(p.cargo_process("build").arg("-v"), execs().with_status(0));
+
+    println!("bin");
+    assert_that(process(&p.bin("foo")),
+                execs().with_stdout("wycats@example.com:neikos@example.com"));
 
     println!("test");
     assert_that(p.cargo("test").arg("-v"),
@@ -801,7 +884,10 @@ test!(unused_keys {
         "#);
     assert_that(p.cargo_process("build"),
                 execs().with_status(0)
-                       .with_stderr("unused manifest key: project.bulid\n"));
+                       .with_stderr("\
+warning: unused manifest key: project.bulid
+[COMPILING] foo [..]
+"));
 
     let mut p = project("bar");
     p = p
@@ -822,7 +908,10 @@ test!(unused_keys {
         "#);
     assert_that(p.cargo_process("build"),
                 execs().with_status(0)
-                       .with_stderr("unused manifest key: lib.build\n"));
+                       .with_stderr("\
+warning: unused manifest key: lib.build
+[COMPILING] foo [..]
+"));
 });
 
 test!(self_dependency {
@@ -847,7 +936,7 @@ test!(self_dependency {
     assert_that(p.cargo_process("build"),
                 execs().with_status(101)
                        .with_stderr("\
-cyclic package dependency: package `test v0.0.0 ([..])` depends on itself
+[ERROR] cyclic package dependency: package `test v0.0.0 ([..])` depends on itself
 "));
 });
 
@@ -880,7 +969,7 @@ test!(missing_lib_and_bin {
     assert_that(p.cargo_process("build"),
                 execs().with_status(101)
                        .with_stderr("\
-failed to parse manifest at `[..]Cargo.toml`
+[ERROR] failed to parse manifest at `[..]Cargo.toml`
 
 Caused by:
   no targets specified in the manifest
@@ -907,9 +996,9 @@ test!(lto_build {
         "#)
         .file("src/main.rs", "fn main() {}");
     assert_that(p.cargo_process("build").arg("-v").arg("--release"),
-                execs().with_status(0).with_stdout(&format!("\
-{compiling} test v0.0.0 ({url})
-{running} `rustc src[..]main.rs --crate-name test --crate-type bin \
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] test v0.0.0 ({url})
+[RUNNING] `rustc src[..]main.rs --crate-name test --crate-type bin \
         -C opt-level=3 \
         -C lto \
         --out-dir {dir}[..]target[..]release \
@@ -917,7 +1006,6 @@ test!(lto_build {
         -L dependency={dir}[..]target[..]release \
         -L dependency={dir}[..]target[..]release[..]deps`
 ",
-running = RUNNING, compiling = COMPILING,
 dir = p.root().display(),
 url = p.url(),
 )));
@@ -935,15 +1023,14 @@ test!(verbose_build {
         "#)
         .file("src/lib.rs", "");
     assert_that(p.cargo_process("build").arg("-v"),
-                execs().with_status(0).with_stdout(&format!("\
-{compiling} test v0.0.0 ({url})
-{running} `rustc src[..]lib.rs --crate-name test --crate-type lib -g \
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] test v0.0.0 ({url})
+[RUNNING] `rustc src[..]lib.rs --crate-name test --crate-type lib -g \
         --out-dir {dir}[..]target[..]debug \
         --emit=dep-info,link \
         -L dependency={dir}[..]target[..]debug \
         -L dependency={dir}[..]target[..]debug[..]deps`
 ",
-running = RUNNING, compiling = COMPILING,
 dir = p.root().display(),
 url = p.url(),
 )));
@@ -961,16 +1048,15 @@ test!(verbose_release_build {
         "#)
         .file("src/lib.rs", "");
     assert_that(p.cargo_process("build").arg("-v").arg("--release"),
-                execs().with_status(0).with_stdout(&format!("\
-{compiling} test v0.0.0 ({url})
-{running} `rustc src[..]lib.rs --crate-name test --crate-type lib \
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] test v0.0.0 ({url})
+[RUNNING] `rustc src[..]lib.rs --crate-name test --crate-type lib \
         -C opt-level=3 \
         --out-dir {dir}[..]target[..]release \
         --emit=dep-info,link \
         -L dependency={dir}[..]target[..]release \
         -L dependency={dir}[..]target[..]release[..]deps`
 ",
-running = RUNNING, compiling = COMPILING,
 dir = p.root().display(),
 url = p.url(),
 )));
@@ -1003,9 +1089,9 @@ test!(verbose_release_build_deps {
         "#)
         .file("foo/src/lib.rs", "");
     assert_that(p.cargo_process("build").arg("-v").arg("--release"),
-                execs().with_status(0).with_stdout(&format!("\
-{compiling} foo v0.0.0 ({url})
-{running} `rustc foo[..]src[..]lib.rs --crate-name foo \
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] foo v0.0.0 ({url}/foo)
+[RUNNING] `rustc foo[..]src[..]lib.rs --crate-name foo \
         --crate-type dylib --crate-type rlib -C prefer-dynamic \
         -C opt-level=3 \
         -C metadata=[..] \
@@ -1014,8 +1100,8 @@ test!(verbose_release_build_deps {
         --emit=dep-info,link \
         -L dependency={dir}[..]target[..]release[..]deps \
         -L dependency={dir}[..]target[..]release[..]deps`
-{compiling} test v0.0.0 ({url})
-{running} `rustc src[..]lib.rs --crate-name test --crate-type lib \
+[COMPILING] test v0.0.0 ({url})
+[RUNNING] `rustc src[..]lib.rs --crate-name test --crate-type lib \
         -C opt-level=3 \
         --out-dir {dir}[..]target[..]release \
         --emit=dep-info,link \
@@ -1025,8 +1111,6 @@ test!(verbose_release_build_deps {
                      {prefix}foo-[..]{suffix} \
         --extern foo={dir}[..]target[..]release[..]deps[..]libfoo-[..].rlib`
 ",
-                    running = RUNNING,
-                    compiling = COMPILING,
                     dir = p.root().display(),
                     url = p.url(),
                     prefix = env::consts::DLL_PREFIX,
@@ -1228,10 +1312,9 @@ test!(lib_with_standard_name {
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-{compiling} syntax v0.0.1 ({dir})
+                       .with_stderr(&format!("\
+[COMPILING] syntax v0.0.1 ({dir})
 ",
-                       compiling = COMPILING,
                        dir = p.url())));
 });
 
@@ -1325,9 +1408,9 @@ test!(freshness_ignores_excluded {
 
     assert_that(foo.cargo("build"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-{compiling} foo v0.0.0 ({url})
-", compiling = COMPILING, url = foo.url())));
+                       .with_stderr(&format!("\
+[COMPILING] foo v0.0.0 ({url})
+", url = foo.url())));
 
     // Smoke test to make sure it doesn't compile again
     println!("first pass");
@@ -1372,16 +1455,16 @@ test!(rebuild_preserves_out_dir {
 
     assert_that(foo.cargo("build").env("FIRST", "1"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-{compiling} foo v0.0.0 ({url})
-", compiling = COMPILING, url = foo.url())));
+                       .with_stderr(&format!("\
+[COMPILING] foo v0.0.0 ({url})
+", url = foo.url())));
 
     File::create(&foo.root().join("src/bar.rs")).unwrap();
     assert_that(foo.cargo("build"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-{compiling} foo v0.0.0 ({url})
-", compiling = COMPILING, url = foo.url())));
+                       .with_stderr(&format!("\
+[COMPILING] foo v0.0.0 ({url})
+", url = foo.url())));
 });
 
 test!(dep_no_libs {
@@ -1464,7 +1547,7 @@ test!(bad_cargo_config {
         "#);
     assert_that(foo.cargo_process("build").arg("-v"),
                 execs().with_status(101).with_stderr("\
-Couldn't load Cargo configuration
+[ERROR] Couldn't load Cargo configuration
 
 Caused by:
   could not parse TOML configuration in `[..]`
@@ -1686,15 +1769,8 @@ test!(transitive_dependencies_not_available {
 
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(101)
-                       .with_stderr("\
+                       .with_stderr_contains("\
 [..] can't find crate for `bbbbb`[..]
-[..] extern crate bbbbb; [..]
-[..]
-error: aborting due to previous error
-Could not compile `foo`.
-
-Caused by:
-  [..]
 "));
 });
 
@@ -1724,7 +1800,7 @@ test!(cyclic_deps_rejected {
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(101)
                        .with_stderr("\
-cyclic package dependency: package `foo v0.0.1 ([..])` depends on itself
+[ERROR] cyclic package dependency: package `foo v0.0.1 ([..])` depends on itself
 "));
 });
 
@@ -1800,7 +1876,7 @@ test!(rustc_env_var {
                  .env("RUSTC", "rustc-that-does-not-exist").arg("-v"),
                 execs().with_status(101)
                        .with_stderr("\
-Could not execute process `rustc-that-does-not-exist -vV` ([..])
+[ERROR] Could not execute process `rustc-that-does-not-exist -vV` ([..])
 
 Caused by:
 [..]
@@ -2031,13 +2107,14 @@ test!(invalid_spec {
     p.build();
 
     assert_that(p.cargo_process("build").arg("-p").arg("notAValidDep"),
-                execs().with_status(101).with_stderr(
-                    "could not find package matching spec `notAValidDep`".to_string()));
+                execs().with_status(101).with_stderr("\
+[ERROR] package id specification `notAValidDep` matched no packages
+"));
 
     assert_that(p.cargo_process("build").arg("-p").arg("d1").arg("-p").arg("notAValidDep"),
-                execs().with_status(101).with_stderr(
-                    "could not find package matching spec `notAValidDep`".to_string()));
-
+                execs().with_status(101).with_stderr("\
+[ERROR] package id specification `notAValidDep` matched no packages
+"));
 });
 
 test!(manifest_with_bom_is_ok {
@@ -2051,4 +2128,24 @@ test!(manifest_with_bom_is_ok {
         .file("src/lib.rs", "");
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0));
+});
+
+test!(panic_abort_compiles_with_panic_abort {
+    if !::is_nightly() {
+        return
+    }
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [profile.dev]
+            panic = 'abort'
+        "#)
+        .file("src/lib.rs", "");
+    assert_that(p.cargo_process("build").arg("-v"),
+                execs().with_status(0)
+                       .with_stderr_contains("[..] -C panic=abort [..]"));
 });

@@ -8,7 +8,6 @@ use tar::Archive;
 use url::Url;
 
 use support::{project, execs};
-use support::{UPDATING, PACKAGING, UPLOADING};
 use support::paths;
 use support::git::repo;
 
@@ -50,14 +49,12 @@ test!(simple {
         .file("src/main.rs", "fn main() {}");
 
     assert_that(p.cargo_process("publish").arg("--no-verify"),
-                execs().with_status(0).with_stdout(&format!("\
-{updating} registry `{reg}`
-{packaging} foo v0.0.1 ({dir})
-{uploading} foo v0.0.1 ({dir})
+                execs().with_status(0).with_stderr(&format!("\
+[UPDATING] registry `{reg}`
+[WARNING] manifest has no documentation, [..]
+[PACKAGING] foo v0.0.1 ({dir})
+[UPLOADING] foo v0.0.1 ({dir})
 ",
-        updating = UPDATING,
-        uploading = UPLOADING,
-        packaging = PACKAGING,
         dir = p.url(),
         reg = registry())));
 
@@ -104,7 +101,8 @@ test!(git_deps {
 
     assert_that(p.cargo_process("publish").arg("-v").arg("--no-verify"),
                 execs().with_status(101).with_stderr("\
-all dependencies must come from the same source.
+[UPDATING] registry [..]
+[ERROR] all dependencies must come from the same source.
 dependency `foo` comes from git://path/to/nowhere instead
 "));
 });
@@ -133,7 +131,8 @@ test!(path_dependency_no_version {
 
     assert_that(p.cargo_process("publish"),
                 execs().with_status(101).with_stderr("\
-all path dependencies must have a version specified when publishing.
+[UPDATING] registry [..]
+[ERROR] all path dependencies must have a version specified when publishing.
 dependency `bar` does not specify a version
 "));
 });
@@ -153,7 +152,7 @@ test!(unpublishable_crate {
 
     assert_that(p.cargo_process("publish"),
                 execs().with_status(101).with_stderr("\
-some crates cannot be published.
+[ERROR] some crates cannot be published.
 `foo` is marked as unpublishable
 "));
 });

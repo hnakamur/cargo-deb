@@ -20,6 +20,7 @@ extern crate log;
 
 use cargo::util::Rustc;
 use std::ffi::OsStr;
+use std::time::Duration;
 
 mod support;
 macro_rules! test {
@@ -45,6 +46,7 @@ mod test_cargo_compile_custom_build;
 mod test_cargo_compile_git_deps;
 mod test_cargo_compile_path_deps;
 mod test_cargo_compile_plugins;
+mod test_cargo_compile_rustflags;
 mod test_cargo_cross_compile;
 mod test_cargo_doc;
 mod test_cargo_features;
@@ -57,10 +59,12 @@ mod test_cargo_metadata;
 mod test_cargo_new;
 mod test_cargo_package;
 mod test_cargo_profiles;
+mod test_cargo_overrides;
 mod test_cargo_publish;
 mod test_cargo_read_manifest;
 mod test_cargo_registry;
 mod test_cargo_run;
+mod test_cargo_concurrent;
 mod test_cargo_rustc;
 mod test_cargo_rustdoc;
 mod test_cargo_search;
@@ -72,6 +76,7 @@ mod test_cargo_version;
 mod test_shell;
 mod test_cargo_death;
 mod test_cargo_cfg;
+mod test_cargo_net_config;
 
 thread_local!(static RUSTC: Rustc = Rustc::new("rustc").unwrap());
 
@@ -89,8 +94,11 @@ fn is_nightly() -> bool {
 fn process<T: AsRef<OsStr>>(t: T) -> cargo::util::ProcessBuilder {
     let mut p = cargo::util::process(t.as_ref());
     p.cwd(&support::paths::root())
-     .env("HOME", &support::paths::home())
      .env_remove("CARGO_HOME")
+     .env("HOME", support::paths::home())
+     .env("CARGO_HOME", support::paths::home().join(".cargo"))
+     .env_remove("RUSTC")
+     .env_remove("RUSTFLAGS")
      .env_remove("XDG_CONFIG_HOME")      // see #2345
      .env("GIT_CONFIG_NOSYSTEM", "1")    // keep trying to sandbox ourselves
      .env_remove("CARGO_TARGET_DIR")     // we assume 'target'
@@ -102,7 +110,6 @@ fn cargo_process() -> cargo::util::ProcessBuilder {
     process(&support::cargo_dir().join("cargo"))
 }
 
-#[allow(deprecated)] // sleep_ms is now deprecated in favor of sleep()
-fn sleep_ms(ms: u32) {
-    std::thread::sleep_ms(ms);
+fn sleep_ms(ms: u64) {
+    std::thread::sleep(Duration::from_millis(ms));
 }

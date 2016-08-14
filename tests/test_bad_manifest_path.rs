@@ -12,21 +12,23 @@ fn assert_not_a_cargo_toml(command: &str, manifest_path_argument: &str) {
                  .arg("--manifest-path").arg(manifest_path_argument)
                  .cwd(p.root().parent().unwrap()),
                 execs().with_status(101)
-                       .with_stderr("the manifest-path must be a path to a Cargo.toml file"));
+                       .with_stderr("[ERROR] the manifest-path must be a path \
+                                             to a Cargo.toml file"));
 }
 
-#[allow(deprecated)] // connect => join in 1.3
+
 fn assert_cargo_toml_doesnt_exist(command: &str, manifest_path_argument: &str) {
     let p = project("foo");
     let expected_path = manifest_path_argument
-        .split("/").collect::<Vec<_>>().connect("[..]");
+        .split("/").collect::<Vec<_>>().join("[..]");
 
     assert_that(p.cargo_process(command)
                  .arg("--manifest-path").arg(manifest_path_argument)
                  .cwd(p.root().parent().unwrap()),
                 execs().with_status(101)
                        .with_stderr(
-                           format!("manifest path `{}` does not exist", expected_path)
+                           format!("[ERROR] manifest path `{}` does not exist",
+                                   expected_path)
                        ));
 }
 

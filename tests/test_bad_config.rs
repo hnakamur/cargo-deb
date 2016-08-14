@@ -20,7 +20,8 @@ test!(bad1 {
     assert_that(foo.cargo_process("build").arg("-v")
                    .arg("--target=nonexistent-target"),
                 execs().with_status(101).with_stderr("\
-expected table for configuration key `target.nonexistent-target`, but found string in [..]config
+[ERROR] expected table for configuration key `target.nonexistent-target`, \
+but found string in [..]config
 "));
 });
 
@@ -39,7 +40,7 @@ test!(bad2 {
         "#);
     assert_that(foo.cargo_process("publish").arg("-v"),
                 execs().with_status(101).with_stderr("\
-Couldn't load Cargo configuration
+[ERROR] Couldn't load Cargo configuration
 
 Caused by:
   failed to load TOML configuration from `[..]config`
@@ -70,7 +71,8 @@ test!(bad3 {
         "#);
     assert_that(foo.cargo_process("publish").arg("-v"),
                 execs().with_status(101).with_stderr("\
-invalid configuration for key `http.proxy`
+[UPDATING] registry `https://[..]`
+[ERROR] invalid configuration for key `http.proxy`
 expected a string, but found a boolean in [..]config
 "));
 });
@@ -83,7 +85,7 @@ test!(bad4 {
         "#);
     assert_that(foo.cargo_process("new").arg("-v").arg("foo"),
                 execs().with_status(101).with_stderr("\
-Failed to create project `foo` at `[..]`
+[ERROR] Failed to create project `foo` at `[..]`
 
 Caused by:
   invalid configuration for key `cargo-new.name`
@@ -103,7 +105,7 @@ test!(bad5 {
     assert_that(foo.cargo("new")
                    .arg("-v").arg("foo").cwd(&foo.root().join("foo")),
                 execs().with_status(101).with_stderr("\
-Couldn't load Cargo configuration
+[ERROR] Couldn't load Cargo configuration
 
 Caused by:
   failed to merge key `foo` between files:
@@ -130,7 +132,7 @@ test!(bad_cargo_config_jobs {
     "#);
     assert_that(foo.cargo_process("build").arg("-v"),
                 execs().with_status(101).with_stderr("\
-build.jobs must be positive, but found -1 in [..]
+[ERROR] build.jobs must be positive, but found -1 in [..]
 "));
 });
 
@@ -184,7 +186,7 @@ test!(invalid_global_config {
 
     assert_that(foo.cargo_process("build").arg("-v"),
                 execs().with_status(101).with_stderr("\
-Couldn't load Cargo configuration
+[ERROR] Couldn't load Cargo configuration
 
 Caused by:
   could not parse TOML configuration in `[..]config`
@@ -209,7 +211,7 @@ test!(bad_cargo_lock {
 
     assert_that(foo.cargo_process("build").arg("-v"),
                 execs().with_status(101).with_stderr("\
-failed to parse lock file at: [..]Cargo.lock
+[ERROR] failed to parse lock file at: [..]Cargo.lock
 
 Caused by:
   expected a section for the key `root`
@@ -231,7 +233,8 @@ test!(bad_git_dependency {
 
     assert_that(foo.cargo_process("build").arg("-v"),
                 execs().with_status(101).with_stderr("\
-Unable to update file:///
+[UPDATING] git repository `file:///`
+[ERROR] Unable to update file:///
 
 Caused by:
   failed to clone into: [..]
@@ -257,6 +260,8 @@ test!(bad_crate_type {
     assert_that(foo.cargo_process("build").arg("-v"),
                 execs().with_status(0).with_stderr("\
 warning: crate-type \"bad_type\" was not one of lib|rlib|dylib|staticlib
+[COMPILING] foo v0.0.0 (file:///[..])
+[RUNNING] `rustc [..] --crate-type rlib [..]`
 "));
 });
 
@@ -277,7 +282,7 @@ test!(malformed_override {
 
     assert_that(foo.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   could not parse input as TOML
@@ -307,7 +312,7 @@ test!(duplicate_binary_names {
 
     assert_that(foo.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   found duplicate binary name e, but all binary targets must have a unique name
@@ -335,7 +340,7 @@ test!(duplicate_example_names {
 
     assert_that(foo.cargo_process("build").arg("--example").arg("ex"),
                 execs().with_status(101).with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   found duplicate example name ex, but all binary targets must have a unique name
@@ -363,10 +368,53 @@ test!(duplicate_bench_names {
 
     assert_that(foo.cargo_process("bench"),
                 execs().with_status(101).with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   found duplicate bench name ex, but all binary targets must have a unique name
+"));
+});
+
+test!(duplicate_deps {
+    let foo = project("foo")
+    .file("shim-bar/Cargo.toml", r#"
+       [package]
+       name = "bar"
+       version = "0.0.1"
+       authors = []
+    "#)
+    .file("shim-bar/src/lib.rs", r#"
+            pub fn a() {}
+    "#)
+    .file("linux-bar/Cargo.toml", r#"
+       [package]
+       name = "bar"
+       version = "0.0.1"
+       authors = []
+    "#)
+    .file("linux-bar/src/lib.rs", r#"
+            pub fn a() {}
+    "#)
+    .file("Cargo.toml", r#"
+       [package]
+       name = "qqq"
+       version = "0.0.1"
+       authors = []
+
+       [dependencies]
+       bar = { path = "shim-bar" }
+
+       [target.x86_64-unknown-linux-gnu.dependencies]
+       bar = { path = "linux-bar" }
+    "#)
+    .file("src/main.rs", r#"fn main () {}"#);
+
+    assert_that(foo.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  found duplicate dependency name bar, but all dependencies must have a unique name
 "));
 });
 
@@ -385,7 +433,8 @@ test!(unused_keys {
 
     assert_that(foo.cargo_process("build"),
                 execs().with_status(0).with_stderr("\
-unused manifest key: target.foo.bar
+warning: unused manifest key: target.foo.bar
+[COMPILING] foo v0.1.0 (file:///[..])
 "));
 });
 

@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 
 use core::{Package, Profiles};
-use core::source::Source;
 use util::{CargoResult, human, ChainError, Config};
 use ops::{self, Layout, Context, BuildConfig, Kind, Unit};
 
@@ -21,17 +20,24 @@ pub fn clean(manifest_path: &Path, opts: &CleanOptions) -> CargoResult<()> {
 
     // If we have a spec, then we need to delete some packages, otherwise, just
     // remove the whole target directory and be done with it!
+    //
+    // Note that we don't bother grabbing a lock here as we're just going to
+    // blow it all away anyway.
     if opts.spec.is_empty() {
+        let target_dir = target_dir.into_path_unlocked();
         return rm_rf(&target_dir);
     }
 
     let (resolve, packages) = try!(ops::fetch(manifest_path, opts.config));
 
     let dest = if opts.release {"release"} else {"debug"};
-    let host_layout = Layout::new(opts.config, &root, None, dest);
-    let target_layout = opts.target.map(|target| {
-        Layout::new(opts.config, &root, Some(target), dest)
-    });
+    let host_layout = try!(Layout::new(opts.config, &root, None, dest));
+    let target_layout = match opts.target {
+        Some(target) => {
+            Some(try!(Layout::new(opts.config, &root, Some(target), dest)))
+        }
+        None => None,
+    };
 
     let cx = try!(Context::new(&resolve, &packages, opts.config,
                                host_layout, target_layout,
@@ -52,9 +58,11 @@ pub fn clean(manifest_path: &Path, opts: &CleanOptions) -> CargoResult<()> {
                 try!(rm_rf(&layout.build(&pkg)));
                 let Profiles {
                     ref release, ref dev, ref test, ref bench, ref doc,
-                    ref custom_build,
+                    ref custom_build, ref test_deps, ref bench_deps,
                 } = *root.manifest().profiles();
-                for profile in [release, dev, test, bench, doc, custom_build].iter() {
+                let profiles = [release, dev, test, bench, doc, custom_build,
+                                test_deps, bench_deps];
+                for profile in profiles.iter() {
                     let unit = Unit {
                         pkg: &pkg,
                         target: target,

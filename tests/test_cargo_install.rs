@@ -8,12 +8,11 @@ use cargo::util::ProcessBuilder;
 use hamcrest::{assert_that, existing_file, is_not, Matcher, MatchResult};
 
 use support::{project, execs};
-use support::{UPDATING, DOWNLOADING, COMPILING, INSTALLING, REMOVING};
 use support::paths;
 use support::registry::Package;
 use support::git;
 
-use self::InstalledExe as has_installed_exe;
+pub use self::InstalledExe as has_installed_exe;
 
 fn setup() {
 }
@@ -38,11 +37,11 @@ fn exe(name: &str) -> String {
     if cfg!(windows) {format!("{}.exe", name)} else {name.to_string()}
 }
 
-fn cargo_home() -> PathBuf {
+pub fn cargo_home() -> PathBuf {
     paths::home().join(".cargo")
 }
 
-struct InstalledExe(&'static str);
+pub struct InstalledExe(pub &'static str);
 
 impl<P: AsRef<Path>> Matcher<P> for InstalledExe {
     fn matches(&self, path: P) -> MatchResult {
@@ -61,24 +60,20 @@ test!(simple {
     pkg("foo", "0.0.1");
 
     assert_that(cargo_process("install").arg("foo"),
-                execs().with_status(0).with_stdout(&format!("\
-{updating} registry `[..]`
-{downloading} foo v0.0.1 (registry file://[..])
-{compiling} foo v0.0.1 (registry file://[..])
-{installing} {home}[..]bin[..]foo[..]
+                execs().with_status(0).with_stderr(&format!("\
+[UPDATING] registry `[..]`
+[DOWNLOADING] foo v0.0.1 (registry file://[..])
+[COMPILING] foo v0.0.1 (registry file://[..])
+[INSTALLING] {home}[..]bin[..]foo[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 ",
-        updating = UPDATING,
-        downloading = DOWNLOADING,
-        compiling = COMPILING,
-        installing = INSTALLING,
         home = cargo_home().display())));
     assert_that(cargo_home(), has_installed_exe("foo"));
 
     assert_that(cargo_process("uninstall").arg("foo"),
-                execs().with_status(0).with_stdout(&format!("\
-{removing} {home}[..]bin[..]foo[..]
+                execs().with_status(0).with_stderr(&format!("\
+[REMOVING] {home}[..]bin[..]foo[..]
 ",
-        removing = REMOVING,
         home = cargo_home().display())));
     assert_that(cargo_home(), is_not(has_installed_exe("foo")));
 });
@@ -88,16 +83,13 @@ test!(pick_max_version {
     pkg("foo", "0.0.2");
 
     assert_that(cargo_process("install").arg("foo"),
-                execs().with_status(0).with_stdout(&format!("\
-{updating} registry `[..]`
-{downloading} foo v0.0.2 (registry file://[..])
-{compiling} foo v0.0.2 (registry file://[..])
-{installing} {home}[..]bin[..]foo[..]
+                execs().with_status(0).with_stderr(&format!("\
+[UPDATING] registry `[..]`
+[DOWNLOADING] foo v0.0.2 (registry file://[..])
+[COMPILING] foo v0.0.2 (registry file://[..])
+[INSTALLING] {home}[..]bin[..]foo[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 ",
-        updating = UPDATING,
-        downloading = DOWNLOADING,
-        compiling = COMPILING,
-        installing = INSTALLING,
         home = cargo_home().display())));
     assert_that(cargo_home(), has_installed_exe("foo"));
 });
@@ -106,7 +98,8 @@ test!(missing {
     pkg("foo", "0.0.1");
     assert_that(cargo_process("install").arg("bar"),
                 execs().with_status(101).with_stderr("\
-could not find `bar` in `registry file://[..]`
+[UPDATING] registry [..]
+[ERROR] could not find `bar` in `registry file://[..]`
 "));
 });
 
@@ -114,17 +107,21 @@ test!(bad_version {
     pkg("foo", "0.0.1");
     assert_that(cargo_process("install").arg("foo").arg("--vers=0.2.0"),
                 execs().with_status(101).with_stderr("\
-could not find `foo` in `registry file://[..]` with version `0.2.0`
+[UPDATING] registry [..]
+[ERROR] could not find `foo` in `registry file://[..]` with version `0.2.0`
 "));
 });
 
 test!(no_crate {
     assert_that(cargo_process("install"),
                 execs().with_status(101).with_stderr("\
-`[..]` is not a crate root; specify a crate to install [..]
+[ERROR] `[..]` is not a crate root; specify a crate to install [..]
 
 Caused by:
-  Could not find Cargo.toml in `[..]`
+  failed to read `[..]Cargo.toml`
+
+Caused by:
+  [..] (os error [..])
 "));
 });
 
@@ -192,12 +189,13 @@ test!(install_path {
     assert_that(cargo_home(), has_installed_exe("foo"));
     assert_that(cargo_process("install").arg("--path").arg(".").cwd(p.root()),
                 execs().with_status(101).with_stderr("\
-binary `foo[..]` already exists in destination as part of `foo v0.1.0 [..]`
+[ERROR] binary `foo[..]` already exists in destination as part of `foo v0.1.0 [..]`
+Add --force to overwrite
 "));
 });
 
 test!(multiple_crates_error {
-    let p = project("foo")
+    let p = git::repo(&paths::root().join("foo"))
         .file("Cargo.toml", r#"
             [package]
             name = "foo"
@@ -214,14 +212,15 @@ test!(multiple_crates_error {
         .file("a/src/main.rs", "fn main() {}");
     p.build();
 
-    assert_that(cargo_process("install").arg("--path").arg(p.root()),
+    assert_that(cargo_process("install").arg("--git").arg(p.url().to_string()),
                 execs().with_status(101).with_stderr("\
-multiple packages with binaries found: bar, foo
+[UPDATING] git repository [..]
+[ERROR] multiple packages with binaries found: bar, foo
 "));
 });
 
 test!(multiple_crates_select {
-    let p = project("foo")
+    let p = git::repo(&paths::root().join("foo"))
         .file("Cargo.toml", r#"
             [package]
             name = "foo"
@@ -238,12 +237,14 @@ test!(multiple_crates_select {
         .file("a/src/main.rs", "fn main() {}");
     p.build();
 
-    assert_that(cargo_process("install").arg("--path").arg(p.root()).arg("foo"),
+    assert_that(cargo_process("install").arg("--git").arg(p.url().to_string())
+                                        .arg("foo"),
                 execs().with_status(0));
     assert_that(cargo_home(), has_installed_exe("foo"));
     assert_that(cargo_home(), is_not(has_installed_exe("bar")));
 
-    assert_that(cargo_process("install").arg("--path").arg(p.root()).arg("bar"),
+    assert_that(cargo_process("install").arg("--git").arg(p.url().to_string())
+                                        .arg("bar"),
                 execs().with_status(0));
     assert_that(cargo_home(), has_installed_exe("bar"));
 });
@@ -329,7 +330,7 @@ test!(no_binaries_or_examples {
 
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
                 execs().with_status(101).with_stderr("\
-no packages found with binaries or examples
+[ERROR] no packages found with binaries or examples
 "));
 });
 
@@ -347,7 +348,7 @@ test!(no_binaries {
 
     assert_that(cargo_process("install").arg("--path").arg(p.root()).arg("foo"),
                 execs().with_status(101).with_stderr("\
-specified package has no binaries
+[ERROR] specified package has no binaries
 "));
 });
 
@@ -377,14 +378,148 @@ test!(install_twice {
             version = "0.1.0"
             authors = []
         "#)
-        .file("src/main.rs", "fn main() {}");
+        .file("src/bin/foo-bin1.rs", "fn main() {}")
+        .file("src/bin/foo-bin2.rs", "fn main() {}");
     p.build();
 
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
                 execs().with_status(0));
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
                 execs().with_status(101).with_stderr("\
-binary `foo[..]` already exists in destination as part of `foo v0.1.0 ([..])`
+[ERROR] binary `foo-bin1[..]` already exists in destination as part of `foo v0.1.0 ([..])`
+binary `foo-bin2[..]` already exists in destination as part of `foo v0.1.0 ([..])`
+Add --force to overwrite
+"));
+});
+
+test!(install_force {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("--path").arg(p.root()),
+                execs().with_status(0));
+
+    let p = project("foo2")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.2.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("--force").arg("--path").arg(p.root()),
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] foo v0.2.0 ([..])
+[REPLACING] {home}[..]bin[..]foo[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
+",
+        home = cargo_home().display())));
+
+    assert_that(cargo_process("install").arg("--list"),
+                execs().with_status(0).with_stdout("\
+foo v0.2.0 ([..]):
+    foo[..]
+"));
+});
+
+test!(install_force_partial_overlap {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/bin/foo-bin1.rs", "fn main() {}")
+        .file("src/bin/foo-bin2.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("--path").arg(p.root()),
+                execs().with_status(0));
+
+    let p = project("foo2")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.2.0"
+            authors = []
+        "#)
+        .file("src/bin/foo-bin2.rs", "fn main() {}")
+        .file("src/bin/foo-bin3.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("--force").arg("--path").arg(p.root()),
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] foo v0.2.0 ([..])
+[INSTALLING] {home}[..]bin[..]foo-bin3[..]
+[REPLACING] {home}[..]bin[..]foo-bin2[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
+",
+        home = cargo_home().display())));
+
+    assert_that(cargo_process("install").arg("--list"),
+                execs().with_status(0).with_stdout("\
+foo v0.1.0 ([..]):
+    foo-bin1[..]
+foo v0.2.0 ([..]):
+    foo-bin2[..]
+    foo-bin3[..]
+"));
+});
+
+test!(install_force_bin {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/bin/foo-bin1.rs", "fn main() {}")
+        .file("src/bin/foo-bin2.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("--path").arg(p.root()),
+                execs().with_status(0));
+
+    let p = project("foo2")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.2.0"
+            authors = []
+        "#)
+        .file("src/bin/foo-bin1.rs", "fn main() {}")
+        .file("src/bin/foo-bin2.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("--force")
+                    .arg("--bin")
+                    .arg("foo-bin2")
+                    .arg("--path")
+                    .arg(p.root()),
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] foo v0.2.0 ([..])
+[REPLACING] {home}[..]bin[..]foo-bin2[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
+",
+        home = cargo_home().display())));
+
+    assert_that(cargo_process("install").arg("--list"),
+                execs().with_status(0).with_stdout("\
+foo v0.1.0 ([..]):
+    foo-bin1[..]
+foo v0.2.0 ([..]):
+    foo-bin2[..]
 "));
 });
 
@@ -401,9 +536,10 @@ test!(compile_failure {
 
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
                 execs().with_status(101).with_stderr("\
+[COMPILING] foo v0.1.0 [..]
 error: main function not found
 error: aborting due to previous error
-failed to compile `foo v0.1.0 (file://[..])`, intermediate artifacts can be \
+[ERROR] failed to compile `foo v0.1.0 (file://[..])`, intermediate artifacts can be \
     found at `[..]target`
 
 Caused by:
@@ -425,14 +561,12 @@ test!(git_repo {
     p.build();
 
     assert_that(cargo_process("install").arg("--git").arg(p.url().to_string()),
-                execs().with_status(0).with_stdout(&format!("\
-{updating} git repository `[..]`
-{compiling} foo v0.1.0 ([..])
-{installing} {home}[..]bin[..]foo[..]
+                execs().with_status(0).with_stderr(&format!("\
+[UPDATING] git repository `[..]`
+[COMPILING] foo v0.1.0 ([..])
+[INSTALLING] {home}[..]bin[..]foo[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 ",
-        updating = UPDATING,
-        compiling = COMPILING,
-        installing = INSTALLING,
         home = cargo_home().display())));
     assert_that(cargo_home(), has_installed_exe("foo"));
     assert_that(cargo_home(), has_installed_exe("foo"));
@@ -462,7 +596,7 @@ foo v0.0.1 (registry [..]):
 test!(uninstall_pkg_does_not_exist {
     assert_that(cargo_process("uninstall").arg("foo"),
                 execs().with_status(101).with_stderr("\
-package id specification `foo` matched no packages
+[ERROR] package id specification `foo` matched no packages
 "));
 });
 
@@ -473,7 +607,7 @@ test!(uninstall_bin_does_not_exist {
                 execs().with_status(0));
     assert_that(cargo_process("uninstall").arg("foo").arg("--bin=bar"),
                 execs().with_status(101).with_stderr("\
-binary `bar[..]` not installed as part of `foo v0.0.1 ([..])`
+[ERROR] binary `bar[..]` not installed as part of `foo v0.0.1 ([..])`
 "));
 });
 
@@ -495,22 +629,22 @@ test!(uninstall_piecemeal {
     assert_that(cargo_home(), has_installed_exe("bar"));
 
     assert_that(cargo_process("uninstall").arg("foo").arg("--bin=bar"),
-                execs().with_status(0).with_stdout(&format!("\
-{removing} [..]bar[..]
-", removing = REMOVING)));
+                execs().with_status(0).with_stderr("\
+[REMOVING] [..]bar[..]
+"));
 
     assert_that(cargo_home(), has_installed_exe("foo"));
     assert_that(cargo_home(), is_not(has_installed_exe("bar")));
 
     assert_that(cargo_process("uninstall").arg("foo").arg("--bin=foo"),
-                execs().with_status(0).with_stdout(&format!("\
-{removing} [..]foo[..]
-", removing = REMOVING)));
+                execs().with_status(0).with_stderr("\
+[REMOVING] [..]foo[..]
+"));
     assert_that(cargo_home(), is_not(has_installed_exe("foo")));
 
     assert_that(cargo_process("uninstall").arg("foo"),
                 execs().with_status(101).with_stderr("\
-package id specification `foo` matched no packages
+[ERROR] package id specification `foo` matched no packages
 "));
 });
 
@@ -527,7 +661,7 @@ test!(subcommand_works_out_of_the_box {
     assert_that(cargo_process("foo"),
                 execs().with_status(0).with_stdout("bar\n"));
     assert_that(cargo_process("--list"),
-                execs().with_status(0).with_stdout_contains("  foo\n"));
+                execs().with_status(0).with_stdout_contains("    foo\n"));
 });
 
 test!(installs_from_cwd_by_default {
@@ -541,7 +675,8 @@ test!(installs_from_cwd_by_default {
         .file("src/main.rs", "fn main() {}");
     p.build();
 
-    assert_that(cargo_process("install"), execs().with_status(0));
+    assert_that(cargo_process("install").cwd(p.root()),
+                execs().with_status(0));
     assert_that(cargo_home(), has_installed_exe("foo"));
 });
 
@@ -558,10 +693,9 @@ test!(do_not_rebuilds_on_local_install {
     assert_that(p.cargo_process("build").arg("--release"),
                 execs().with_status(0));
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
-                execs().with_status(0).with_stdout("\
-  Installing [..]
-").with_stderr("\
-be sure to add `[..]` to your PATH to be able to run the installed binaries
+                execs().with_status(0).with_stderr("\
+[INSTALLING] [..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 "));
 
     assert!(p.build_dir().c_exists());
@@ -580,13 +714,74 @@ test!(reports_unsuccessful_subcommand_result {
     assert_that(cargo_process("install").arg("cargo-fail"),
                 execs().with_status(0));
     assert_that(cargo_process("--list"),
-                execs().with_status(0).with_stdout_contains("  fail\n"));
+                execs().with_status(0).with_stdout_contains("    fail\n"));
     assert_that(cargo_process("fail"),
                 execs().with_status(101).with_stderr_contains("\
 thread '<main>' panicked at 'explicit panic', [..]
-").with_stderr_contains("\
-third party subcommand `cargo-fail[..]` exited unsuccessfully
-
-To learn more, run the command again with --verbose.
 "));
+});
+
+test!(git_with_lockfile {
+    let p = git::repo(&paths::root().join("foo"))
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            bar = { path = "bar" }
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", "fn main() {}")
+        .file("Cargo.lock", r#"
+            [root]
+            name = "foo"
+            version = "0.1.0"
+            dependencies = [ "b 0.1.0" ]
+
+            [[package]]
+            name = "bar"
+            version = "0.1.0"
+        "#);
+    p.build();
+
+    assert_that(cargo_process("install").arg("--git").arg(p.url().to_string()),
+                execs().with_status(0));
+});
+
+test!(q_silences_warnings {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(cargo_process("install").arg("-q").arg("--path").arg(p.root()),
+                execs().with_status(0).with_stderr(""));
+});
+
+test!(readonly_dir {
+    pkg("foo", "0.0.1");
+
+    let root = paths::root();
+    let dir = &root.join("readonly");
+    fs::create_dir(root.join("readonly")).unwrap();
+    let mut perms = fs::metadata(dir).unwrap().permissions();
+    perms.set_readonly(true);
+    fs::set_permissions(dir, perms).unwrap();
+
+    assert_that(cargo_process("install").arg("foo").cwd(dir),
+                execs().with_status(0));
+    assert_that(cargo_home(), has_installed_exe("foo"));
 });

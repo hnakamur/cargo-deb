@@ -6,9 +6,11 @@
 extern crate crates_io as registry;
 extern crate crossbeam;
 extern crate curl;
+extern crate curl_sys;
 extern crate docopt;
 extern crate filetime;
 extern crate flate2;
+extern crate fs2;
 extern crate git2;
 extern crate glob;
 extern crate libc;
@@ -18,13 +20,12 @@ extern crate regex;
 extern crate rustc_serialize;
 extern crate semver;
 extern crate tar;
+extern crate tempdir;
 extern crate term;
-extern crate time;
 extern crate toml;
 extern crate url;
 
 use std::env;
-use std::error::Error;
 use std::io::prelude::*;
 use std::io;
 use rustc_serialize::{Decodable, Encodable};
@@ -34,7 +35,7 @@ use docopt::Docopt;
 use core::{Shell, MultiShell, ShellConfig, Verbosity, ColorConfig};
 use core::shell::Verbosity::{Verbose};
 use core::shell::ColorConfig::{Auto};
-use term::color::{BLACK, RED};
+use term::color::{BLACK};
 
 pub use util::{CargoError, CliError, CliResult, human, Config, ChainError};
 
@@ -177,27 +178,23 @@ pub fn shell(verbosity: Verbosity, color_config: ColorConfig) -> MultiShell {
     }
 }
 
-// `output` print variant error strings to either stderr or stdout.
-// For fatal errors, print to stderr;
-// and for others, e.g. docopt version info, print to stdout.
-fn output(err: String, shell: &mut MultiShell, fatal: bool) {
-    let std_shell = if fatal {shell.err()} else {shell.out()};
-    let color = if fatal {RED} else {BLACK};
-    let _ = std_shell.say(err, color);
-}
-
 pub fn handle_error(err: CliError, shell: &mut MultiShell) {
     debug!("handle_error; err={:?}", err);
 
     let CliError { error, exit_code, unknown } = err;
-    let fatal = exit_code != 0; // exit_code == 0 is non-fatal error
+    // exit_code == 0 is non-fatal error, e.g. docopt version info
+    let fatal = exit_code != 0;
 
     let hide = unknown && shell.get_verbose() != Verbose;
-    if hide {
-        let _ = shell.err().say("An unknown error occurred", RED);
+
+    let _ignored_result = if hide {
+        shell.error("An unknown error occurred")
+    } else if fatal {
+        shell.error(&error)
     } else {
-        output(error.to_string(), shell, fatal);
-    }
+        shell.say(&error, BLACK)
+    };
+
     if !handle_cause(&error, shell) || hide {
         let _ = shell.err().say("\nTo learn more, run the command again \
                                  with --verbose.".to_string(), BLACK);

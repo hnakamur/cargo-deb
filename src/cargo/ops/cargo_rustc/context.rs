@@ -1,4 +1,5 @@
 use std::collections::{HashSet, HashMap};
+use std::env;
 use std::path::{Path, PathBuf};
 use std::str::{self, FromStr};
 use std::sync::Arc;
@@ -66,11 +67,11 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                profiles: &'a Profiles) -> CargoResult<Context<'a, 'cfg>> {
         let target = build_config.requested_target.clone();
         let target = target.as_ref().map(|s| &s[..]);
-        let target_info = try!(Context::target_info(target, config));
+        let target_info = try!(Context::target_info(target, config, &build_config));
         let host_info = if build_config.requested_target.is_none() {
             target_info.clone()
         } else {
-            try!(Context::target_info(None, config))
+            try!(Context::target_info(None, config, &build_config))
         };
         let target_triple = target.unwrap_or_else(|| {
             &config.rustc_info().host[..]
@@ -102,8 +103,11 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
     /// Run `rustc` to discover the dylib prefix/suffix for the target
     /// specified as well as the exe suffix
-    fn target_info(target: Option<&str>, cfg: &Config)
+    fn target_info(target: Option<&str>,
+                   cfg: &Config,
+                   build_config: &BuildConfig)
                    -> CargoResult<TargetInfo> {
+        let kind = if target.is_none() {Kind::Host} else {Kind::Target};
         let mut process = util::process(cfg.rustc());
         process.arg("-")
                .arg("--crate-name").arg("_")
@@ -111,6 +115,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                .arg("--crate-type").arg("staticlib")
                .arg("--crate-type").arg("bin")
                .arg("--print=file-names")
+               .args(&try!(rustflags_args(cfg, build_config, kind)))
                .env_remove("RUST_LOG");
         if let Some(s) = target {
             process.arg("--target").arg(s);
@@ -213,7 +218,11 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     /// Returns the appropriate output directory for the specified package and
     /// target.
     pub fn out_dir(&self, unit: &Unit) -> PathBuf {
-        self.layout(unit.pkg, unit.kind).out_dir(unit.pkg, unit.target)
+        if unit.profile.doc {
+            self.layout(unit.pkg, unit.kind).doc_root()
+        } else {
+            self.layout(unit.pkg, unit.kind).out_dir(unit.pkg, unit.target)
+        }
     }
 
     /// Return the (prefix, suffix) pair for dynamic libraries.
@@ -306,15 +315,18 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
         let mut ret = Vec::new();
         match *unit.target.kind() {
-            TargetKind::Example | TargetKind::Bin | TargetKind::CustomBuild |
-            TargetKind::Bench | TargetKind::Test => {
+            TargetKind::Example |
+            TargetKind::Bin |
+            TargetKind::CustomBuild |
+            TargetKind::Bench |
+            TargetKind::Test => {
                 ret.push(format!("{}{}", stem, suffix));
             }
             TargetKind::Lib(..) if unit.profile.test => {
                 ret.push(format!("{}{}", stem, suffix));
             }
             TargetKind::Lib(ref libs) => {
-                for lib in libs.iter() {
+                for lib in libs {
                     match *lib {
                         LibKind::Dylib => {
                             if let Ok((prefix, suffix)) = self.dylib(unit.kind) {
@@ -330,9 +342,18 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                         }
                     }
                 }
+                if ret.is_empty() {
+                    if libs.contains(&LibKind::Dylib) {
+                        bail!("cannot produce dylib for `{}` as the target `{}` \
+                               does not support dynamic libraries",
+                              unit.pkg, self.target_triple)
+                    }
+                    bail!("cannot compile `{}` as the target `{}` does not \
+                           support any of the output crate types",
+                          unit.pkg, self.target_triple);
+                }
             }
         }
-        assert!(!ret.is_empty());
         Ok(ret)
     }
 
@@ -346,7 +367,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         }
 
         let id = unit.pkg.package_id();
-        let deps = self.resolve.deps(id).into_iter().flat_map(|a| a);
+        let deps = self.resolve.deps(id);
         let mut ret = try!(deps.filter(|dep| {
             unit.pkg.dependencies().iter().filter(|d| {
                 d.name() == dep.name()
@@ -474,8 +495,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
     /// Returns the dependencies necessary to document a package
     fn doc_deps(&self, unit: &Unit<'a>) -> CargoResult<Vec<Unit<'a>>> {
-        let deps = self.resolve.deps(unit.pkg.package_id()).into_iter();
-        let deps = deps.flat_map(|a| a).filter(|dep| {
+        let deps = self.resolve.deps(unit.pkg.package_id()).filter(|dep| {
             unit.pkg.dependencies().iter().filter(|d| {
                 d.name() == dep.name()
             }).any(|dep| {
@@ -600,10 +620,15 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     }
 
     pub fn lib_profile(&self, _pkg: &PackageId) -> &'a Profile {
-        if self.build_config.release {
-            &self.profiles.release
+        let (normal, test) = if self.build_config.release {
+            (&self.profiles.release, &self.profiles.bench_deps)
         } else {
-            &self.profiles.dev
+            (&self.profiles.dev, &self.profiles.test_deps)
+        };
+        if self.build_config.test {
+            test
+        } else {
+            normal
         }
     }
 
@@ -612,4 +637,60 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         //       profile? How is this controlled at the CLI layer?
         &self.profiles.dev
     }
+
+    pub fn rustflags_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
+        rustflags_args(self.config, &self.build_config, unit.kind)
+    }
+}
+
+// Acquire extra flags to pass to the compiler from the
+// RUSTFLAGS environment variable and similar config values
+fn rustflags_args(config: &Config,
+                  build_config: &BuildConfig,
+                  kind: Kind) -> CargoResult<Vec<String>> {
+    // We *want* to apply RUSTFLAGS only to builds for the
+    // requested target architecture, and not to things like build
+    // scripts and plugins, which may be for an entirely different
+    // architecture. Cargo's present architecture makes it quite
+    // hard to only apply flags to things that are not build
+    // scripts and plugins though, so we do something more hacky
+    // instead to avoid applying the same RUSTFLAGS to multiple targets
+    // arches:
+    //
+    // 1) If --target is not specified we just apply RUSTFLAGS to
+    // all builds; they are all going to have the same target.
+    //
+    // 2) If --target *is* specified then we only apply RUSTFLAGS
+    // to compilation units with the Target kind, which indicates
+    // it was chosen by the --target flag.
+    //
+    // This means that, e.g. even if the specified --target is the
+    // same as the host, build scripts in plugins won't get
+    // RUSTFLAGS.
+    let compiling_with_target = build_config.requested_target.is_some();
+    let is_target_kind = kind == Kind::Target;
+
+    if compiling_with_target && !is_target_kind {
+        // This is probably a build script or plugin and we're
+        // compiling with --target. In this scenario there are
+        // no rustflags we can apply.
+        return Ok(Vec::new());
+    }
+
+    // First try RUSTFLAGS from the environment
+    if let Some(a) = env::var("RUSTFLAGS").ok() {
+        let args = a.split(" ")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        return Ok(args.collect());
+    }
+
+    // Then the build.rustflags value
+    if let Some(args) = try!(config.get_list("build.rustflags")) {
+        let args = args.val.into_iter().map(|a| a.0);
+        return Ok(args.collect());
+    }
+
+    Ok(Vec::new())
 }

@@ -70,6 +70,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     let ops = ops::TestOptions {
         no_run: options.flag_no_run,
         no_fail_fast: false,
+        only_doc: false,
         compile_opts: ops::CompileOptions {
             config: config,
             jobs: options.flag_jobs,
@@ -95,7 +96,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         None => Ok(None),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {
-                Some(i) => CliError::new("", i),
+                Some(i) => CliError::new("bench failed", i),
                 None => CliError::from_error(Human(err), 101)
             })
         }

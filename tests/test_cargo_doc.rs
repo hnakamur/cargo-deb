@@ -1,7 +1,7 @@
 use std::str;
+use std::fs;
 
 use support::{project, execs, path2url};
-use support::{COMPILING, DOCUMENTING, RUNNING};
 use hamcrest::{assert_that, existing_file, existing_dir, is_not};
 
 fn setup() {
@@ -22,7 +22,7 @@ test!(simple {
         "#);
 
     assert_that(p.cargo_process("doc"),
-                execs().with_status(0).with_stdout(&format!("\
+                execs().with_status(0).with_stderr(&format!("\
 [..] foo v0.0.1 ({dir})
 [..] foo v0.0.1 ({dir})
 ",
@@ -64,10 +64,9 @@ test!(doc_twice {
         "#);
 
     assert_that(p.cargo_process("doc"),
-                execs().with_status(0).with_stdout(&format!("\
-{documenting} foo v0.0.1 ({dir})
+                execs().with_status(0).with_stderr(&format!("\
+[DOCUMENTING] foo v0.0.1 ({dir})
 ",
-        documenting = DOCUMENTING,
         dir = path2url(p.root()))));
 
     assert_that(p.cargo("doc"),
@@ -100,12 +99,11 @@ test!(doc_deps {
         "#);
 
     assert_that(p.cargo_process("doc"),
-                execs().with_status(0).with_stdout(&format!("\
-[..] bar v0.0.1 ({dir})
-[..] bar v0.0.1 ({dir})
-{documenting} foo v0.0.1 ({dir})
+                execs().with_status(0).with_stderr(&format!("\
+[..] bar v0.0.1 ({dir}/bar)
+[..] bar v0.0.1 ({dir}/bar)
+[DOCUMENTING] foo v0.0.1 ({dir})
 ",
-        documenting = DOCUMENTING,
         dir = path2url(p.root()))));
 
     assert_that(&p.root().join("target/doc"), existing_dir());
@@ -147,11 +145,10 @@ test!(doc_no_deps {
         "#);
 
     assert_that(p.cargo_process("doc").arg("--no-deps"),
-                execs().with_status(0).with_stdout(&format!("\
-{compiling} bar v0.0.1 ({dir})
-{documenting} foo v0.0.1 ({dir})
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] bar v0.0.1 ({dir}/bar)
+[DOCUMENTING] foo v0.0.1 ({dir})
 ",
-        documenting = DOCUMENTING, compiling = COMPILING,
         dir = path2url(p.root()))));
 
     assert_that(&p.root().join("target/doc"), existing_dir());
@@ -206,7 +203,7 @@ test!(doc_lib_bin_same_name {
     assert_that(p.cargo_process("doc"),
                 execs().with_status(101)
                        .with_stderr("\
-cannot document a package where a library and a binary have the same name. \
+[ERROR] cannot document a package where a library and a binary have the same name. \
 Consider renaming one or marking the target as `doc = false`
 "));
 });
@@ -243,11 +240,11 @@ test!(doc_dash_p {
 
     assert_that(p.cargo_process("doc").arg("-p").arg("a"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
+                       .with_stderr("\
 [..] b v0.0.1 (file://[..])
 [..] b v0.0.1 (file://[..])
-{documenting} a v0.0.1 (file://[..])
-", documenting = DOCUMENTING)));
+[DOCUMENTING] a v0.0.1 (file://[..])
+"));
 });
 
 test!(doc_same_name {
@@ -429,10 +426,10 @@ test!(doc_release {
                 execs().with_status(0));
     assert_that(p.cargo("doc").arg("--release").arg("-v"),
                 execs().with_status(0)
-                       .with_stdout(&format!("\
-{documenting} foo v0.0.1 ([..])
-{running} `rustdoc src[..]lib.rs [..]`
-", documenting = DOCUMENTING, running = RUNNING)));
+                       .with_stderr("\
+[DOCUMENTING] foo v0.0.1 ([..])
+[RUNNING] `rustdoc src[..]lib.rs [..]`
+"));
 });
 
 test!(doc_multiple_deps {
@@ -524,4 +521,51 @@ test!(features {
     assert_that(&p.root().join("target/doc"), existing_dir());
     assert_that(&p.root().join("target/doc/foo/fn.foo.html"), existing_file());
     assert_that(&p.root().join("target/doc/bar/fn.bar.html"), existing_file());
+});
+
+test!(rerun_when_dir_removed {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/lib.rs", r#"
+            /// dox
+            pub fn foo() {}
+        "#);
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+    assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
+
+    fs::remove_dir_all(p.root().join("target/doc/foo")).unwrap();
+
+    assert_that(p.cargo_process("doc"),
+                execs().with_status(0));
+    assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
+});
+
+test!(document_only_lib {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/lib.rs", r#"
+            /// dox
+            pub fn foo() {}
+        "#)
+        .file("src/bin/bar.rs", r#"
+            /// ```
+            /// ☃
+            /// ```
+            pub fn foo() {}
+            fn main() { foo(); }
+        "#);
+    assert_that(p.cargo_process("doc").arg("--lib"),
+                execs().with_status(0));
+    assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
 });

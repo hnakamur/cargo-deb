@@ -1,11 +1,10 @@
-use std::default::Default;
 use std::fmt;
 use std::path::{PathBuf, Path};
 
 use semver::Version;
 use rustc_serialize::{Encoder, Encodable};
 
-use core::{Dependency, PackageId, Summary};
+use core::{Dependency, PackageId, PackageIdSpec, Summary};
 use core::package_id::Metadata;
 use util::{CargoResult, human};
 
@@ -20,7 +19,8 @@ pub struct Manifest {
     include: Vec<String>,
     metadata: ManifestMetadata,
     profiles: Profiles,
-    publish: bool
+    publish: bool,
+    replace: Vec<(PackageIdSpec, Dependency)>,
 }
 
 /// General metadata about a package which is just blindly uploaded to the
@@ -113,6 +113,7 @@ pub struct Profile {
     pub test: bool,
     pub doc: bool,
     pub run_custom_build: bool,
+    pub panic: Option<String>,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -120,7 +121,9 @@ pub struct Profiles {
     pub release: Profile,
     pub dev: Profile,
     pub test: Profile,
+    pub test_deps: Profile,
     pub bench: Profile,
+    pub bench_deps: Profile,
     pub doc: Profile,
     pub custom_build: Profile,
 }
@@ -165,7 +168,8 @@ impl Manifest {
                links: Option<String>,
                metadata: ManifestMetadata,
                profiles: Profiles,
-               publish: bool) -> Manifest {
+               publish: bool,
+               replace: Vec<(PackageIdSpec, Dependency)>) -> Manifest {
         Manifest {
             summary: summary,
             targets: targets,
@@ -176,6 +180,7 @@ impl Manifest {
             metadata: metadata,
             profiles: profiles,
             publish: publish,
+            replace: replace,
         }
     }
 
@@ -191,6 +196,7 @@ impl Manifest {
     pub fn warnings(&self) -> &[String] { &self.warnings }
     pub fn profiles(&self) -> &Profiles { &self.profiles }
     pub fn publish(&self) -> bool { self.publish }
+    pub fn replace(&self) -> &[(PackageIdSpec, Dependency)] { &self.replace }
     pub fn links(&self) -> Option<&str> {
         self.links.as_ref().map(|s| &s[..])
     }
@@ -466,6 +472,7 @@ impl Default for Profile {
             test: false,
             doc: false,
             run_custom_build: false,
+            panic: None,
         }
     }
 }

@@ -7,7 +7,6 @@ use git2;
 use tar::Archive;
 
 use support::{project, execs, paths, git, path2url};
-use support::{PACKAGING, VERIFYING, COMPILING, ARCHIVING};
 use hamcrest::{assert_that, existing_file};
 
 fn setup() {
@@ -30,14 +29,12 @@ test!(simple {
         .file("src/bar.txt", ""); // should be ignored when packaging
 
     assert_that(p.cargo_process("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ({dir})
-{verifying} foo v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir}[..])
+                execs().with_status(0).with_stderr(&format!("\
+[WARNING] manifest has no documentation[..]
+[PACKAGING] foo v0.0.1 ({dir})
+[VERIFYING] foo v0.0.1 ({dir})
+[COMPILING] foo v0.0.1 ({dir}[..])
 ",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        compiling = COMPILING,
         dir = p.url())));
     assert_that(&p.root().join("target/package/foo-0.0.1.crate"), existing_file());
     assert_that(p.cargo("package").arg("-l"),
@@ -75,19 +72,15 @@ test!(metadata_warning {
             fn main() {}
         "#);
     assert_that(p.cargo_process("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ({dir})
-{verifying} foo v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir}[..])
-",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        compiling = COMPILING,
-        dir = p.url()))
-                .with_stderr("\
+                execs().with_status(0).with_stderr(&format!("\
 warning: manifest has no description, license, license-file, documentation, \
 homepage or repository. See \
-http://doc.crates.io/manifest.html#package-metadata for more info."));
+http://doc.crates.io/manifest.html#package-metadata for more info.
+[PACKAGING] foo v0.0.1 ({dir})
+[VERIFYING] foo v0.0.1 ({dir})
+[COMPILING] foo v0.0.1 ({dir}[..])
+",
+        dir = p.url())));
 
     let p = project("one")
         .file("Cargo.toml", r#"
@@ -101,18 +94,14 @@ http://doc.crates.io/manifest.html#package-metadata for more info."));
             fn main() {}
         "#);
     assert_that(p.cargo_process("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ({dir})
-{verifying} foo v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir}[..])
-",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        compiling = COMPILING,
-        dir = p.url()))
-                .with_stderr("\
+                execs().with_status(0).with_stderr(&format!("\
 warning: manifest has no description, documentation, homepage or repository. See \
-http://doc.crates.io/manifest.html#package-metadata for more info."));
+http://doc.crates.io/manifest.html#package-metadata for more info.
+[PACKAGING] foo v0.0.1 ({dir})
+[VERIFYING] foo v0.0.1 ({dir})
+[COMPILING] foo v0.0.1 ({dir}[..])
+",
+        dir = p.url())));
 
     let p = project("all")
         .file("Cargo.toml", &format!(r#"
@@ -128,14 +117,11 @@ http://doc.crates.io/manifest.html#package-metadata for more info."));
             fn main() {}
         "#);
     assert_that(p.cargo_process("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ({dir})
-{verifying} foo v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir}[..])
+                execs().with_status(0).with_stderr(&format!("\
+[PACKAGING] foo v0.0.1 ({dir})
+[VERIFYING] foo v0.0.1 ({dir})
+[COMPILING] foo v0.0.1 ({dir}[..])
 ",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        compiling = COMPILING,
         dir = p.url())));
 });
 
@@ -162,14 +148,25 @@ test!(package_verbose {
     let mut cargo = ::cargo_process();
     cargo.cwd(p.root());
     assert_that(cargo.clone().arg("build"), execs().with_status(0));
-    assert_that(cargo.arg("package").arg("-v").arg("--no-verify"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ([..])
-{archiving} [..]
-{archiving} [..]
-",
-        packaging = PACKAGING,
-        archiving = ARCHIVING)));
+
+    println!("package main repo");
+    assert_that(cargo.clone().arg("package").arg("-v").arg("--no-verify"),
+                execs().with_status(0).with_stderr("\
+[WARNING] manifest has no description[..]
+[PACKAGING] foo v0.0.1 ([..])
+[ARCHIVING] [..]
+[ARCHIVING] [..]
+"));
+
+    println!("package sub-repo");
+    assert_that(cargo.arg("package").arg("-v").arg("--no-verify")
+                     .cwd(p.root().join("a")),
+                execs().with_status(0).with_stderr("\
+[WARNING] manifest has no description[..]
+[PACKAGING] a v0.0.1 ([..])
+[ARCHIVING] [..]
+[ARCHIVING] [..]
+"));
 });
 
 test!(package_verification {
@@ -186,14 +183,12 @@ test!(package_verification {
     assert_that(p.cargo_process("build"),
                 execs().with_status(0));
     assert_that(p.cargo("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ({dir})
-{verifying} foo v0.0.1 ({dir})
-{compiling} foo v0.0.1 ({dir}[..])
+                execs().with_status(0).with_stderr(&format!("\
+[WARNING] manifest has no description[..]
+[PACKAGING] foo v0.0.1 ({dir})
+[VERIFYING] foo v0.0.1 ({dir})
+[COMPILING] foo v0.0.1 ({dir}[..])
 ",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        compiling = COMPILING,
         dir = p.url())));
 });
 
@@ -213,11 +208,12 @@ test!(exclude {
         .file("src/bar.txt", "");
 
     assert_that(p.cargo_process("package").arg("--no-verify").arg("-v"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ([..])
-{archiving} [..]
-{archiving} [..]
-", packaging = PACKAGING, archiving = ARCHIVING)));
+                execs().with_status(0).with_stderr("\
+[WARNING] manifest has no description[..]
+[PACKAGING] foo v0.0.1 ([..])
+[ARCHIVING] [..]
+[ARCHIVING] [..]
+"));
 });
 
 test!(include {
@@ -237,12 +233,13 @@ test!(include {
         .file("src/bar.txt", ""); // should be ignored when packaging
 
     assert_that(p.cargo_process("package").arg("--no-verify").arg("-v"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ([..])
-{archiving} [..]
-{archiving} [..]
-{archiving} [..]
-", packaging = PACKAGING, archiving = ARCHIVING)));
+                execs().with_status(0).with_stderr("\
+[WARNING] manifest has no description[..]
+[PACKAGING] foo v0.0.1 ([..])
+[ARCHIVING] [..]
+[ARCHIVING] [..]
+[ARCHIVING] [..]
+"));
 });
 
 test!(package_lib_with_bin {
@@ -276,16 +273,15 @@ test!(package_new_git_repo {
 
     assert_that(::cargo_process().arg("package").cwd(p.root())
                  .arg("--no-verify").arg("-v"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} foo v0.0.1 ([..])
-{archiving} [..]
-{archiving} [..]
-", packaging = PACKAGING, archiving = ARCHIVING)));
+                execs().with_status(0).with_stderr("\
+[WARNING] manifest has no description[..]
+[PACKAGING] foo v0.0.1 ([..])
+[ARCHIVING] [..]
+[ARCHIVING] [..]
+"));
 });
 
 test!(package_git_submodule {
-    use std::str::from_utf8;
-
     let project = git::new("foo", |project| {
         project.file("Cargo.toml", r#"
                     [project]
@@ -311,9 +307,9 @@ test!(package_git_submodule {
     repository.reset(&repository.revparse_single("HEAD").unwrap(),
                      git2::ResetType::Hard, None).unwrap();
 
-    let result = project.cargo("package").arg("--no-verify").arg("-v").exec_with_output().unwrap();
-    assert!(result.status.success());
-    assert!(from_utf8(&result.stdout).unwrap().contains(&format!("{} bar/Makefile", ARCHIVING)));
+    assert_that(::cargo_process().arg("package").cwd(project.root())
+                 .arg("--no-verify").arg("-v"),
+                execs().with_status(0).with_stderr_contains("[ARCHIVING] bar/Makefile"));
 });
 
 test!(no_duplicates_from_modified_tracked_files {
@@ -336,10 +332,10 @@ test!(no_duplicates_from_modified_tracked_files {
     cargo.cwd(p.root());
     assert_that(cargo.clone().arg("build"), execs().with_status(0));
     assert_that(cargo.arg("package").arg("--list"),
-                execs().with_status(0).with_stdout(&format!("\
+                execs().with_status(0).with_stdout("\
 Cargo.toml
 src/main.rs
-")));
+"));
 });
 
 test!(ignore_nested {
@@ -363,14 +359,12 @@ test!(ignore_nested {
         .file("a_dir/nested/src/main.rs", main_rs);
 
     assert_that(p.cargo_process("package"),
-                execs().with_status(0).with_stdout(&format!("\
-{packaging} nested v0.0.1 ({dir})
-{verifying} nested v0.0.1 ({dir})
-{compiling} nested v0.0.1 ({dir}[..])
+                execs().with_status(0).with_stderr(&format!("\
+[WARNING] manifest has no documentation[..]
+[PACKAGING] nested v0.0.1 ({dir})
+[VERIFYING] nested v0.0.1 ({dir})
+[COMPILING] nested v0.0.1 ({dir}[..])
 ",
-        packaging = PACKAGING,
-        verifying = VERIFYING,
-        compiling = COMPILING,
         dir = p.url())));
     assert_that(&p.root().join("target/package/nested-0.0.1.crate"), existing_file());
     assert_that(p.cargo("package").arg("-l"),
@@ -413,7 +407,8 @@ test!(package_weird_characters {
     assert_that(p.cargo_process("package"),
                 execs().with_status(101).with_stderr("\
 warning: [..]
-failed to prepare local package for uploading
+[PACKAGING] foo [..]
+[ERROR] failed to prepare local package for uploading
 
 Caused by:
   cannot package a filename with a special character `:`: src/:foo

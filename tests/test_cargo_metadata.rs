@@ -178,7 +178,7 @@ test!(cargo_metadata_with_invalid_manifest {
 
     assert_that(p.cargo_process("metadata"), execs().with_status(101)
                                                     .with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   no `package` or `project` section found."))
@@ -238,7 +238,8 @@ test!(cargo_metadata_no_deps_path_to_cargo_toml_parent_relative {
                  .arg("--manifest-path").arg("foo")
                  .cwd(p.root().parent().unwrap()),
                 execs().with_status(101)
-                       .with_stderr("the manifest-path must be a path to a Cargo.toml file"));
+                       .with_stderr("[ERROR] the manifest-path must be \
+                                             a path to a Cargo.toml file"));
 });
 
 test!(cargo_metadata_no_deps_path_to_cargo_toml_parent_absolute {
@@ -250,7 +251,8 @@ test!(cargo_metadata_no_deps_path_to_cargo_toml_parent_absolute {
                  .arg("--manifest-path").arg(p.root())
                  .cwd(p.root().parent().unwrap()),
                 execs().with_status(101)
-                       .with_stderr("the manifest-path must be a path to a Cargo.toml file"));
+                       .with_stderr("[ERROR] the manifest-path must be \
+                                             a path to a Cargo.toml file"));
 });
 
 test!(cargo_metadata_no_deps_cwd {
@@ -273,5 +275,5 @@ test!(carg_metadata_bad_version {
                  .arg("--format-version").arg("2")
                  .cwd(p.root()),
                 execs().with_status(101)
-    .with_stderr("metadata version 2 not supported, only 1 is currently supported"));
+    .with_stderr("[ERROR] metadata version 2 not supported, only 1 is currently supported"));
 });

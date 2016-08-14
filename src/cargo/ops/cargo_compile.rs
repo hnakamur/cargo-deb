@@ -32,8 +32,9 @@ use core::{Source, SourceId, PackageSet, Package, Target};
 use core::{Profile, TargetKind, Profiles};
 use core::resolver::{Method, Resolve};
 use ops::{self, BuildOutput, ExecEngine};
+use sources::PathSource;
 use util::config::Config;
-use util::{CargoResult, internal, ChainError, profile};
+use util::{CargoResult, profile, human, ChainError};
 
 /// Contains information about how a package should be compiled.
 pub struct CompileOptions<'a> {
@@ -104,8 +105,6 @@ pub fn resolve_dependencies<'a>(root_package: &Package,
                                 no_default_features: bool)
                                 -> CargoResult<(PackageSet<'a>, Resolve)> {
 
-    let override_ids = try!(source_ids_from_config(config, root_package.root()));
-
     let mut registry = PackageRegistry::new(config);
 
     if let Some(source) = source {
@@ -114,14 +113,14 @@ pub fn resolve_dependencies<'a>(root_package: &Package,
 
     // First, resolve the root_package's *listed* dependencies, as well as
     // downloading and updating all remotes and such.
-    let resolve = try!(ops::resolve_pkg(&mut registry, root_package));
+    let resolve = try!(ops::resolve_pkg(&mut registry, root_package, config));
 
     // Second, resolve with precisely what we're doing. Filter out
     // transitive dependencies if necessary, specify features, handle
     // overrides, etc.
     let _p = profile::start("resolving w/ overrides...");
 
-    try!(registry.add_overrides(override_ids));
+    try!(add_overrides(&mut registry, root_package.root(), config));
 
     let method = Method::Required{
         dev_deps: true, // TODO: remove this option?
@@ -158,27 +157,24 @@ pub fn compile_pkg<'a>(root_package: &Package,
         bail!("jobs must be at least 1")
     }
 
+    let profiles = root_package.manifest().profiles();
+    if spec.len() == 0 {
+        try!(generate_targets(root_package, profiles, mode, filter, release));
+    }
+
     let (packages, resolve_with_overrides) = {
         try!(resolve_dependencies(root_package, config, source, features,
                                   no_default_features))
     };
 
-    let mut invalid_spec = vec![];
-    let pkgids = if spec.len() > 0 {
-        spec.iter().filter_map(|p| {
-            match resolve_with_overrides.query(&p) {
-                Ok(p) => Some(p),
-                Err(..) => { invalid_spec.push(p.to_string()); None }
-            }
-        }).collect::<Vec<_>>()
+    let mut pkgids = Vec::new();
+    if spec.len() > 0 {
+        for p in spec {
+            pkgids.push(try!(resolve_with_overrides.query(&p)));
+        }
     } else {
-        vec![root_package.package_id()]
+        pkgids.push(root_package.package_id());
     };
-
-    if !spec.is_empty() && !invalid_spec.is_empty() {
-        bail!("could not find package matching spec `{}`",
-              invalid_spec.join(", "))
-    }
 
     let to_builds = try!(pkgids.iter().map(|id| {
         packages.get(id)
@@ -187,7 +183,6 @@ pub fn compile_pkg<'a>(root_package: &Package,
     let mut general_targets = Vec::new();
     let mut package_targets = Vec::new();
 
-    let profiles = root_package.manifest().profiles();
     match (*target_rustc_args, *target_rustdoc_args) {
         (Some(..), _) |
         (_, Some(..)) if to_builds.len() != 1 => {
@@ -241,6 +236,7 @@ pub fn compile_pkg<'a>(root_package: &Package,
         let mut build_config = try!(scrape_build_config(config, jobs, target));
         build_config.exec_engine = exec_engine.clone();
         build_config.release = release;
+        build_config.test = mode == CompileMode::Test;
         if let CompileMode::Doc { deps } = mode {
             build_config.doc_all = deps;
         }
@@ -364,7 +360,17 @@ fn generate_targets<'a>(pkg: &'a Package,
                         });
                         let t = match target {
                             Some(t) => t,
-                            None => bail!("no {} target named `{}`", desc, name),
+                            None => {
+                                let suggestion = pkg.find_closest_target(name, kind);
+                                match suggestion {
+                                    Some(s) => {
+                                        let suggested_name = s.name();
+                                        bail!("no {} target named `{}`\n\nDid you mean `{}`?",
+                                              desc, name, suggested_name)
+                                    }
+                                    None => bail!("no {} target named `{}`", desc, name),
+                                }
+                            }
                         };
                         debug!("found {} `{}`", desc, name);
                         targets.push((t, profile));
@@ -383,29 +389,35 @@ fn generate_targets<'a>(pkg: &'a Package,
 
 /// Read the `paths` configuration variable to discover all path overrides that
 /// have been configured.
-fn source_ids_from_config(config: &Config, cur_path: &Path)
-                          -> CargoResult<Vec<SourceId>> {
-
-    let configs = try!(config.values());
-    debug!("loaded config; configs={:?}", configs);
-    let config_paths = match configs.get("paths") {
-        Some(cfg) => cfg,
-        None => return Ok(Vec::new())
+fn add_overrides<'a>(registry: &mut PackageRegistry<'a>,
+                     cur_path: &Path,
+                     config: &'a Config) -> CargoResult<()> {
+    let paths = match try!(config.get_list("paths")) {
+        Some(list) => list,
+        None => return Ok(())
     };
-    let paths = try!(config_paths.list().chain_error(|| {
-        internal("invalid configuration for the key `paths`")
-    }));
-
-    paths.iter().map(|&(ref s, ref p)| {
+    let paths = paths.val.iter().map(|&(ref s, ref p)| {
         // The path listed next to the string is the config file in which the
         // key was located, so we want to pop off the `.cargo/config` component
         // to get the directory containing the `.cargo` folder.
-        p.parent().unwrap().parent().unwrap().join(s)
-    }).filter(|p| {
+        (p.parent().unwrap().parent().unwrap().join(s), p)
+    }).filter(|&(ref p, _)| {
         // Make sure we don't override the local package, even if it's in the
         // list of override paths.
         cur_path != &**p
-    }).map(|p| SourceId::for_path(&p)).collect()
+    });
+
+    for (path, definition) in paths {
+        let id = try!(SourceId::for_path(&path));
+        let mut source = PathSource::new_recursive(&path, &id, config);
+        try!(source.update().chain_error(|| {
+            human(format!("failed to update path override `{}` \
+                           (defined in `{}`)", path.display(),
+                          definition.display()))
+        }));
+        registry.add_override(&id, Box::new(source));
+    }
+    Ok(())
 }
 
 /// Parse all config files to learn about build configuration. Currently
@@ -464,7 +476,7 @@ fn scrape_target_config(config: &Config, triple: &str)
         None => return Ok(ret),
     };
     for (lib_name, _) in table.into_iter() {
-        if lib_name == "ar" || lib_name == "linker" {
+        if lib_name == "ar" || lib_name == "linker" || lib_name == "rustflags" {
             continue
         }
 
