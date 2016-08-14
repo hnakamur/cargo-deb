@@ -1,0 +1,110 @@
+     Running target/release/aho_corasick-0801807238150c6f
+
+running 14 tests
+test tests::many_longer_pattern_many_match ... ignored
+test tests::many_longer_pattern_one_match ... ignored
+test tests::many_longer_pattern_overlap_many_match ... ignored
+test tests::many_longer_pattern_overlap_many_match_reverse ... ignored
+test tests::many_longer_pattern_overlap_one_match ... ignored
+test tests::many_longer_pattern_overlap_one_match_reverse ... ignored
+test tests::many_pattern_many_match ... ignored
+test tests::many_pattern_one_match ... ignored
+test tests::one_longer_pattern_many_match ... ignored
+test tests::one_longer_pattern_one_match ... ignored
+test tests::one_pattern_many_match ... ignored
+test tests::one_pattern_one_match ... ignored
+test tests::pattern_returns_original_type ... ignored
+test tests::qc_ac_equals_naive ... ignored
+
+test result: ok. 0 passed; 0 failed; 14 ignored; 0 measured
+
+     Running target/release/bench-ffeb388282a1e934
+
+running 84 tests
+test dense::ac_one_byte                               ... bench:         204 ns/iter (+/- 4) = 49019 MB/s
+test dense::ac_one_prefix_byte_every_match            ... bench:      71,175 ns/iter (+/- 218) = 140 MB/s
+test dense::ac_one_prefix_byte_no_match               ... bench:         204 ns/iter (+/- 0) = 49019 MB/s
+test dense::ac_one_prefix_byte_random                 ... bench:       7,214 ns/iter (+/- 71) = 1386 MB/s
+test dense::ac_ten_bytes                              ... bench:      49,934 ns/iter (+/- 80) = 200 MB/s
+test dense::ac_ten_diff_prefix                        ... bench:      49,945 ns/iter (+/- 113) = 200 MB/s
+test dense::ac_ten_one_prefix_byte_every_match        ... bench:      71,181 ns/iter (+/- 172) = 140 MB/s
+test dense::ac_ten_one_prefix_byte_no_match           ... bench:         204 ns/iter (+/- 0) = 49019 MB/s
+test dense::ac_ten_one_prefix_byte_random             ... bench:       8,031 ns/iter (+/- 99) = 1245 MB/s
+test dense::ac_two_bytes                              ... bench:      49,951 ns/iter (+/- 182) = 200 MB/s
+test dense::ac_two_diff_prefix                        ... bench:      49,961 ns/iter (+/- 123) = 200 MB/s
+test dense::ac_two_one_prefix_byte_every_match        ... bench:      71,204 ns/iter (+/- 224) = 140 MB/s
+test dense::ac_two_one_prefix_byte_no_match           ... bench:         204 ns/iter (+/- 0) = 49019 MB/s
+test dense::ac_two_one_prefix_byte_random             ... bench:       7,191 ns/iter (+/- 56) = 1390 MB/s
+test dense_boxed::ac_one_byte                         ... bench:         203 ns/iter (+/- 0) = 49261 MB/s
+test dense_boxed::ac_one_prefix_byte_every_match      ... bench:      71,131 ns/iter (+/- 217) = 140 MB/s
+test dense_boxed::ac_one_prefix_byte_no_match         ... bench:         203 ns/iter (+/- 0) = 49261 MB/s
+test dense_boxed::ac_one_prefix_byte_random           ... bench:       8,175 ns/iter (+/- 52) = 1223 MB/s
+test dense_boxed::ac_ten_bytes                        ... bench:      49,948 ns/iter (+/- 134) = 200 MB/s
+test dense_boxed::ac_ten_diff_prefix                  ... bench:      49,958 ns/iter (+/- 125) = 200 MB/s
+test dense_boxed::ac_ten_one_prefix_byte_every_match  ... bench:      71,150 ns/iter (+/- 179) = 140 MB/s
+test dense_boxed::ac_ten_one_prefix_byte_no_match     ... bench:         203 ns/iter (+/- 0) = 49261 MB/s
+test dense_boxed::ac_ten_one_prefix_byte_random       ... bench:       8,904 ns/iter (+/- 69) = 1123 MB/s
+test dense_boxed::ac_two_bytes                        ... bench:      49,943 ns/iter (+/- 96) = 200 MB/s
+test dense_boxed::ac_two_diff_prefix                  ... bench:      49,942 ns/iter (+/- 89) = 200 MB/s
+test dense_boxed::ac_two_one_prefix_byte_every_match  ... bench:      71,149 ns/iter (+/- 239) = 140 MB/s
+test dense_boxed::ac_two_one_prefix_byte_no_match     ... bench:         203 ns/iter (+/- 1) = 49261 MB/s
+test dense_boxed::ac_two_one_prefix_byte_random       ... bench:       8,361 ns/iter (+/- 77) = 1196 MB/s
+test full::ac_one_byte                                ... bench:         207 ns/iter (+/- 17) = 48309 MB/s
+test full::ac_one_prefix_byte_every_match             ... bench:      19,750 ns/iter (+/- 60) = 506 MB/s
+test full::ac_one_prefix_byte_no_match                ... bench:         207 ns/iter (+/- 2) = 48309 MB/s
+test full::ac_one_prefix_byte_random                  ... bench:       3,847 ns/iter (+/- 39) = 2599 MB/s
+test full::ac_ten_bytes                               ... bench:      20,544 ns/iter (+/- 62) = 486 MB/s
+test full::ac_ten_diff_prefix                         ... bench:      20,556 ns/iter (+/- 47) = 486 MB/s
+test full::ac_ten_one_prefix_byte_every_match         ... bench:      19,760 ns/iter (+/- 55) = 506 MB/s
+test full::ac_ten_one_prefix_byte_no_match            ... bench:         207 ns/iter (+/- 1) = 48309 MB/s
+test full::ac_ten_one_prefix_byte_random              ... bench:       4,170 ns/iter (+/- 51) = 2398 MB/s
+test full::ac_two_bytes                               ... bench:      20,549 ns/iter (+/- 63) = 486 MB/s
+test full::ac_two_diff_prefix                         ... bench:      20,544 ns/iter (+/- 52) = 486 MB/s
+test full::ac_two_one_prefix_byte_every_match         ... bench:      19,768 ns/iter (+/- 78) = 505 MB/s
+test full::ac_two_one_prefix_byte_no_match            ... bench:         207 ns/iter (+/- 3) = 48309 MB/s
+test full::ac_two_one_prefix_byte_random              ... bench:       3,967 ns/iter (+/- 26) = 2521 MB/s
+test full_overlap::ac_one_byte                        ... bench:         227 ns/iter (+/- 16) = 44052 MB/s
+test full_overlap::ac_one_prefix_byte_every_match     ... bench:      19,763 ns/iter (+/- 52) = 505 MB/s
+test full_overlap::ac_one_prefix_byte_no_match        ... bench:         211 ns/iter (+/- 0) = 47393 MB/s
+test full_overlap::ac_one_prefix_byte_random          ... bench:       3,873 ns/iter (+/- 27) = 2582 MB/s
+test full_overlap::ac_ten_bytes                       ... bench:      20,558 ns/iter (+/- 74) = 486 MB/s
+test full_overlap::ac_ten_diff_prefix                 ... bench:      20,555 ns/iter (+/- 38) = 486 MB/s
+test full_overlap::ac_ten_one_prefix_byte_every_match ... bench:      19,763 ns/iter (+/- 52) = 505 MB/s
+test full_overlap::ac_ten_one_prefix_byte_no_match    ... bench:         228 ns/iter (+/- 17) = 43859 MB/s
+test full_overlap::ac_ten_one_prefix_byte_random      ... bench:       4,102 ns/iter (+/- 27) = 2438 MB/s
+test full_overlap::ac_two_bytes                       ... bench:      20,549 ns/iter (+/- 36) = 486 MB/s
+test full_overlap::ac_two_diff_prefix                 ... bench:      20,555 ns/iter (+/- 85) = 486 MB/s
+test full_overlap::ac_two_one_prefix_byte_every_match ... bench:      19,770 ns/iter (+/- 69) = 505 MB/s
+test full_overlap::ac_two_one_prefix_byte_no_match    ... bench:         228 ns/iter (+/- 0) = 43859 MB/s
+test full_overlap::ac_two_one_prefix_byte_random      ... bench:       3,908 ns/iter (+/- 24) = 2559 MB/s
+test naive_one_byte                                   ... bench:      13,197 ns/iter (+/- 33) = 757 MB/s
+test naive_one_prefix_byte_every_match                ... bench:      18,455 ns/iter (+/- 30) = 541 MB/s
+test naive_one_prefix_byte_no_match                   ... bench:      13,196 ns/iter (+/- 33) = 757 MB/s
+test naive_one_prefix_byte_random                     ... bench:      19,137 ns/iter (+/- 1,823) = 522 MB/s
+test naive_ten_bytes                                  ... bench:     113,235 ns/iter (+/- 188) = 88 MB/s
+test naive_ten_diff_prefix                            ... bench:     113,264 ns/iter (+/- 217) = 88 MB/s
+test naive_ten_one_prefix_byte_every_match            ... bench:     165,867 ns/iter (+/- 495) = 60 MB/s
+test naive_ten_one_prefix_byte_no_match               ... bench:     113,270 ns/iter (+/- 345) = 88 MB/s
+test naive_ten_one_prefix_byte_random                 ... bench:     118,589 ns/iter (+/- 255) = 84 MB/s
+test naive_two_bytes                                  ... bench:      28,892 ns/iter (+/- 247) = 346 MB/s
+test naive_two_diff_prefix                            ... bench:      28,875 ns/iter (+/- 2,693) = 346 MB/s
+test naive_two_one_prefix_byte_every_match            ... bench:      38,558 ns/iter (+/- 2,656) = 259 MB/s
+test naive_two_one_prefix_byte_no_match               ... bench:      28,485 ns/iter (+/- 2,628) = 351 MB/s
+test naive_two_one_prefix_byte_random                 ... bench:      30,940 ns/iter (+/- 2,591) = 323 MB/s
+test sparse::ac_one_byte                              ... bench:         203 ns/iter (+/- 1) = 49261 MB/s
+test sparse::ac_one_prefix_byte_every_match           ... bench:      54,865 ns/iter (+/- 164) = 182 MB/s
+test sparse::ac_one_prefix_byte_no_match              ... bench:         203 ns/iter (+/- 0) = 49261 MB/s
+test sparse::ac_one_prefix_byte_random                ... bench:       4,984 ns/iter (+/- 35) = 2006 MB/s
+test sparse::ac_ten_bytes                             ... bench:      37,175 ns/iter (+/- 82) = 268 MB/s
+test sparse::ac_ten_diff_prefix                       ... bench:      37,179 ns/iter (+/- 82) = 268 MB/s
+test sparse::ac_ten_one_prefix_byte_every_match       ... bench:      54,866 ns/iter (+/- 122) = 182 MB/s
+test sparse::ac_ten_one_prefix_byte_no_match          ... bench:         203 ns/iter (+/- 0) = 49261 MB/s
+test sparse::ac_ten_one_prefix_byte_random            ... bench:       5,353 ns/iter (+/- 41) = 1868 MB/s
+test sparse::ac_two_bytes                             ... bench:      37,172 ns/iter (+/- 98) = 269 MB/s
+test sparse::ac_two_diff_prefix                       ... bench:      37,174 ns/iter (+/- 119) = 269 MB/s
+test sparse::ac_two_one_prefix_byte_every_match       ... bench:      54,854 ns/iter (+/- 114) = 182 MB/s
+test sparse::ac_two_one_prefix_byte_no_match          ... bench:         203 ns/iter (+/- 0) = 49261 MB/s
+test sparse::ac_two_one_prefix_byte_random            ... bench:       5,027 ns/iter (+/- 45) = 1989 MB/s
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 84 measured
+
