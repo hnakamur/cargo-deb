@@ -63,6 +63,25 @@ def parse_deps(toml):
       "target": None
     }
     deps.append(i)
+  if 'dev-dependencies' not in toml:
+    return deps
+  d = toml['dev-dependencies']
+  for k, v in d.iteritems():
+    opt = False
+    defa = True
+    if isinstance(v, dict):
+      opt = v.get('optional', opt)
+      v = '*'
+    i = {
+      "default_features": defa,
+      "features": [],
+      "kind": "dev",
+      "name": k,
+      "optional": opt,
+      "req": v,
+      "target": None
+    }
+    deps.append(i)
   return deps
 
 def main():
