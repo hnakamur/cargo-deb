@@ -6,7 +6,7 @@ use std::thread;
 use bufstream::BufStream;
 use git2;
 
-use support::{project, execs, UPDATING};
+use support::{project, execs};
 use support::paths;
 use hamcrest::assert_that;
 
@@ -72,6 +72,7 @@ test!(http_auth_offered {
                 println!("password=bar");
             }
         "#);
+
     assert_that(script.cargo_process("build").arg("-v"),
                 execs().with_status(0));
     let script = script.bin("script");
@@ -91,17 +92,16 @@ test!(http_auth_offered {
             [dependencies.bar]
             git = "http://127.0.0.1:{}/foo/bar"
         "#, addr.port()))
-        .file("src/main.rs", "");
+        .file("src/main.rs", "")
+        .file(".cargo/config","\
+        [net]
+        retry = 0
+        ");
 
     assert_that(p.cargo_process("build"),
-                execs().with_status(101).with_stdout(&format!("\
-{updating} git repository `http://{addr}/foo/bar`
-",
-        updating = UPDATING,
-        addr = addr,
-        ))
-                      .with_stderr(&format!("\
-Unable to update http://{addr}/foo/bar
+                execs().with_status(101).with_stderr(&format!("\
+[UPDATING] git repository `http://{addr}/foo/bar`
+[ERROR] Unable to update http://{addr}/foo/bar
 
 Caused by:
   failed to clone into: [..]
@@ -135,25 +135,22 @@ test!(https_something_happens {
             [dependencies.bar]
             git = "https://127.0.0.1:{}/foo/bar"
         "#, addr.port()))
-        .file("src/main.rs", "");
+        .file("src/main.rs", "")
+        .file(".cargo/config","\
+        [net]
+        retry = 0
+        ");
 
     assert_that(p.cargo_process("build").arg("-v"),
-                execs().with_status(101).with_stdout(&format!("\
-{updating} git repository `https://{addr}/foo/bar`
+                execs().with_status(101).with_stderr_contains(&format!("\
+[UPDATING] git repository `https://{addr}/foo/bar`
 ",
-        updating = UPDATING,
         addr = addr,
         ))
-                      .with_stderr(&format!("\
-Unable to update https://{addr}/foo/bar
-
-Caused by:
-  failed to clone into: [..]
-
+                      .with_stderr_contains(&format!("\
 Caused by:
   {errmsg}
 ",
-        addr = addr,
         errmsg = if cfg!(windows) {
             "[[..]] failed to send request: [..]\n"
         } else if cfg!(target_os = "macos") {
@@ -189,21 +186,14 @@ test!(ssh_something_happens {
         .file("src/main.rs", "");
 
     assert_that(p.cargo_process("build").arg("-v"),
-                execs().with_status(101).with_stdout(&format!("\
-{updating} git repository `ssh://{addr}/foo/bar`
+                execs().with_status(101).with_stderr_contains(&format!("\
+[UPDATING] git repository `ssh://{addr}/foo/bar`
 ",
-        updating = UPDATING,
         addr = addr,
         ))
-                      .with_stderr(&format!("\
-Unable to update ssh://{addr}/foo/bar
-
-Caused by:
-  failed to clone into: [..]
-
+                      .with_stderr_contains("\
 Caused by:
   [[..]] Failed to start SSH session: Failed getting banner
-",
-        addr = addr)));
+"));
     t.join().ok().unwrap();
 });

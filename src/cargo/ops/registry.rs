@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::env;
-use std::fs;
-use std::io::prelude::*;
+use std::fs::{self, File};
 use std::iter::repeat;
 use std::path::{Path, PathBuf};
 
@@ -9,6 +8,8 @@ use curl::http;
 use git2;
 use registry::{Registry, NewCrate, NewCrateDependency};
 use term::color::BLACK;
+
+use url::percent_encoding::{percent_encode, QUERY_ENCODE_SET};
 
 use core::source::Source;
 use core::{Package, SourceId};
@@ -49,7 +50,7 @@ pub fn publish(manifest_path: &Path,
 
     // Upload said tarball to the specified destination
     try!(config.shell().status("Uploading", pkg.package_id().to_string()));
-    try!(transmit(&pkg, &tarball, &mut registry));
+    try!(transmit(&pkg, tarball.file(), &mut registry));
 
     Ok(())
 }
@@ -72,7 +73,7 @@ fn verify_dependencies(pkg: &Package, registry_src: &SourceId)
     Ok(())
 }
 
-fn transmit(pkg: &Package, tarball: &Path, registry: &mut Registry)
+fn transmit(pkg: &Package, tarball: &File, registry: &mut Registry)
             -> CargoResult<()> {
     let deps = pkg.dependencies().iter().map(|dep| {
         NewCrateDependency {
@@ -340,7 +341,10 @@ pub fn yank(config: &Config,
     Ok(())
 }
 
-pub fn search(query: &str, config: &Config, index: Option<String>) -> CargoResult<()> {
+pub fn search(query: &str,
+              config: &Config,
+              index: Option<String>,
+              limit: u8) -> CargoResult<()> {
     fn truncate_with_ellipsis(s: &str, max_length: usize) -> String {
         if s.len() < max_length {
             s.to_string()
@@ -350,7 +354,7 @@ pub fn search(query: &str, config: &Config, index: Option<String>) -> CargoResul
     }
 
     let (mut registry, _) = try!(registry(config, None, index));
-    let crates = try!(registry.search(query).map_err(|e| {
+    let (crates, total_crates) = try!(registry.search(query, limit).map_err(|e| {
         human(format!("failed to retrieve search results from the registry: {}", e))
     }));
 
@@ -376,6 +380,24 @@ pub fn search(query: &str, config: &Config, index: Option<String>) -> CargoResul
             None => name
         };
         try!(config.shell().say(line, BLACK));
+    }
+
+    let search_max_limit = 100;
+    if total_crates > limit as u32 && limit < search_max_limit {
+        try!(config.shell().say(
+            format!("... and {} crates more (use --limit N to see more)",
+                    total_crates - limit as u32),
+            BLACK)
+        );
+    } else if total_crates > limit as u32 && limit >= search_max_limit {
+        try!(config.shell().say(
+            format!(
+                "... and {} crates more (go to http://crates.io/search?q={} to see more)",
+                total_crates - limit as u32,
+                percent_encode(query.as_bytes(), QUERY_ENCODE_SET)
+            ),
+            BLACK)
+        );
     }
 
     Ok(())

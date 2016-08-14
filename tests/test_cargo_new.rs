@@ -68,7 +68,7 @@ test!(no_argument {
     assert_that(cargo_process("new"),
                 execs().with_status(1)
                        .with_stderr("\
-Invalid arguments.
+[ERROR] Invalid arguments.
 
 Usage:
     cargo new [options] <path>
@@ -81,7 +81,7 @@ test!(existing {
     fs::create_dir(&dst).unwrap();
     assert_that(cargo_process("new").arg("foo"),
                 execs().with_status(101)
-                       .with_stderr(format!("destination `{}` already exists\n",
+                       .with_stderr(format!("[ERROR] destination `{}` already exists\n",
                                             dst.display())));
 });
 
@@ -89,7 +89,23 @@ test!(invalid_characters {
     assert_that(cargo_process("new").arg("foo.rs"),
                 execs().with_status(101)
                        .with_stderr("\
-Invalid character `.` in crate name: `foo.rs`
+[ERROR] Invalid character `.` in crate name: `foo.rs`
+use --name to override crate name"));
+});
+
+test!(reserved_name {
+    assert_that(cargo_process("new").arg("test"),
+                execs().with_status(101)
+                       .with_stderr("\
+[ERROR] The name `test` cannot be used as a crate name\n\
+use --name to override crate name"));
+});
+
+test!(keyword_name {
+    assert_that(cargo_process("new").arg("pub"),
+                execs().with_status(101)
+                       .with_stderr("\
+[ERROR] The name `pub` cannot be used as a crate name\n\
 use --name to override crate name"));
 });
 
@@ -165,6 +181,24 @@ test!(finds_author_username {
     assert!(contents.contains(r#"authors = ["foo"]"#));
 });
 
+test!(finds_author_priority {
+    // Use a temp dir to make sure we don't pick up .cargo/config somewhere in
+    // the hierarchy
+    let td = TempDir::new("cargo").unwrap();
+    assert_that(cargo_process("new").arg("foo")
+                                    .env("USER", "bar2")
+                                    .env("EMAIL", "baz2")
+                                    .env("CARGO_NAME", "bar")
+                                    .env("CARGO_EMAIL", "baz")
+                                    .cwd(td.path().clone()),
+                execs().with_status(0));
+
+    let toml = td.path().join("foo/Cargo.toml");
+    let mut contents = String::new();
+    File::open(&toml).unwrap().read_to_string(&mut contents).unwrap();
+    assert!(contents.contains(r#"authors = ["bar <baz>"]"#));
+});
+
 test!(finds_author_email {
     // Use a temp dir to make sure we don't pick up .cargo/config somewhere in
     // the hierarchy
@@ -195,6 +229,37 @@ test!(finds_author_git {
     assert!(contents.contains(r#"authors = ["bar <baz>"]"#));
 });
 
+test!(finds_git_email{
+    let td = TempDir::new("cargo").unwrap();
+    assert_that(cargo_process("new").arg("foo")
+                                    .env("GIT_AUTHOR_NAME", "foo")
+                                    .env("GIT_AUTHOR_EMAIL", "gitfoo")
+                                    .cwd(td.path().clone()),
+                execs().with_status(0));
+
+    let toml = td.path().join("foo/Cargo.toml");
+    let mut contents = String::new();
+    File::open(&toml).unwrap().read_to_string(&mut contents).unwrap();
+    assert!(contents.contains(r#"authors = ["foo <gitfoo>"]"#), contents);
+});
+
+
+test!(finds_git_author{
+    // Use a temp dir to make sure we don't pick up .cargo/config somewhere in
+    // the hierarchy
+    let td = TempDir::new("cargo").unwrap();
+    assert_that(cargo_process("new").arg("foo")
+                                    .env_remove("USER")
+                                    .env("GIT_COMMITTER_NAME", "gitfoo")
+                                    .cwd(td.path().clone()),
+                execs().with_status(0));
+
+    let toml = td.path().join("foo/Cargo.toml");
+    let mut contents = String::new();
+    File::open(&toml).unwrap().read_to_string(&mut contents).unwrap();
+    assert!(contents.contains(r#"authors = ["gitfoo"]"#));
+});
+
 test!(author_prefers_cargo {
     ::process("git").args(&["config", "--global", "user.name", "foo"])
                     .exec().unwrap();
@@ -206,7 +271,7 @@ test!(author_prefers_cargo {
         [cargo-new]
         name = "new-foo"
         email = "new-bar"
-        git = false
+        vcs = "none"
     "#).unwrap();
 
     assert_that(cargo_process("new").arg("foo").env("USER", "foo"),
@@ -274,7 +339,7 @@ test!(unknown_flags {
     assert_that(cargo_process("new").arg("foo").arg("--flag"),
                 execs().with_status(1)
                        .with_stderr("\
-Unknown flag: '--flag'
+[ERROR] Unknown flag: '--flag'
 
 Usage:
     cargo new [..]

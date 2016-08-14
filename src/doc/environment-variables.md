@@ -6,21 +6,27 @@ with them:
 
 # Environment variables Cargo reads
 
-You can override these environment variables to change Cargo's behavior on your system:
+You can override these environment variables to change Cargo's behavior on your
+system:
 
 * `CARGO_HOME` - Cargo maintains a local cache of the registry index and of git
   checkouts of crates.  By default these are stored under `$HOME/.cargo`, but
   this variable overrides the location of this directory. Once a crate is cached
   it is not removed by the clean command.
-* `CARGO_PROFILE` - If this is set to a positive integer *N*, Cargo will record
-  timing data as it runs.  When it exits, it will print this data as a profile
-  *N* levels deep.
 * `CARGO_TARGET_DIR` - Location of where to place all generated artifacts,
   relative to the current working directory.
 * `RUSTC` - Instead of running `rustc`, Cargo will execute this specified
   compiler instead.
 * `RUSTDOC` - Instead of running `rustdoc`, Cargo will execute this specified
   `rustdoc` instance instead.
+* `RUSTFLAGS` - A space-separated list of custom flags to pass to all compiler
+  invocations that Cargo performs. In contrast with `cargo rustc`, this is
+  useful for passing a flag to *all* compiler instances.
+
+Note that Cargo will also read environment variables for `.cargo/config`
+configuration values, as described in [that documentation][config-env]
+
+[config-env]: config.html#environment-variables
 
 # Environment variables Cargo sets for crates
 
@@ -39,6 +45,10 @@ let version = env!("CARGO_PKG_VERSION");
 * `CARGO_PKG_VERSION_MINOR` - The minor version of your package.
 * `CARGO_PKG_VERSION_PATCH` - The patch version of your package.
 * `CARGO_PKG_VERSION_PRE` - The pre-release version of your package.
+* `CARGO_PKG_AUTHORS` - Colon seperated list of authors from the manifest of your package.
+* `CARGO_PKG_NAME` - The name of your package.
+* `CARGO_PKG_DESCRIPTION` - The description of your package.
+* `CARGO_PKG_HOMEPAGE` - The home page of your package.
 
 # Environment variables Cargo sets for build scripts
 
@@ -58,6 +68,7 @@ let out_dir = env::var("OUT_DIR").unwrap();
                          script). Also note that this is the value of the
                          current working directory of the build script when it
                          starts.
+* `CARGO_MANIFEST_LINKS` - the manifest `links` value.
 * `CARGO_FEATURE_<name>` - For each activated feature of the package being
                            built, this environment variable will be present
                            where `<name>` is the name of the feature uppercased

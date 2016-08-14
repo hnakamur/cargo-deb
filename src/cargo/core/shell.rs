@@ -6,7 +6,7 @@ use term::color::{Color, BLACK, RED, GREEN, YELLOW};
 use term::{self, Terminal, TerminfoTerminal, color, Attr};
 
 use self::AdequateTerminal::{NoColor, Colored};
-use self::Verbosity::{Verbose, Normal, Quiet};
+use self::Verbosity::{Verbose, Quiet};
 use self::ColorConfig::{Auto, Always, Never};
 
 use util::errors::CargoResult;
@@ -73,7 +73,7 @@ impl MultiShell {
     {
         match self.verbosity {
             Quiet => Ok(()),
-            _ => self.out().say_status(status, message, GREEN)
+            _ => self.err().say_status(status, message, GREEN, true)
         }
     }
 
@@ -95,31 +95,19 @@ impl MultiShell {
         }
     }
 
-    pub fn error<T: ToString>(&mut self, message: T) -> CargoResult<()> {
-        self.err().say(message, RED)
+    pub fn error<T: fmt::Display>(&mut self, message: T) -> CargoResult<()> {
+        self.err().say_status("error:", message, RED, false)
     }
 
-    pub fn warn<T: ToString>(&mut self, message: T) -> CargoResult<()> {
-        self.err().say(message, YELLOW)
-    }
-
-    pub fn set_verbosity(&mut self, verbose: bool, quiet: bool) -> CargoResult<()> {
-        self.verbosity = match (verbose, quiet) {
-            (true, true) => bail!("cannot set both --verbose and --quiet"),
-            (true, false) => Verbose,
-            (false, true) => Quiet,
-            (false, false) => Normal
-        };
-        Ok(())
-    }
-
-    /// shortcut for commands that don't have both --verbose and --quiet
-    pub fn set_verbose(&mut self, verbose: bool) {
-        if verbose {
-            self.verbosity = Verbose;
-        } else {
-            self.verbosity = Normal;
+    pub fn warn<T: fmt::Display>(&mut self, message: T) -> CargoResult<()> {
+        match self.verbosity {
+            Quiet => Ok(()),
+            _ => self.err().say_status("warning:", message, YELLOW, false),
         }
+    }
+
+    pub fn set_verbosity(&mut self, verbosity: Verbosity) {
+        self.verbosity = verbosity;
     }
 
     pub fn set_color_config(&mut self, color: Option<&str>) -> CargoResult<()> {
@@ -179,14 +167,22 @@ impl Shell {
         Ok(())
     }
 
-    pub fn say_status<T, U>(&mut self, status: T, message: U, color: Color)
+    pub fn say_status<T, U>(&mut self,
+                            status: T,
+                            message: U,
+                            color: Color,
+                            justified: bool)
                             -> CargoResult<()>
         where T: fmt::Display, U: fmt::Display
     {
         try!(self.reset());
         if color != BLACK { try!(self.fg(color)); }
         if self.supports_attr(Attr::Bold) { try!(self.attr(Attr::Bold)); }
-        try!(write!(self, "{:>12}", status.to_string()));
+        if justified {
+            try!(write!(self, "{:>12}", status.to_string()));
+        } else {
+            try!(write!(self, "{}", status));
+        }
         try!(self.reset());
         try!(write!(self, " {}\n", message));
         try!(self.flush());

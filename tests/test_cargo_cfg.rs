@@ -4,7 +4,7 @@ use std::fmt;
 use cargo::util::{Cfg, CfgExpr};
 use hamcrest::assert_that;
 
-use support::{project, execs, COMPILING, UPDATING, DOWNLOADING};
+use support::{project, execs};
 use support::registry::Package;
 
 macro_rules! c {
@@ -184,9 +184,9 @@ test!(dont_include {
         "#)
         .file("b/src/lib.rs", "");
     assert_that(p.cargo_process("build"),
-                execs().with_status(0).with_stdout(&format!("\
-{compiling} a v0.0.1 ([..])
-", compiling = COMPILING)));
+                execs().with_status(0).with_stderr("\
+[COMPILING] a v0.0.1 ([..])
+"));
 });
 
 test!(works_through_the_registry {
@@ -194,8 +194,8 @@ test!(works_through_the_registry {
 
     Package::new("foo", "0.1.0").publish();
     Package::new("bar", "0.1.0")
-            .target_dep("foo", "0.1.0", "cfg(unix)")
-            .target_dep("foo", "0.1.0", "cfg(windows)")
+            .target_dep("foo", "0.1.0", "'cfg(unix)'")
+            .target_dep("foo", "0.1.0", "'cfg(windows)'")
             .publish();
 
     let p = project("a")
@@ -211,14 +211,14 @@ test!(works_through_the_registry {
         .file("src/lib.rs", "extern crate bar;");
 
     assert_that(p.cargo_process("build"),
-                execs().with_status(0).with_stdout(&format!("\
-{updating} registry [..]
-{downloading} [..]
-{downloading} [..]
-{compiling} foo v0.1.0 ([..])
-{compiling} bar v0.1.0 ([..])
-{compiling} a v0.0.1 ([..])
-", compiling = COMPILING, updating = UPDATING, downloading = DOWNLOADING)));
+                execs().with_status(0).with_stderr("\
+[UPDATING] registry [..]
+[DOWNLOADING] [..]
+[DOWNLOADING] [..]
+[COMPILING] foo v0.1.0 ([..])
+[COMPILING] bar v0.1.0 ([..])
+[COMPILING] a v0.0.1 ([..])
+"));
 });
 
 test!(bad_target_spec {
@@ -236,7 +236,7 @@ test!(bad_target_spec {
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   failed to parse `4` as a cfg expression
@@ -261,7 +261,7 @@ test!(bad_target_spec2 {
 
     assert_that(p.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
-failed to parse manifest at `[..]`
+[ERROR] failed to parse manifest at `[..]`
 
 Caused by:
   failed to parse `foo =` as a cfg expression

@@ -1,4 +1,4 @@
-% Configuration - Cargo Documentation
+% Configuration
 
 This document will explain how Cargo’s configuration system works, as well as
 available keys or configuration.  For configuration of a project through its
@@ -79,15 +79,20 @@ proxy = "..."     # HTTP proxy to use for HTTP requests (defaults to none)
 timeout = 60000   # Timeout for each HTTP request, in milliseconds
 
 [build]
-jobs = 1               # number of jobs to run by default (default to # cpus)
-rustc = "rustc"        # the rust compiler tool
-rustdoc = "rustdoc"    # the doc generator tool
-target = "triple"      # build for the target triple
-target-dir = "target"  # path of where to place all generated artifacts
+jobs = 1                  # number of jobs to run by default (default to # cpus)
+rustc = "rustc"           # the rust compiler tool
+rustdoc = "rustdoc"       # the doc generator tool
+target = "triple"         # build for the target triple
+target-dir = "target"     # path of where to place all generated artifacts
+rustflags = ["..", ".."]  # custom flags to pass to all compiler invocations
 
 [term]
 verbose = false        # whether cargo provides verbose output
 color = 'auto'         # whether cargo colorizes output
+
+# Network configuration
+[net]
+retry = 2 # number of times a network call will automatically retried
 ```
 
 # Environment Variables

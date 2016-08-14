@@ -1,6 +1,5 @@
 use std::env;
 use std::fs;
-use std::io::prelude::*;
 use std::path::Path;
 use std::collections::BTreeMap;
 
@@ -89,6 +88,26 @@ fn get_name<'a>(path: &'a Path, opts: &'a NewOptions, config: &Config) -> CargoR
 }
 
 fn check_name(name: &str) -> CargoResult<()> {
+
+    // Ban keywords + test list found at
+    // https://doc.rust-lang.org/grammar.html#keywords
+    let blacklist = ["abstract", "alignof", "as", "become", "box",
+        "break", "const", "continue", "crate", "do",
+        "else", "enum", "extern", "false", "final",
+        "fn", "for", "if", "impl", "in",
+        "let", "loop", "macro", "match", "mod",
+        "move", "mut", "offsetof", "override", "priv",
+        "proc", "pub", "pure", "ref", "return",
+        "self", "sizeof", "static", "struct",
+        "super", "test", "trait", "true", "type", "typeof",
+        "unsafe", "unsized", "use", "virtual", "where",
+        "while", "yield"];
+    if blacklist.contains(&name) {
+        bail!("The name `{}` cannot be used as a crate name\n\
+               use --name to override crate name",
+               name)
+    }
+
     for c in name.chars() {
         if c.is_alphanumeric() { continue }
         if c == '_' || c == '-' { continue }
@@ -430,12 +449,21 @@ mod tests {
     Ok(())
 }
 
+fn get_environment_variable(variables: &[&str] ) -> Option<String>{
+    variables.iter()
+             .filter_map(|var| env::var(var).ok())
+             .next()
+}
+
 fn discover_author() -> CargoResult<(String, Option<String>)> {
     let git_config = GitConfig::open_default().ok();
     let git_config = git_config.as_ref();
-    let name = git_config.and_then(|g| g.get_string("user.name").ok())
-                         .or_else(|| env::var("USER").ok())      // unix
-                         .or_else(|| env::var("USERNAME").ok()); // windows
+    let name_variables = ["CARGO_NAME", "GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME",
+                         "USER", "USERNAME", "NAME"];
+    let name = get_environment_variable(&name_variables[0..3])
+                        .or_else(|| git_config.and_then(|g| g.get_string("user.name").ok()))
+                        .or_else(|| get_environment_variable(&name_variables[3..]));
+
     let name = match name {
         Some(name) => name,
         None => {
@@ -444,8 +472,11 @@ fn discover_author() -> CargoResult<(String, Option<String>)> {
                   username_var)
         }
     };
-    let email = git_config.and_then(|g| g.get_string("user.email").ok())
-                          .or_else(|| env::var("EMAIL").ok());
+    let email_variables = ["CARGO_EMAIL", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL",
+                          "EMAIL"];
+    let email = get_environment_variable(&email_variables[0..3])
+                          .or_else(|| git_config.and_then(|g| g.get_string("user.email").ok()))
+                          .or_else(|| get_environment_variable(&email_variables[3..]));
 
     let name = name.trim().to_string();
     let email = email.map(|s| s.trim().to_string());

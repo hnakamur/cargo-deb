@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io::prelude::*;
 use std::path::{self, PathBuf};
 use std::sync::Arc;
 
@@ -41,6 +40,7 @@ pub struct BuildConfig {
     pub requested_target: Option<String>,
     pub exec_engine: Option<Arc<Box<ExecEngine>>>,
     pub release: bool,
+    pub test: bool,
     pub doc_all: bool,
 }
 
@@ -80,10 +80,13 @@ pub fn compile_targets<'a, 'cfg: 'a>(pkg_targets: &'a PackagesToBuild<'a>,
 
     let dest = if build_config.release {"release"} else {"debug"};
     let root = try!(packages.get(resolve.root()));
-    let host_layout = Layout::new(config, root, None, &dest);
-    let target_layout = build_config.requested_target.as_ref().map(|target| {
-        layout::Layout::new(config, root, Some(&target), &dest)
-    });
+    let host_layout = try!(Layout::new(config, root, None, &dest));
+    let target_layout = match build_config.requested_target.as_ref() {
+        Some(target) => {
+            Some(try!(layout::Layout::new(config, root, Some(&target), &dest)))
+        }
+        None => None,
+    };
 
     let mut cx = try!(Context::new(resolve, packages, config,
                                    host_layout, target_layout,
@@ -243,9 +246,9 @@ fn rustc(cx: &mut Context, unit: &Unit) -> CargoResult<Work> {
     let dep_info_loc = fingerprint::dep_info_loc(cx, unit);
     let cwd = cx.config.cwd().to_path_buf();
 
-    return Ok(Work::new(move |desc_tx| {
-        debug!("about to run: {}", rustc);
+    let rustflags = try!(cx.rustflags_args(unit));
 
+    return Ok(Work::new(move |desc_tx| {
         // Only at runtime have we discovered what the extra -L and -l
         // arguments are for native libraries, so we process those here. We
         // also need to be sure to add any -L paths for our plugins to the
@@ -266,6 +269,9 @@ fn rustc(cx: &mut Context, unit: &Unit) -> CargoResult<Work> {
                 try!(fs::remove_file(&dst));
             }
         }
+
+        // Add the arguments from RUSTFLAGS
+        rustc.args(&rustflags);
 
         desc_tx.send(rustc.to_string()).ok();
         try!(exec_engine.exec(rustc).chain_error(|| {
@@ -374,10 +380,7 @@ fn rustdoc(cx: &mut Context, unit: &Unit) -> CargoResult<Work> {
         rustdoc.arg("--target").arg(target);
     }
 
-    // the "root" directory ends in 'debug' or 'release', and we want it to end
-    // in 'doc' instead
-    let doc_dir = cx.layout(unit.pkg, unit.kind).proxy().root();
-    let doc_dir = doc_dir.parent().unwrap().join("doc");
+    let doc_dir = cx.out_dir(unit);
 
     // Create the documentation directory ahead of time as rustdoc currently has
     // a bug where concurrent invocations will race to create this directory if
@@ -449,7 +452,7 @@ fn build_base_args(cx: &Context,
     let Profile {
         opt_level, lto, codegen_units, ref rustc_args, debuginfo,
         debug_assertions, rpath, test, doc: _doc, run_custom_build,
-        rustdoc_args: _,
+        ref panic, rustdoc_args: _,
     } = *unit.profile;
     assert!(!run_custom_build);
 
@@ -474,6 +477,10 @@ fn build_base_args(cx: &Context,
 
     if opt_level != 0 {
         cmd.arg("-C").arg(&format!("opt-level={}", opt_level));
+    }
+
+    if let Some(panic) = panic.as_ref() {
+        cmd.arg("-C").arg(format!("panic={}", panic));
     }
 
     // Disable LTO for host builds as prefer_dynamic and it are mutually

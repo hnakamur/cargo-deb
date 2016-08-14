@@ -4,6 +4,7 @@ use std::collections::hash_map::{HashMap};
 use std::env;
 use std::fmt;
 use std::fs::{self, File};
+use std::io::SeekFrom;
 use std::io::prelude::*;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -13,14 +14,15 @@ use rustc_serialize::{Encodable,Encoder};
 use toml;
 use core::shell::{Verbosity, ColorConfig};
 use core::{MultiShell, Package};
-use util::{CargoResult, CargoError, ChainError, Rustc, internal, human, paths};
+use util::{CargoResult, CargoError, ChainError, Rustc, internal, human};
+use util::Filesystem;
 
 use util::toml as cargo_toml;
 
 use self::ConfigValue as CV;
 
 pub struct Config {
-    home_path: PathBuf,
+    home_path: Filesystem,
     shell: RefCell<MultiShell>,
     rustc_info: Rustc,
     values: RefCell<HashMap<String, ConfigValue>>,
@@ -28,7 +30,7 @@ pub struct Config {
     cwd: PathBuf,
     rustc: PathBuf,
     rustdoc: PathBuf,
-    target_dir: RefCell<Option<PathBuf>>,
+    target_dir: RefCell<Option<Filesystem>>,
 }
 
 impl Config {
@@ -36,7 +38,7 @@ impl Config {
                cwd: PathBuf,
                homedir: PathBuf) -> CargoResult<Config> {
         let mut cfg = Config {
-            home_path: homedir,
+            home_path: Filesystem::new(homedir),
             shell: RefCell::new(shell),
             rustc_info: Rustc::blank(),
             cwd: cwd,
@@ -66,25 +68,25 @@ impl Config {
         Config::new(shell, cwd, homedir)
     }
 
-    pub fn home(&self) -> &Path { &self.home_path }
+    pub fn home(&self) -> &Filesystem { &self.home_path }
 
-    pub fn git_db_path(&self) -> PathBuf {
+    pub fn git_db_path(&self) -> Filesystem {
         self.home_path.join("git").join("db")
     }
 
-    pub fn git_checkout_path(&self) -> PathBuf {
+    pub fn git_checkout_path(&self) -> Filesystem {
         self.home_path.join("git").join("checkouts")
     }
 
-    pub fn registry_index_path(&self) -> PathBuf {
+    pub fn registry_index_path(&self) -> Filesystem {
         self.home_path.join("registry").join("index")
     }
 
-    pub fn registry_cache_path(&self) -> PathBuf {
+    pub fn registry_cache_path(&self) -> Filesystem {
         self.home_path.join("registry").join("cache")
     }
 
-    pub fn registry_source_path(&self) -> PathBuf {
+    pub fn registry_source_path(&self) -> Filesystem {
         self.home_path.join("registry").join("src")
     }
 
@@ -108,14 +110,14 @@ impl Config {
 
     pub fn cwd(&self) -> &Path { &self.cwd }
 
-    pub fn target_dir(&self, pkg: &Package) -> PathBuf {
+    pub fn target_dir(&self, pkg: &Package) -> Filesystem {
         self.target_dir.borrow().clone().unwrap_or_else(|| {
-            pkg.root().join("target")
+            Filesystem::new(pkg.root().join("target"))
         })
     }
 
-    pub fn set_target_dir(&self, path: &Path) {
-        *self.target_dir.borrow_mut() = Some(path.to_owned());
+    pub fn set_target_dir(&self, path: Filesystem) {
+        *self.target_dir.borrow_mut() = Some(path);
     }
 
     fn get(&self, key: &str) -> CargoResult<Option<ConfigValue>> {
@@ -263,6 +265,21 @@ impl Config {
         }
     }
 
+    pub fn net_retry(&self) -> CargoResult<i64> {
+        match try!(self.get_i64("net.retry")) {
+            Some(v) => {
+                let value = v.val;
+                if value < 0 {
+                    bail!("net.retry must be positive, but found {} in {}",
+                      v.val, v.definition)
+                } else {
+                    Ok(value)
+                }
+            }
+            None => Ok(2),
+        }
+    }
+
     pub fn expected<T>(&self, ty: &str, key: &str, val: CV) -> CargoResult<T> {
         val.expected(ty).map_err(|e| {
             human(format!("invalid configuration for key `{}`\n{}", key, e))
@@ -275,11 +292,33 @@ impl Config {
                            color: &Option<String>) -> CargoResult<()> {
         let cfg_verbose = try!(self.get_bool("term.verbose")).map(|v| v.val);
         let cfg_color = try!(self.get_string("term.color")).map(|v| v.val);
-        let verbose = verbose.or(cfg_verbose).unwrap_or(false);
-        let quiet = quiet.unwrap_or(false);
         let color = color.as_ref().or(cfg_color.as_ref());
 
-        try!(self.shell().set_verbosity(verbose, quiet));
+        let verbosity = match (verbose, cfg_verbose, quiet) {
+            (Some(true), _, None) |
+            (None, Some(true), None) => Verbosity::Verbose,
+
+            // command line takes precedence over configuration, so ignore the
+            // configuration.
+            (None, _, Some(true)) => Verbosity::Quiet,
+
+            // Can't pass both at the same time on the command line regardless
+            // of configuration.
+            (Some(true), _, Some(true)) => {
+                bail!("cannot set both --verbose and --quiet");
+            }
+
+            // Can't actually get `Some(false)` as a value from the command
+            // line, so just ignore them here to appease exhaustiveness checking
+            // in match statements.
+            (Some(false), _, _) |
+            (_, _, Some(false)) |
+
+            (None, Some(false), None) |
+            (None, None, None) => Verbosity::Normal,
+        };
+
+        self.shell().set_verbosity(verbosity);
         try!(self.shell().set_color_config(color.map(|s| &s[..])));
 
         Ok(())
@@ -325,9 +364,10 @@ impl Config {
 
     fn scrape_target_dir_config(&mut self) -> CargoResult<()> {
         if let Some(dir) = env::var_os("CARGO_TARGET_DIR") {
-            *self.target_dir.borrow_mut() = Some(self.cwd.join(dir));
+            *self.target_dir.borrow_mut() = Some(Filesystem::new(self.cwd.join(dir)));
         } else if let Some(val) = try!(self.get_path("build.target-dir")) {
-            *self.target_dir.borrow_mut() = Some(val.val);
+            let val = self.cwd.join(val.val);
+            *self.target_dir.borrow_mut() = Some(Filesystem::new(val));
         }
         Ok(())
     }
@@ -576,8 +616,50 @@ fn homedir(cwd: &Path) -> Option<PathBuf> {
     let cargo_home = env::var_os("CARGO_HOME").map(|home| {
         cwd.join(home)
     });
-    let user_home = env::home_dir().map(|p| p.join(".cargo"));
-    cargo_home.or(user_home)
+    if cargo_home.is_some() {
+        return cargo_home
+    }
+
+    // If `CARGO_HOME` wasn't defined then we want to fall back to
+    // `$HOME/.cargo`. Note that currently, however, the implementation of
+    // `env::home_dir()` uses the $HOME environment variable *on all platforms*.
+    // Platforms like Windows then have *another* fallback based on system APIs
+    // if this isn't set.
+    //
+    // Specifically on Windows this can lead to some weird behavior where if you
+    // invoke cargo inside an MSYS shell it'll have $HOME defined and it'll
+    // place output there by default. If, however, you run in another shell
+    // (like cmd.exe or powershell) it'll place output in
+    // `C:\Users\$user\.cargo` by default.
+    //
+    // This snippet is meant to handle this case to ensure that on Windows we
+    // always place output in the same location, regardless of the shell we were
+    // invoked from. We first check `env::home_dir()` without tampering the
+    // environment, and then afterwards we remove `$HOME` and call it again to
+    // see what happened. If they both returned success then on Windows we only
+    // return the first (with the $HOME in place) if it already exists. This
+    // should help existing installs of Cargo continue using the same cargo home
+    // directory.
+    let home_dir_with_env = env::home_dir().map(|p| p.join(".cargo"));
+    let home_dir = env::var_os("HOME");
+    env::remove_var("HOME");
+    let home_dir_without_env = env::home_dir().map(|p| p.join(".cargo"));
+    if let Some(home_dir) = home_dir {
+        env::set_var("HOME", home_dir);
+    }
+
+    match (home_dir_with_env, home_dir_without_env) {
+        (None, None) => None,
+        (None, Some(p)) |
+        (Some(p), None) => Some(p),
+        (Some(a), Some(b)) => {
+            if cfg!(windows) && !a.exists() {
+                Some(b)
+            } else {
+                Some(a)
+            }
+        }
+    }
 }
 
 fn walk_tree<F>(pwd: &Path, mut walk: F) -> CargoResult<()>
@@ -616,23 +698,30 @@ fn walk_tree<F>(pwd: &Path, mut walk: F) -> CargoResult<()>
     Ok(())
 }
 
-pub fn set_config(cfg: &Config, loc: Location, key: &str,
+pub fn set_config(cfg: &Config,
+                  loc: Location,
+                  key: &str,
                   value: ConfigValue) -> CargoResult<()> {
     // TODO: There are a number of drawbacks here
     //
     // 1. Project is unimplemented
     // 2. This blows away all comments in a file
     // 3. This blows away the previous ordering of a file.
-    let file = match loc {
-        Location::Global => cfg.home_path.join("config"),
+    let mut file = match loc {
+        Location::Global => {
+            try!(cfg.home_path.create_dir());
+            try!(cfg.home_path.open_rw(Path::new("config"), cfg,
+                                       "the global config file"))
+        }
         Location::Project => unimplemented!(),
     };
-    try!(fs::create_dir_all(file.parent().unwrap()));
-    let contents = paths::read(&file).unwrap_or(String::new());
-    let mut toml = try!(cargo_toml::parse(&contents, &file));
+    let mut contents = String::new();
+    let _ = file.read_to_string(&mut contents);
+    let mut toml = try!(cargo_toml::parse(&contents, file.path()));
     toml.insert(key.to_string(), value.into_toml());
 
     let contents = toml::Value::Table(toml).to_string();
-    try!(paths::write(&file, contents.as_bytes()));
+    try!(file.seek(SeekFrom::Start(0)));
+    try!(file.write_all(contents.as_bytes()));
     Ok(())
 }

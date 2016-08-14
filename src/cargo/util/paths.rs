@@ -68,13 +68,24 @@ pub fn without_prefix<'a>(a: &'a Path, b: &'a Path) -> Option<&'a Path> {
 }
 
 pub fn read(path: &Path) -> CargoResult<String> {
-    (|| -> CargoResult<String> {
+    (|| -> CargoResult<_> {
         let mut ret = String::new();
         let mut f = try!(File::open(path));
         try!(f.read_to_string(&mut ret));
         Ok(ret)
-    }).chain_error(|| {
-        internal(format!("failed to read `{}`", path.display()))
+    })().map_err(human).chain_error(|| {
+        human(format!("failed to read `{}`", path.display()))
+    })
+}
+
+pub fn read_bytes(path: &Path) -> CargoResult<Vec<u8>> {
+    (|| -> CargoResult<_> {
+        let mut ret = Vec::new();
+        let mut f = try!(File::open(path));
+        try!(f.read_to_end(&mut ret));
+        Ok(ret)
+    })().map_err(human).chain_error(|| {
+        human(format!("failed to read `{}`", path.display()))
     })
 }
 
@@ -83,8 +94,8 @@ pub fn write(path: &Path, contents: &[u8]) -> CargoResult<()> {
         let mut f = try!(File::create(path));
         try!(f.write_all(contents));
         Ok(())
-    }).chain_error(|| {
-        internal(format!("failed to write `{}`", path.display()))
+    })().map_err(human).chain_error(|| {
+        human(format!("failed to write `{}`", path.display()))
     })
 }
 

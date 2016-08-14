@@ -349,12 +349,11 @@ impl Execs {
                        "stderr", &actual.stdout, false)
     }
 
-    #[allow(deprecated)] // connect => join in 1.3
     fn match_std(&self, expected: Option<&String>, actual: &[u8],
                  description: &str, extra: &[u8],
                  partial: bool) -> ham::MatchResult {
         let out = match expected {
-            Some(out) => out,
+            Some(out) => substitute_macros(out),
             None => return ham::success(),
         };
         let actual = match str::from_utf8(actual) {
@@ -385,7 +384,7 @@ impl Execs {
                     format!("differences:\n\
                             {}\n\n\
                             other output:\n\
-                            `{}`", diffs.connect("\n"),
+                            `{}`", diffs.join("\n"),
                             String::from_utf8_lossy(extra)))
 
     }
@@ -440,15 +439,33 @@ impl Execs {
 }
 
 fn lines_match(expected: &str, mut actual: &str) -> bool {
-    for part in expected.split("[..]") {
+    for (i, part) in expected.split("[..]").enumerate() {
         match actual.find(part) {
-            Some(i) => actual = &actual[i + part.len()..],
+            Some(j) => {
+                if i == 0 && j != 0 {
+                    return false
+                }
+                actual = &actual[j + part.len()..];
+            }
             None => {
                 return false
             }
         }
     }
     actual.is_empty() || expected.ends_with("[..]")
+}
+
+#[test]
+fn lines_match_works() {
+    assert!(lines_match("a b", "a b"));
+    assert!(lines_match("a[..]b", "a b"));
+    assert!(lines_match("a[..]", "a b"));
+    assert!(lines_match("[..]", "a b"));
+    assert!(lines_match("[..]b", "a b"));
+
+    assert!(!lines_match("[..]b", "c"));
+    assert!(!lines_match("b", "c"));
+    assert!(!lines_match("b", "cb"));
 }
 
 // Compares JSON object for approximate equality.
@@ -553,6 +570,12 @@ impl<'a> ham::Matcher<&'a mut ProcessBuilder> for Execs {
     }
 }
 
+impl ham::Matcher<Output> for Execs {
+    fn matches(&self, output: Output) -> ham::MatchResult {
+        self.match_output(&output)
+    }
+}
+
 pub fn execs() -> Execs {
     Execs {
         expect_stdout: None,
@@ -633,17 +656,29 @@ pub fn path2url(p: PathBuf) -> Url {
     Url::from_file_path(&*p).ok().unwrap()
 }
 
-pub static RUNNING:     &'static str = "     Running";
-pub static COMPILING:   &'static str = "   Compiling";
-pub static DOCUMENTING: &'static str = " Documenting";
-pub static FRESH:       &'static str = "       Fresh";
-pub static UPDATING:    &'static str = "    Updating";
-pub static ADDING:      &'static str = "      Adding";
-pub static REMOVING:    &'static str = "    Removing";
-pub static DOCTEST:     &'static str = "   Doc-tests";
-pub static PACKAGING:   &'static str = "   Packaging";
-pub static DOWNLOADING: &'static str = " Downloading";
-pub static UPLOADING:   &'static str = "   Uploading";
-pub static VERIFYING:   &'static str = "   Verifying";
-pub static ARCHIVING:   &'static str = "   Archiving";
-pub static INSTALLING:  &'static str = "  Installing";
+fn substitute_macros(input: &str) -> String {
+    let macros = [
+        ("[RUNNING]",     "     Running"),
+        ("[COMPILING]",   "   Compiling"),
+        ("[ERROR]",       "error:"),
+        ("[WARNING]",     "warning:"),
+        ("[DOCUMENTING]", " Documenting"),
+        ("[FRESH]",       "       Fresh"),
+        ("[UPDATING]",    "    Updating"),
+        ("[ADDING]",      "      Adding"),
+        ("[REMOVING]",    "    Removing"),
+        ("[DOCTEST]",     "   Doc-tests"),
+        ("[PACKAGING]",   "   Packaging"),
+        ("[DOWNLOADING]", " Downloading"),
+        ("[UPLOADING]",   "   Uploading"),
+        ("[VERIFYING]",   "   Verifying"),
+        ("[ARCHIVING]",   "   Archiving"),
+        ("[INSTALLING]",  "  Installing"),
+        ("[REPLACING]",   "   Replacing")
+    ];
+    let mut result = input.to_owned();
+    for &(pat, subst) in macros.iter() {
+        result = result.replace(pat, subst)
+    }
+    return result;
+}

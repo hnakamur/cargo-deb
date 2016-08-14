@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use toml;
-use semver;
+use semver::{self, VersionReq};
 use rustc_serialize::{Decodable, Decoder};
 
-use core::{SourceId, Profiles};
+use core::{SourceId, Profiles, PackageIdSpec};
 use core::{Summary, Manifest, Target, Dependency, DependencyInner, PackageId,
            GitReference};
 use core::dependency::{Kind, Platform};
@@ -32,6 +32,38 @@ pub struct Layout {
 }
 
 impl Layout {
+    /// Returns a new `Layout` for a given root path.
+    /// The `root_path` represents the directory that contains the `Cargo.toml` file.
+    pub fn from_project_path(root_path: &Path) -> Layout {
+        let mut lib = None;
+        let mut bins = vec![];
+        let mut examples = vec![];
+        let mut tests = vec![];
+        let mut benches = vec![];
+
+        let lib_canidate = root_path.join("src").join("lib.rs");
+        if fs::metadata(&lib_canidate).is_ok() {
+            lib = Some(lib_canidate);
+        }
+
+        try_add_file(&mut bins, root_path.join("src").join("main.rs"));
+        try_add_files(&mut bins, root_path.join("src").join("bin"));
+
+        try_add_files(&mut examples, root_path.join("examples"));
+
+        try_add_files(&mut tests, root_path.join("tests"));
+        try_add_files(&mut benches, root_path.join("benches"));
+
+        Layout {
+            root: root_path.to_path_buf(),
+            lib: lib,
+            bins: bins,
+            examples: examples,
+            tests: tests,
+            benches: benches,
+        }
+    }
+
     fn main(&self) -> Option<&PathBuf> {
         self.bins.iter().find(|p| {
             match p.file_name().and_then(|s| s.to_str()) {
@@ -66,39 +98,6 @@ fn try_add_files(files: &mut Vec<PathBuf>, root: PathBuf) {
             }))
         }
         Err(_) => {/* just don't add anything if the directory doesn't exist, etc. */}
-    }
-}
-
-/// Returns a new `Layout` for a given root path.
-/// The `root_path` represents the directory that contains the `Cargo.toml` file.
-
-pub fn project_layout(root_path: &Path) -> Layout {
-    let mut lib = None;
-    let mut bins = vec![];
-    let mut examples = vec![];
-    let mut tests = vec![];
-    let mut benches = vec![];
-
-    let lib_canidate = root_path.join("src").join("lib.rs");
-    if fs::metadata(&lib_canidate).is_ok() {
-        lib = Some(lib_canidate);
-    }
-
-    try_add_file(&mut bins, root_path.join("src").join("main.rs"));
-    try_add_files(&mut bins, root_path.join("src").join("bin"));
-
-    try_add_files(&mut examples, root_path.join("examples"));
-
-    try_add_files(&mut tests, root_path.join("tests"));
-    try_add_files(&mut benches, root_path.join("benches"));
-
-    Layout {
-        root: root_path.to_path_buf(),
-        lib: lib,
-        bins: bins,
-        examples: examples,
-        tests: tests,
-        benches: benches,
     }
 }
 
@@ -157,9 +156,8 @@ pub fn to_manifest(contents: &[u8],
 
 pub fn parse(toml: &str, file: &Path) -> CargoResult<toml::Table> {
     let mut parser = toml::Parser::new(&toml);
-    match parser.parse() {
-        Some(toml) => return Ok(toml),
-        None => {}
+    if let Some(toml) = parser.parse() {
+        return Ok(toml);
     }
     let mut error_str = format!("could not parse input as TOML\n");
     for error in parser.errors.iter() {
@@ -184,10 +182,6 @@ type TomlBinTarget = TomlTarget;
 type TomlExampleTarget = TomlTarget;
 type TomlTestTarget = TomlTarget;
 type TomlBenchTarget = TomlTarget;
-
-/*
- * TODO: Make all struct fields private
- */
 
 #[derive(RustcDecodable)]
 pub enum TomlDependency {
@@ -224,6 +218,7 @@ pub struct TomlManifest {
     build_dependencies: Option<HashMap<String, TomlDependency>>,
     features: Option<HashMap<String, Vec<String>>>,
     target: Option<HashMap<String, TomlPlatform>>,
+    replace: Option<HashMap<String, TomlDependency>>,
 }
 
 #[derive(RustcDecodable, Clone, Default)]
@@ -243,6 +238,7 @@ pub struct TomlProfile {
     debug: Option<bool>,
     debug_assertions: Option<bool>,
     rpath: Option<bool>,
+    panic: Option<String>,
 }
 
 #[derive(RustcDecodable)]
@@ -295,6 +291,7 @@ struct Context<'a, 'b> {
     config: &'b Config,
     warnings: &'a mut Vec<String>,
     platform: Option<Platform>,
+    layout: &'a Layout,
 }
 
 // These functions produce the equivalent of specific manifest entries. One
@@ -385,7 +382,7 @@ impl TomlManifest {
         }
 
         let pkgid = try!(project.to_package_id(source_id));
-        let metadata = pkgid.generate_metadata(&layout.root);
+        let metadata = pkgid.generate_metadata();
 
         // If we have no lib at all, use the inferred lib if available
         // If we have a lib with a path, we're done
@@ -393,7 +390,7 @@ impl TomlManifest {
 
         let lib = match self.lib {
             Some(ref lib) => {
-                try!(validate_library_name(lib));
+                try!(lib.validate_library_name());
                 Some(
                     TomlTarget {
                         name: lib.name.clone().or(Some(project.name.clone())),
@@ -412,7 +409,7 @@ impl TomlManifest {
                 let bin = layout.main();
 
                 for target in bins {
-                    try!(validate_binary_name(target));
+                    try!(target.validate_binary_name());
                 }
 
                 bins.iter().map(|t| {
@@ -441,7 +438,7 @@ impl TomlManifest {
         let examples = match self.example {
             Some(ref examples) => {
                 for target in examples {
-                    try!(validate_example_name(target));
+                    try!(target.validate_example_name());
                 }
                 examples.clone()
             }
@@ -451,7 +448,7 @@ impl TomlManifest {
         let tests = match self.test {
             Some(ref tests) => {
                 for target in tests {
-                    try!(validate_test_name(target));
+                    try!(target.validate_test_name());
                 }
                 tests.clone()
             }
@@ -461,7 +458,7 @@ impl TomlManifest {
         let benches = match self.bench {
             Some(ref benches) => {
                 for target in benches {
-                    try!(validate_bench_name(target));
+                    try!(target.validate_bench_name());
                 }
                 benches.clone()
             }
@@ -506,6 +503,7 @@ impl TomlManifest {
         }
 
         let mut deps = Vec::new();
+        let mut replace = Vec::new();
 
         {
 
@@ -516,6 +514,7 @@ impl TomlManifest {
                 config: config,
                 warnings: &mut warnings,
                 platform: None,
+                layout: &layout,
             };
 
             // Collect the deps
@@ -538,6 +537,48 @@ impl TomlManifest {
                     try!(process_dependencies(&mut cx,
                                               platform.dev_dependencies.as_ref(),
                                               Some(Kind::Development)));
+                }
+            }
+
+            if let Some(ref map) = self.replace {
+                for (spec, replacement) in map {
+                    let spec = try!(PackageIdSpec::parse(spec));
+
+                    let version_specified = match *replacement {
+                        TomlDependency::Detailed(ref d) => d.version.is_some(),
+                        TomlDependency::Simple(..) => true,
+                    };
+                    if version_specified {
+                        bail!("replacements cannot specify a version \
+                               requirement, but found one for `{}`", spec);
+                    }
+
+                    let dep = try!(replacement.to_dependency(spec.name(),
+                                                             &mut cx,
+                                                             None));
+                    let dep = {
+                        let version = try!(spec.version().chain_error(|| {
+                            human(format!("replacements must specify a version \
+                                           to replace, but `{}` does not",
+                                          spec))
+                        }));
+                        let req = VersionReq::exact(version);
+                        dep.clone_inner().set_version_req(req)
+                           .into_dependency()
+                    };
+                    replace.push((spec, dep));
+                }
+            }
+        }
+
+        {
+            let mut names_sources = HashMap::new();
+            for dep in deps.iter() {
+                let name = dep.name();
+                let prev = names_sources.insert(name, dep.source_id());
+                if prev.is_some() && prev != Some(dep.source_id()) {
+                    bail!("found duplicate dependency name {}, but all \
+                           dependencies must have a unique name", name);
                 }
             }
         }
@@ -568,10 +609,11 @@ impl TomlManifest {
                                          project.links.clone(),
                                          metadata,
                                          profiles,
-                                         publish);
+                                         publish,
+                                         replace);
         if project.license_file.is_some() && project.license.is_some() {
-            manifest.add_warning(format!("warning: only one of `license` or \
-                                                   `license-file` is necessary"));
+            manifest.add_warning(format!("only one of `license` or \
+                                          `license-file` is necessary"));
         }
         for warning in warnings {
             manifest.add_warning(warning.clone());
@@ -584,9 +626,8 @@ impl TomlManifest {
 /// Will check a list of toml targets, and make sure the target names are unique within a vector.
 /// If not, the name of the offending binary target is returned.
 fn unique_names_in_targets(targets: &[TomlTarget]) -> Result<(), String> {
-    let values = targets.iter().map(|e| e.name()).collect::<Vec<String>>();
     let mut seen = HashSet::new();
-    for v in values {
+    for v in targets.iter().map(|e| e.name()) {
         if !seen.insert(v.clone()) {
             return Err(v);
         }
@@ -594,84 +635,13 @@ fn unique_names_in_targets(targets: &[TomlTarget]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_library_name(target: &TomlTarget) -> CargoResult<()> {
-    match target.name {
-        Some(ref name) => {
-            if name.trim().is_empty() {
-                Err(human(format!("library target names cannot be empty.")))
-            } else if name.contains("-") {
-                Err(human(format!("library target names cannot contain hyphens: {}",
-                                  name)))
-            } else {
-                Ok(())
-            }
-        },
-        None => Ok(())
-    }
-}
-
-fn validate_binary_name(target: &TomlTarget) -> CargoResult<()> {
-    match target.name {
-        Some(ref name) => {
-            if name.trim().is_empty() {
-                Err(human(format!("binary target names cannot be empty.")))
-            } else {
-                Ok(())
-            }
-        },
-        None => Err(human(format!("binary target bin.name is required")))
-    }
-}
-
-fn validate_example_name(target: &TomlTarget) -> CargoResult<()> {
-    match target.name {
-        Some(ref name) => {
-            if name.trim().is_empty() {
-                Err(human(format!("example target names cannot be empty")))
-            } else {
-                Ok(())
-            }
-        },
-        None => Err(human(format!("example target example.name is required")))
-    }
-}
-
-fn validate_test_name(target: &TomlTarget) -> CargoResult<()> {
-    match target.name {
-        Some(ref name) => {
-            if name.trim().is_empty() {
-                Err(human(format!("test target names cannot be empty")))
-            } else {
-                Ok(())
-            }
-        },
-        None => Err(human(format!("test target test.name is required")))
-    }
-}
-
-fn validate_bench_name(target: &TomlTarget) -> CargoResult<()> {
-    match target.name {
-        Some(ref name) => {
-            if name.trim().is_empty() {
-                Err(human(format!("bench target names cannot be empty")))
-            } else {
-                Ok(())
-            }
-        },
-        None => Err(human(format!("bench target bench.name is required")))
-    }
-}
-
-fn process_dependencies(cx: &mut Context,
-                        new_deps: Option<&HashMap<String, TomlDependency>>,
-                        kind: Option<Kind>)
-                        -> CargoResult<()> {
-    let dependencies = match new_deps {
-        Some(ref dependencies) => dependencies,
-        None => return Ok(())
-    };
-    for (n, v) in dependencies.iter() {
-        let details = match *v {
+impl TomlDependency {
+    fn to_dependency(&self,
+                     name: &str,
+                     cx: &mut Context,
+                     kind: Option<Kind>)
+                     -> CargoResult<Dependency> {
+        let details = match *self {
             TomlDependency::Simple(ref version) => {
                 let mut d: DetailedTomlDependency = Default::default();
                 d.version = Some(version.clone());
@@ -682,11 +652,11 @@ fn process_dependencies(cx: &mut Context,
 
         if details.version.is_none() && details.path.is_none() &&
            details.git.is_none() {
-            cx.warnings.push(format!("warning: dependency ({}) specified \
-                                      without providing a local path, Git \
-                                      repository, or version to use. This will \
-                                      be considered an error in future \
-                                      versions", n));
+            let msg = format!("dependency ({}) specified without \
+                               providing a local path, Git repository, or \
+                               version to use. This will be considered an \
+                               error in future versions", name);
+            cx.warnings.push(msg);
         }
 
         let reference = details.branch.clone().map(GitReference::Branch)
@@ -702,15 +672,32 @@ fn process_dependencies(cx: &mut Context,
                 Some(SourceId::for_git(&loc, reference))
             }
             None => {
-                details.path.as_ref().map(|path| {
-                    cx.nested_paths.push(PathBuf::from(path));
-                    cx.source_id.clone()
-                })
+                match details.path.as_ref() {
+                    Some(path) => {
+                        cx.nested_paths.push(PathBuf::from(path));
+                        // If the source id for the package we're parsing is a
+                        // path source, then we normalize the path here to get
+                        // rid of components like `..`.
+                        //
+                        // The purpose of this is to get a canonical id for the
+                        // package that we're depending on to ensure that builds
+                        // of this package always end up hashing to the same
+                        // value no matter where it's built from.
+                        if cx.source_id.is_path() {
+                            let path = cx.layout.root.join(path);
+                            let path = util::normalize_path(&path);
+                            Some(try!(SourceId::for_path(&path)))
+                        } else {
+                            Some(cx.source_id.clone())
+                        }
+                    }
+                    None => None,
+                }
             }
         }.unwrap_or(try!(SourceId::for_central(cx.config)));
 
         let version = details.version.as_ref().map(|v| &v[..]);
-        let mut dep = try!(DependencyInner::parse(&n, version, &new_source_id));
+        let mut dep = try!(DependencyInner::parse(name, version, &new_source_id));
         dep = dep.set_features(details.features.unwrap_or(Vec::new()))
                  .set_default_features(details.default_features.unwrap_or(true))
                  .set_optional(details.optional.unwrap_or(false))
@@ -718,7 +705,21 @@ fn process_dependencies(cx: &mut Context,
         if let Some(kind) = kind {
             dep = dep.set_kind(kind);
         }
-        cx.deps.push(dep.into_dependency());
+        Ok(dep.into_dependency())
+    }
+}
+
+fn process_dependencies(cx: &mut Context,
+                        new_deps: Option<&HashMap<String, TomlDependency>>,
+                        kind: Option<Kind>)
+                        -> CargoResult<()> {
+    let dependencies = match new_deps {
+        Some(ref dependencies) => dependencies,
+        None => return Ok(())
+    };
+    for (n, v) in dependencies.iter() {
+        let dep = try!(v.to_dependency(n, cx, kind));
+        cx.deps.push(dep);
     }
 
     Ok(())
@@ -770,6 +771,74 @@ impl TomlTarget {
         match self.name {
             Some(ref name) => name.clone(),
             None => panic!("target name is required")
+        }
+    }
+
+    fn validate_library_name(&self) -> CargoResult<()> {
+        match self.name {
+            Some(ref name) => {
+                if name.trim().is_empty() {
+                    Err(human(format!("library target names cannot be empty.")))
+                } else if name.contains("-") {
+                    Err(human(format!("library target names cannot contain hyphens: {}",
+                                      name)))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Ok(())
+        }
+    }
+
+    fn validate_binary_name(&self) -> CargoResult<()> {
+        match self.name {
+            Some(ref name) => {
+                if name.trim().is_empty() {
+                    Err(human(format!("binary target names cannot be empty.")))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Err(human(format!("binary target bin.name is required")))
+        }
+    }
+
+    fn validate_example_name(&self) -> CargoResult<()> {
+        match self.name {
+            Some(ref name) => {
+                if name.trim().is_empty() {
+                    Err(human(format!("example target names cannot be empty")))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Err(human(format!("example target example.name is required")))
+        }
+    }
+
+    fn validate_test_name(&self) -> CargoResult<()> {
+        match self.name {
+            Some(ref name) => {
+                if name.trim().is_empty() {
+                    Err(human(format!("test target names cannot be empty")))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Err(human(format!("test target test.name is required")))
+        }
+    }
+
+    fn validate_bench_name(&self) -> CargoResult<()> {
+        match self.name {
+            Some(ref name) => {
+                if name.trim().is_empty() {
+                    Err(human(format!("bench target names cannot be empty")))
+                } else {
+                    Ok(())
+                }
+            },
+            None => Err(human(format!("bench target bench.name is required")))
         }
     }
 }
@@ -824,7 +893,7 @@ fn normalize(lib: &Option<TomlLibTarget>,
                 kinds.iter().filter_map(|s| {
                     let kind = LibKind::from_str(s);
                     if let Err(ref error) = kind {
-                        warnings.push(format!("warning: {}", error))
+                        warnings.push(error.to_string());
                     }
                     kind.ok()
                 }).collect()
@@ -835,9 +904,14 @@ fn normalize(lib: &Option<TomlLibTarget>,
             }
         };
 
+        // Binaries, examples, etc, may link to this library. Their crate names
+        // have a high likelihood to being the same as ours, however, so we need
+        // some extra metadata in our name to ensure symbols won't collide.
+        let mut metadata = metadata.clone();
+        metadata.mix(&"lib");
         let mut target = Target::lib_target(&l.name(), crate_types,
                                             &path.to_path(),
-                                            metadata.clone());
+                                            metadata);
         configure(l, &mut target);
         dst.push(target);
     }
@@ -957,23 +1031,31 @@ fn normalize(lib: &Option<TomlLibTarget>,
 
 fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
     let profiles = profiles.as_ref();
-    return Profiles {
+    let mut profiles = Profiles {
         release: merge(Profile::default_release(),
                        profiles.and_then(|p| p.release.as_ref())),
         dev: merge(Profile::default_dev(),
                    profiles.and_then(|p| p.dev.as_ref())),
         test: merge(Profile::default_test(),
                     profiles.and_then(|p| p.test.as_ref())),
+        test_deps: merge(Profile::default_dev(),
+                         profiles.and_then(|p| p.dev.as_ref())),
         bench: merge(Profile::default_bench(),
                      profiles.and_then(|p| p.bench.as_ref())),
+        bench_deps: merge(Profile::default_release(),
+                          profiles.and_then(|p| p.release.as_ref())),
         doc: merge(Profile::default_doc(),
                    profiles.and_then(|p| p.doc.as_ref())),
         custom_build: Profile::default_custom_build(),
     };
+    profiles.test_deps.panic = None;
+    profiles.bench_deps.panic = None;
+    return profiles;
 
     fn merge(profile: Profile, toml: Option<&TomlProfile>) -> Profile {
         let &TomlProfile {
-            opt_level, lto, codegen_units, debug, debug_assertions, rpath
+            opt_level, lto, codegen_units, debug, debug_assertions, rpath,
+            ref panic
         } = match toml {
             Some(toml) => toml,
             None => return profile,
@@ -990,6 +1072,7 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
             test: profile.test,
             doc: profile.doc,
             run_custom_build: profile.run_custom_build,
+            panic: panic.clone().or(profile.panic),
         }
     }
 }

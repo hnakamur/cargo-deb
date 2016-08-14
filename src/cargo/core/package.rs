@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 
 use semver::Version;
 
-use core::{Dependency, Manifest, PackageId, SourceId, Target};
+use core::{Dependency, Manifest, PackageId, SourceId, Target, TargetKind};
 use core::{Summary, Metadata, SourceMap};
 use ops;
-use util::{CargoResult, Config, LazyCell, ChainError, internal, human};
+use util::{CargoResult, Config, LazyCell, ChainError, internal, human, lev_distance};
 use rustc_serialize::{Encoder,Encodable};
 
 /// Information about a package that is available somewhere in the file system.
@@ -80,6 +80,7 @@ impl Package {
     pub fn summary(&self) -> &Summary { self.manifest.summary() }
     pub fn targets(&self) -> &[Target] { self.manifest().targets() }
     pub fn version(&self) -> &Version { self.package_id().version() }
+    pub fn authors(&self) -> &Vec<String> { &self.manifest.metadata().authors }
     pub fn publish(&self) -> bool { self.manifest.publish() }
 
     pub fn has_custom_build(&self) -> bool {
@@ -87,7 +88,16 @@ impl Package {
     }
 
     pub fn generate_metadata(&self) -> Metadata {
-        self.package_id().generate_metadata(self.root())
+        self.package_id().generate_metadata()
+    }
+
+    pub fn find_closest_target(&self, target: &str, kind: TargetKind) -> Option<&Target> {
+        let targets = self.targets();
+
+        let matches = targets.iter().filter(|t| *t.kind() == kind)
+                                    .map(|t| (lev_distance(target, t.name()), t))
+                                    .filter(|&(d, _)| d < 4);
+        matches.min_by_key(|t| t.0).map(|t| t.1)
     }
 }
 
@@ -107,15 +117,7 @@ impl Eq for Package {}
 
 impl hash::Hash for Package {
     fn hash<H: hash::Hasher>(&self, into: &mut H) {
-        // We want to be sure that a path-based package showing up at the same
-        // location always has the same hash. To that effect we don't hash the
-        // vanilla package ID if we're a path, but instead feed in our own root
-        // path.
-        if self.package_id().source_id().is_path() {
-            (0, self.root(), self.name(), self.package_id().version()).hash(into)
-        } else {
-            (1, self.package_id()).hash(into)
-        }
+        self.package_id().hash(into)
     }
 }
 
