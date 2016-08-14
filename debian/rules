@@ -29,11 +29,7 @@ override_dh_auto_configure:
 	./debian/cargo-vendor-pack.py
 
 override_dh_auto_build:
-ifneq ($(filter stage2,$(DEB_BUILD_PROFILES)),)
-	ln -s `which cargo` $(CURDIR)/cargo-stage0
-	# Workaround for https://github.com/rust-lang/cargo/issues/1423
-	mv $(DEPSDIR) $(CURDIR)/.deps
-else
+ifneq ($(filter stage0,$(DEB_BUILD_PROFILES)),)
 	# Bootstrap cargo stage0
 	./debian/bootstrap.py \
 		--no-clean \
@@ -48,6 +44,10 @@ else
 	# Workaround for https://github.com/rust-lang/cargo/issues/1423
 	mv $(DEPSDIR) $(CURDIR)/.deps
 	ln -s `find $(CURDIR)/.deps -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
+else
+	ln -s `which cargo` $(CURDIR)/cargo-stage0
+	# Workaround for https://github.com/rust-lang/cargo/issues/1423
+	mv $(DEPSDIR) $(CURDIR)/.deps
 endif
 	# Configure to build cargo using the just-built stage0
 	./configure \
