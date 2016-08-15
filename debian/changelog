@@ -1,6 +1,6 @@
-cargo (0.11.0-1) UNRELEASED; urgency=medium
+cargo (0.11.0-1) unstable; urgency=medium
 
-  * Team upload.
+  [ Daniele Tricoli ]
   * New upstream release. (Closes: #826938)
     - Update deps tarball.
     - Refresh patches.
@@ -8,7 +8,11 @@ cargo (0.11.0-1) UNRELEASED; urgency=medium
       anymore.
     - Drop deps-url-fix-toml.patch since merged upstream.
 
- -- Daniele Tricoli <eriol@mornie.org>  Tue, 19 Jul 2016 03:14:26 +0200
+  [ Luca Bruno ]
+  * Install subcommand manpages too
+  * Move to a bootstrapped (stage1) build by default
+
+ -- Luca Bruno <lucab@debian.org>  Mon, 15 Aug 2016 13:59:04 +0000
 
 cargo (0.9.0-1) unstable; urgency=medium
 
