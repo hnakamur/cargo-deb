@@ -3,7 +3,7 @@
 include /usr/share/dpkg/pkg-info.mk
 include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/buildflags.mk
-RUSTFLAGS = -C link-args="$(LDFLAGS)"
+RUSTFLAGS = -C link-args=$(LDFLAGS)
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 
 rust_cpu = $(subst i586,i686,$(1))
