@@ -1,3 +1,9 @@
+cargo (0.11.0-2) unstable; urgency=high
+
+  * debian/rules: fix RUSTFLAGS quoting (Closes: #834980)
+
+ -- Luca Bruno <lucab@debian.org>  Sun, 21 Aug 2016 18:21:21 +0000
+
 cargo (0.11.0-1) unstable; urgency=medium
 
   [ Daniele Tricoli ]
