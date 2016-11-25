@@ -1,0 +1,32 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+env:
+  global:
+    - RUSTFLAGS='-C link-dead-code'
+sudo: false
+before_script:
+  - pip install 'travis-cargo<0.2' --user && export PATH=$HOME/.local/bin:$PATH
+script:
+  - cargo build --verbose
+  - cargo test --verbose
+  - cargo test --verbose --no-default-features
+  - rustdoc --test README.md -L target/debug -L target/debug/deps
+  - cargo doc --no-deps
+after_success:
+  - travis-cargo --only nightly doc-upload
+  - travis-cargo coveralls --no-sudo
+notifications:
+  email:
+    on_success: never
+addons:
+  apt:
+    packages:
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
+env:
+  global:
+    secure: UheHECBlvtxfXyN6Me+v1UIjvAwV+VXXSpvVe4X34Yj4mlO4OgnB9XrakGcnO3mZnzphXxjpQ7qPgTVXkKLphzAhCOBXzh7rohSqgBcAh+nBbaXDvGf3gVFYff7lve4dO/82wCaR8a9w5Qgcc0/6DmsUeQHyj13YM3mm6P1lesE=

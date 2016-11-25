@@ -1,0 +1,21 @@
+[package]
+name = "openssl-sys"
+version = "0.9.1"
+authors = ["Alex Crichton <alex@alexcrichton.com>",
+           "Steven Fackler <sfackler@gmail.com>"]
+license = "MIT"
+description = "FFI bindings to OpenSSL"
+repository = "https://github.com/sfackler/rust-openssl"
+documentation = "https://sfackler.github.io/rust-openssl/doc/v0.9.0/openssl_sys"
+links = "openssl"
+build = "build.rs"
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+pkg-config = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+user32-sys = "0.2"
+gdi32-sys = "0.2"
