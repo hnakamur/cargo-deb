@@ -7,10 +7,12 @@ pub struct Options {
     flag_token: Option<String>,
     flag_vers: Option<String>,
     flag_index: Option<String>,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
     flag_undo: bool,
+    flag_frozen: bool,
+    flag_locked: bool,
 }
 
 pub static USAGE: &'static str = "
@@ -25,9 +27,11 @@ Options:
     --undo              Undo a yank, putting a version back into the index
     --index INDEX       Registry index to yank from
     --token TOKEN       API token to use when authenticating
-    -v, --verbose       Use verbose output
+    -v, --verbose ...   Use verbose output
     -q, --quiet         No output printed to stdout
     --color WHEN        Coloring: auto, always, never
+    --frozen            Require Cargo.lock and cache are up to date
+    --locked            Require Cargo.lock is up to date
 
 The yank command removes a previously pushed crate's version from the server's
 index. This command does not delete any data, and the crate will still be
@@ -39,15 +43,17 @@ crates to be locked to any yanked version.
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
-    try!(ops::yank(config,
-                   options.arg_crate,
-                   options.flag_vers,
-                   options.flag_token,
-                   options.flag_index,
-                   options.flag_undo));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
+    ops::yank(config,
+              options.arg_crate,
+              options.flag_vers,
+              options.flag_token,
+              options.flag_index,
+              options.flag_undo)?;
     Ok(None)
 }
 

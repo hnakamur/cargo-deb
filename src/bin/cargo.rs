@@ -7,26 +7,28 @@ extern crate toml;
 #[macro_use] extern crate log;
 
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path,PathBuf};
 
 use cargo::core::shell::Verbosity;
 use cargo::execute_main_without_stdin;
-use cargo::util::{self, CliResult, lev_distance, Config, human};
+use cargo::util::{self, CliResult, lev_distance, Config, human, CargoResult};
 use cargo::util::CliError;
-use cargo::util::process_builder::process;
 
 #[derive(RustcDecodable)]
 pub struct Flags {
     flag_list: bool,
     flag_version: bool,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
     flag_explain: Option<String>,
     arg_command: String,
     arg_args: Vec<String>,
+    flag_locked: bool,
+    flag_frozen: bool,
 }
 
 const USAGE: &'static str = "
@@ -41,11 +43,13 @@ Options:
     -V, --version       Print version info and exit
     --list              List installed commands
     --explain CODE      Run `rustc --explain CODE`
-    -v, --verbose       Use verbose output
+    -v, --verbose ...   Use verbose output
     -q, --quiet         No output printed to stdout
     --color WHEN        Coloring: auto, always, never
+    --frozen            Require Cargo.lock and cache are up to date
+    --locked            Require Cargo.lock is up to date
 
-Some common cargo commands are:
+Some common cargo commands are (see all commands with --list):
     build       Compile the current project
     clean       Remove the target directory
     doc         Build this project's and its dependencies' documentation
@@ -112,12 +116,14 @@ each_subcommand!(declare_mod);
   on this top-level information.
 */
 fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(flags.flag_verbose,
-                                flags.flag_quiet,
-                                &flags.flag_color));
+    config.configure(flags.flag_verbose,
+                     flags.flag_quiet,
+                     &flags.flag_color,
+                     flags.flag_frozen,
+                     flags.flag_locked)?;
 
     init_git_transports(config);
-    cargo::util::job::setup();
+    let _token = cargo::util::job::setup();
 
     if flags.flag_version {
         println!("{}", cargo::version());
@@ -133,8 +139,8 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
     }
 
     if let Some(ref code) = flags.flag_explain {
-        try!(process(config.rustc()).arg("--explain").arg(code).exec()
-                                    .map_err(human));
+        let mut procss = config.rustc()?.process();
+        procss.arg("--explain").arg(code).exec().map_err(human)?;
         return Ok(None)
     }
 
@@ -166,10 +172,45 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
         // For all other invocations, we're of the form `cargo foo args...`. We
         // use the exact environment arguments to preserve tokens like `--` for
         // example.
-        _ => env::args().collect(),
+        _ => {
+            let mut default_alias = HashMap::new();
+            default_alias.insert("b", "build".to_string());
+            default_alias.insert("t", "test".to_string());
+            default_alias.insert("r", "run".to_string());
+            let mut args: Vec<String> = env::args().collect();
+            if let Some(new_command) = default_alias.get(&args[1][..]){
+                args[1] = new_command.clone();
+            }
+            args
+        }
     };
 
-    macro_rules! cmd{
+    if try_execute(&config, &args) {
+        return Ok(None)
+    }
+
+    let alias_list = aliased_command(&config, &args[1])?;
+    let args = match alias_list {
+        Some(alias_command) => {
+            let chain = args.iter().take(1)
+                .chain(alias_command.iter())
+                .chain(args.iter().skip(2))
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>();
+            if try_execute(&config, &chain) {
+                return Ok(None)
+            } else {
+                chain
+            }
+        }
+        None => args,
+    };
+    execute_subcommand(config, &args[1], &args)?;
+    Ok(None)
+}
+
+fn try_execute(config: &Config, args: &[String]) -> bool {
+    macro_rules! cmd {
         ($name:ident) => (if args[1] == stringify!($name).replace("_", "-") {
             config.shell().set_verbosity(Verbosity::Verbose);
             let r = cargo::call_main_without_stdin($name::execute, config,
@@ -177,13 +218,36 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
                                                    &args,
                                                    false);
             cargo::process_executed(r, &mut config.shell());
-            return Ok(None)
+            return true
         })
     }
     each_subcommand!(cmd);
 
-    try!(execute_subcommand(config, &args[1], &args));
-    Ok(None)
+    return false
+}
+
+fn aliased_command(config: &Config, command: &String) -> CargoResult<Option<Vec<String>>> {
+    let alias_name = format!("alias.{}", command);
+    let mut result = Ok(None);
+    match config.get_string(&alias_name) {
+        Ok(value) => {
+            if let Some(record) = value {
+                let alias_commands = record.val.split_whitespace()
+                                               .map(|s| s.to_string())
+                                               .collect();
+                result = Ok(Some(alias_commands));
+            }
+        },
+        Err(_) => {
+            let value = config.get_list(&alias_name)?;
+            if let Some(record) = value {
+                let alias_commands: Vec<String> = record.val.iter()
+                                .map(|s| s.0.to_string()).collect();
+                result = Ok(Some(alias_commands));
+            }
+        }
+    }
+    result
 }
 
 fn find_closest(config: &Config, cmd: &str) -> Option<String> {
@@ -209,9 +273,9 @@ fn execute_subcommand(config: &Config,
         Some(command) => command,
         None => {
             return Err(human(match find_closest(config, cmd) {
-                Some(closest) => format!("no such subcommand\n\n\t\
-                                          Did you mean `{}`?\n", closest),
-                None => "no such subcommand".to_string()
+                Some(closest) => format!("no such subcommand: `{}`\n\n\t\
+                                          Did you mean `{}`?\n", cmd, closest),
+                None => format!("no such subcommand: `{}`", cmd)
             }).into())
         }
     };
@@ -221,9 +285,9 @@ fn execute_subcommand(config: &Config,
     };
 
     if let Some(code) = err.exit.as_ref().and_then(|c| c.code()) {
-        Err(CliError::new("", code))
+        Err(CliError::code(code))
     } else {
-        Err(CliError::from_error(err, 101))
+        Err(CliError::new(Box::new(err), 101))
     }
 }
 

@@ -1,11 +1,13 @@
-use cargo::ops;
-use cargo::util::{CliResult, CliError, Human, Config};
+use cargo::core::Workspace;
+use cargo::ops::{self, MessageFormat};
+use cargo::util::{CliResult, CliError, Human, human, Config};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 
 #[derive(RustcDecodable)]
 pub struct Options {
     arg_args: Vec<String>,
     flag_features: Vec<String>,
+    flag_all_features: bool,
     flag_jobs: Option<u32>,
     flag_manifest_path: Option<String>,
     flag_no_default_features: bool,
@@ -18,11 +20,14 @@ pub struct Options {
     flag_example: Vec<String>,
     flag_test: Vec<String>,
     flag_bench: Vec<String>,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
+    flag_message_format: MessageFormat,
     flag_release: bool,
     flag_no_fail_fast: bool,
+    flag_frozen: bool,
+    flag_locked: bool,
 }
 
 pub const USAGE: &'static str = "
@@ -41,16 +46,20 @@ Options:
     --bench NAME                 Test only the specified benchmark target
     --no-run                     Compile, but don't run tests
     -p SPEC, --package SPEC ...  Package to run tests for
-    -j N, --jobs N               The number of jobs to run in parallel
+    -j N, --jobs N               Number of parallel jobs, defaults to # of CPUs
     --release                    Build artifacts in release mode, with optimizations
     --features FEATURES          Space-separated list of features to also build
+    --all-features               Build all available features
     --no-default-features        Do not build the `default` feature
     --target TRIPLE              Build for the target triple
     --manifest-path PATH         Path to the manifest to build tests for
-    -v, --verbose                Use verbose output
+    -v, --verbose ...            Use verbose output
     -q, --quiet                  No output printed to stdout
     --color WHEN                 Coloring: auto, always, never
+    --message-format FMT         Error format: human, json [default: human]
     --no-fail-fast               Run all tests regardless of failure
+    --frozen                     Require Cargo.lock and cache are up to date
+    --locked                     Require Cargo.lock is up to date
 
 All of the trailing arguments are passed to the test binaries generated for
 filtering tests and generally providing options configuring how they run. For
@@ -73,13 +82,20 @@ keep results readable. Test output can be recovered (e.g. for debugging)
 by passing `--nocapture` to the test binaries:
 
   cargo test -- --nocapture
+
+To get the list of all options available for the test binaries use this:
+
+  cargo test -- --help
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
-    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path, config.cwd()));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
+
+    let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
 
     let empty = Vec::new();
     let (mode, filter);
@@ -104,24 +120,26 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
             jobs: options.flag_jobs,
             target: options.flag_target.as_ref().map(|s| &s[..]),
             features: &options.flag_features,
+            all_features: options.flag_all_features,
             no_default_features: options.flag_no_default_features,
             spec: &options.flag_package,
-            exec_engine: None,
             release: options.flag_release,
             mode: mode,
             filter: filter,
+            message_format: options.flag_message_format,
             target_rustdoc_args: None,
             target_rustc_args: None,
         },
     };
 
-    let err = try!(ops::run_tests(&root, &ops, &options.arg_args));
+    let ws = Workspace::new(&root, config)?;
+    let err = ops::run_tests(&ws, &ops, &options.arg_args)?;
     match err {
         None => Ok(None),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {
-                Some(i) => CliError::new("test failed", i),
-                None => CliError::from_error(Human(err), 101)
+                Some(i) => CliError::new(human("test failed"), i),
+                None => CliError::new(Box::new(Human(err)), 101)
             })
         }
     }

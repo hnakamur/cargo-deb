@@ -1,13 +1,17 @@
+use cargo::core::Workspace;
 use cargo::ops;
 use cargo::util::{CliResult, Config};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 
 #[derive(RustcDecodable)]
 pub struct Options {
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
     flag_manifest_path: Option<String>,
+    flag_frozen: bool,
+    flag_locked: bool,
+    flag_package: Option<String>,
     arg_spec: Option<String>,
 }
 
@@ -19,10 +23,13 @@ Usage:
 
 Options:
     -h, --help               Print this message
+    -p SPEC, --package SPEC  Argument to get the package id specifier for
     --manifest-path PATH     Path to the manifest to the package to clean
-    -v, --verbose            Use verbose output
+    -v, --verbose ...        Use verbose output
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
+    --frozen                 Require Cargo.lock and cache are up to date
+    --locked                 Require Cargo.lock is up to date
 
 Given a <spec> argument, print out the fully qualified package id specifier.
 This command will generate an error if <spec> is ambiguous as to which package
@@ -47,13 +54,23 @@ Example Package IDs
 
 pub fn execute(options: Options,
                config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
-    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path.clone(), config.cwd()));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
+    let root = find_root_manifest_for_wd(options.flag_manifest_path.clone(), config.cwd())?;
+    let ws = Workspace::new(&root, config)?;
 
-    let spec = options.arg_spec.as_ref().map(|s| &s[..]);
-    let spec = try!(ops::pkgid(&root, spec, config));
+    let spec = if options.arg_spec.is_some() {
+        options.arg_spec
+    } else if options.flag_package.is_some() {
+        options.flag_package
+    } else {
+        None
+    };
+    let spec = spec.as_ref().map(|s| &s[..]);
+    let spec = ops::pkgid(&ws, spec)?;
     println!("{}", spec);
     Ok(None)
 }

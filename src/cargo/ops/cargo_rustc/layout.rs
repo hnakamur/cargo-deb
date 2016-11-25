@@ -49,9 +49,10 @@ use std::fs;
 use std::io;
 use std::path::{PathBuf, Path};
 
-use core::{Package, Target};
-use util::{Config, FileLock, CargoResult, Filesystem};
+use core::{Package, Workspace};
+use util::{Config, FileLock, CargoResult, Filesystem, human};
 use util::hex::short_hash;
+use super::Unit;
 
 pub struct Layout {
     root: PathBuf,
@@ -69,26 +70,25 @@ pub struct LayoutProxy<'a> {
 }
 
 impl Layout {
-    pub fn new(config: &Config,
-               pkg: &Package,
+    pub fn new(ws: &Workspace,
                triple: Option<&str>,
                dest: &str) -> CargoResult<Layout> {
-        let mut path = config.target_dir(pkg);
+        let mut path = ws.target_dir();
         // Flexible target specifications often point at filenames, so interpret
         // the target triple as a Path and then just use the file stem as the
         // component for the directory name.
         if let Some(triple) = triple {
-            path.push(Path::new(triple).file_stem().unwrap());
+            path.push(Path::new(triple).file_stem().ok_or(human(format!("target was empty")))?);
         }
         path.push(dest);
-        Layout::at(config, path)
+        Layout::at(ws.config(), path)
     }
 
     pub fn at(config: &Config, root: Filesystem) -> CargoResult<Layout> {
         // For now we don't do any more finer-grained locking on the artifact
         // directory, so just lock the entire thing for the duration of this
         // compile.
-        let lock = try!(root.open_rw(".cargo-lock", config, "build directory"));
+        let lock = root.open_rw(".cargo-lock", config, "build directory")?;
         let root = root.into_path_unlocked();
 
         Ok(Layout {
@@ -104,20 +104,20 @@ impl Layout {
 
     pub fn prepare(&mut self) -> io::Result<()> {
         if fs::metadata(&self.root).is_err() {
-            try!(fs::create_dir_all(&self.root));
+            fs::create_dir_all(&self.root)?;
         }
 
-        try!(mkdir(&self.deps));
-        try!(mkdir(&self.native));
-        try!(mkdir(&self.fingerprint));
-        try!(mkdir(&self.examples));
-        try!(mkdir(&self.build));
+        mkdir(&self.deps)?;
+        mkdir(&self.native)?;
+        mkdir(&self.fingerprint)?;
+        mkdir(&self.examples)?;
+        mkdir(&self.build)?;
 
         return Ok(());
 
         fn mkdir(dir: &Path) -> io::Result<()> {
             if fs::metadata(&dir).is_err() {
-                try!(fs::create_dir(dir));
+                fs::create_dir(dir)?;
             }
             Ok(())
         }
@@ -166,13 +166,13 @@ impl<'a> LayoutProxy<'a> {
 
     pub fn proxy(&self) -> &'a Layout { self.root }
 
-    pub fn out_dir(&self, pkg: &Package, target: &Target) -> PathBuf {
-        if target.is_custom_build() {
-            self.build(pkg)
-        } else if target.is_example() {
+    pub fn out_dir(&self, unit: &Unit) -> PathBuf {
+        if unit.target.is_custom_build() {
+            self.build(unit.pkg)
+        } else if unit.target.is_example() {
             self.examples().to_path_buf()
         } else {
-            self.root().to_path_buf()
+            self.deps().to_path_buf()
         }
     }
 

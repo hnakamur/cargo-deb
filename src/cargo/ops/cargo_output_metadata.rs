@@ -1,19 +1,16 @@
-use std::path::Path;
-
 use rustc_serialize::{Encodable, Encoder};
 
 use core::resolver::Resolve;
-use core::{Package, PackageId, PackageSet};
+use core::{Package, PackageId, PackageIdSpec, Workspace};
 use ops;
-use util::config::Config;
 use util::CargoResult;
 
 const VERSION: u32 = 1;
 
-pub struct OutputMetadataOptions<'a> {
+pub struct OutputMetadataOptions {
     pub features: Vec<String>,
-    pub manifest_path: &'a Path,
     pub no_default_features: bool,
+    pub all_features: bool,
     pub no_deps: bool,
     pub version: u32,
 }
@@ -21,32 +18,40 @@ pub struct OutputMetadataOptions<'a> {
 /// Loads the manifest, resolves the dependencies of the project to the concrete
 /// used versions - considering overrides - and writes all dependencies in a JSON
 /// format to stdout.
-pub fn output_metadata(opt: OutputMetadataOptions, config: &Config) -> CargoResult<ExportInfo> {
+pub fn output_metadata(ws: &Workspace,
+                       opt: &OutputMetadataOptions) -> CargoResult<ExportInfo> {
     if opt.version != VERSION {
         bail!("metadata version {} not supported, only {} is currently supported",
               opt.version, VERSION);
     }
     if opt.no_deps {
-        metadata_no_deps(opt, config)
+        metadata_no_deps(ws, opt)
     } else {
-        metadata_full(opt, config)
+        metadata_full(ws, opt)
     }
 }
 
-fn metadata_no_deps(opt: OutputMetadataOptions, config: &Config) -> CargoResult<ExportInfo> {
-    let root = try!(Package::for_path(opt.manifest_path, config));
+fn metadata_no_deps(ws: &Workspace,
+                    _opt: &OutputMetadataOptions) -> CargoResult<ExportInfo> {
     Ok(ExportInfo {
-        packages: vec![root],
+        packages: ws.members().cloned().collect(),
+        workspace_members: ws.members().map(|pkg| pkg.package_id().clone()).collect(),
         resolve: None,
         version: VERSION,
     })
 }
 
-fn metadata_full(opt: OutputMetadataOptions, config: &Config) -> CargoResult<ExportInfo> {
-    let deps = try!(resolve_dependencies(opt.manifest_path,
-                                         config,
-                                         opt.features,
-                                         opt.no_default_features));
+fn metadata_full(ws: &Workspace,
+                 opt: &OutputMetadataOptions) -> CargoResult<ExportInfo> {
+    let specs = ws.members().map(|pkg| {
+        PackageIdSpec::from_package_id(pkg.package_id())
+    }).collect::<Vec<_>>();
+    let deps = ops::resolve_dependencies(ws,
+                                         None,
+                                         &opt.features,
+                                         opt.all_features,
+                                         opt.no_default_features,
+                                         &specs)?;
     let (packages, resolve) = deps;
 
     let packages = try!(packages.package_ids()
@@ -55,7 +60,11 @@ fn metadata_full(opt: OutputMetadataOptions, config: &Config) -> CargoResult<Exp
 
     Ok(ExportInfo {
         packages: packages,
-        resolve: Some(MetadataResolve(resolve)),
+        workspace_members: ws.members().map(|pkg| pkg.package_id().clone()).collect(),
+        resolve: Some(MetadataResolve{
+            resolve: resolve,
+            root: ws.current_opt().map(|pkg| pkg.package_id().clone()),
+        }),
         version: VERSION,
     })
 }
@@ -63,6 +72,7 @@ fn metadata_full(opt: OutputMetadataOptions, config: &Config) -> CargoResult<Exp
 #[derive(RustcEncodable)]
 pub struct ExportInfo {
     packages: Vec<Package>,
+    workspace_members: Vec<PackageId>,
     resolve: Option<MetadataResolve>,
     version: u32,
 }
@@ -70,13 +80,16 @@ pub struct ExportInfo {
 /// Newtype wrapper to provide a custom `Encodable` implementation.
 /// The one from lockfile does not fit because it uses a non-standard
 /// format for `PackageId`s
-struct MetadataResolve(Resolve);
+struct MetadataResolve{
+    resolve: Resolve,
+    root: Option<PackageId>,
+}
 
 impl Encodable for MetadataResolve {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         #[derive(RustcEncodable)]
         struct EncodableResolve<'a> {
-            root: &'a PackageId,
+            root: Option<&'a PackageId>,
             nodes: Vec<Node<'a>>,
         }
 
@@ -86,32 +99,16 @@ impl Encodable for MetadataResolve {
             dependencies: Vec<&'a PackageId>,
         }
 
-        let resolve = &self.0;
         let encodable = EncodableResolve {
-            root: resolve.root(),
-            nodes: resolve.iter().map(|id| {
+            root: self.root.as_ref(),
+            nodes: self.resolve.iter().map(|id| {
                 Node {
                     id: id,
-                    dependencies: resolve.deps(id).collect(),
+                    dependencies: self.resolve.deps(id).collect(),
                 }
             }).collect(),
         };
 
         encodable.encode(s)
     }
-}
-
-/// Loads the manifest and resolves the dependencies of the project to the
-/// concrete used versions. Afterwards available overrides of dependencies are applied.
-fn resolve_dependencies<'a>(manifest: &Path,
-                            config: &'a Config,
-                            features: Vec<String>,
-                            no_default_features: bool)
-                            -> CargoResult<(PackageSet<'a>, Resolve)> {
-    let package = try!(Package::for_path(manifest, config));
-    ops::resolve_dependencies(&package,
-                              config,
-                              None,
-                              features,
-                              no_default_features)
 }

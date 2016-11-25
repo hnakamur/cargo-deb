@@ -44,10 +44,7 @@ the source directory of the build script’s package.
 
 ## Outputs of the Build Script
 
-All the lines printed to stdout by a build script that start with `cargo:`
-are interpreted by Cargo and must be of the form `key=value`.
-
-Example output:
+All the lines printed to stdout by a build script are written to a file like `target/debug/build/<pkg>/output` (the precise location may depend on your configuration). Any line that starts with `cargo:` is interpreted directly by Cargo. This line must be of the form `cargo:key=value`, like the examples below:
 
 ```notrust
 cargo:rustc-link-lib=static=foo
@@ -58,7 +55,7 @@ cargo:libdir=/path/to/foo/lib
 cargo:include=/path/to/foo/include
 ```
 
-There are a few special keys that Cargo recognizes, affecting how the
+There are a few special keys that Cargo recognizes, some affecting how the
 crate is built:
 
 * `rustc-link-lib` indicates that the specified value should be passed to the
@@ -78,9 +75,13 @@ crate is built:
   directory, depending on platform) will trigger a rebuild. To request a re-run
   on any changes within an entire directory, print a line for the directory and
   another line for everything inside it, recursively.)
+* `warning` is a message that will be printed to the main console after a build
+  script has finished running. Warnings are only shown for path dependencies
+  (that is, those you're working on locally), so for example warnings printed
+  out in crates.io crates are not emitted by default.
 
 Any other element is a user-defined metadata that will be passed to
-dependencies. More information about this can be found in the [`links`][links]
+dependents. More information about this can be found in the [`links`][links]
 section.
 
 [links]: #the-links-manifest-key
@@ -251,9 +252,7 @@ This is where the real magic happens. The library is using the rustc-defined
 the generated file (`hello.rs`) into the crate’s compilation.
 
 Using the structure shown here, crates can include any number of generated files
-from the build script itself. We’ve also seen a brief example of how a build
-script can use a crate as a dependency purely for the build process and not for
-the crate itself at runtime.
+from the build script itself.
 
 # Case study: Building some native code
 
@@ -399,6 +398,9 @@ And there we go! This should complete our example of building some C code from a
 Cargo package using the build script itself. This also shows why using a build
 dependency can be crucial in many situations and even much more concise!
 
+We’ve also seen a brief example of how a build script can use a crate as a
+dependency purely for the build process and not for the crate itself at runtime.
+
 # Case study: Linking to system libraries
 
 The final case study here will be investigating how a Cargo library links to a
@@ -439,7 +441,7 @@ build = "build.rs"
 [dependencies]
 libssh2-sys = { git = "https://github.com/alexcrichton/ssh2-rs" }
 
-[target.x86_64-unknown-linux-gnu.dependencies]
+[target.'cfg(unix)'.dependencies]
 openssl-sys = { git = "https://github.com/alexcrichton/openssl-sys" }
 
 # ...
@@ -451,7 +453,7 @@ crate (`libgit2-sys`) links to the `git2` native library.
 
 Here we also see the unconditional dependency on `libssh2` via the
 `libssh2-sys` crate, as well as a platform-specific dependency on `openssl-sys`
-for unix (other variants elided for now). It may seem a little counterintuitive
+for \*nix (other variants elided for now). It may seem a little counterintuitive
 to express *C dependencies* in the *Cargo manifest*, but this is actually using
 one of Cargo’s conventions in this space.
 

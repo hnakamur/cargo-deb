@@ -25,6 +25,16 @@ pub enum ColorConfig {
     Never
 }
 
+impl fmt::Display for ColorConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ColorConfig::Auto => "auto",
+            ColorConfig::Always => "always",
+            ColorConfig::Never => "never",
+        }.fmt(f)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct ShellConfig {
     pub color_config: ColorConfig,
@@ -111,7 +121,7 @@ impl MultiShell {
     }
 
     pub fn set_color_config(&mut self, color: Option<&str>) -> CargoResult<()> {
-        self.out.set_color_config(match color {
+        let cfg = match color {
             Some("auto") => Auto,
             Some("always") => Always,
             Some("never") => Never,
@@ -120,37 +130,74 @@ impl MultiShell {
 
             Some(arg) => bail!("argument for --color must be auto, always, or \
                                 never, but found `{}`", arg),
-        });
+        };
+        self.out.set_color_config(cfg);
+        self.err.set_color_config(cfg);
         Ok(())
     }
 
     pub fn get_verbose(&self) -> Verbosity {
         self.verbosity
     }
+
+    pub fn color_config(&self) -> ColorConfig {
+        assert!(self.out.config.color_config == self.err.config.color_config);
+        self.out.config.color_config
+    }
 }
 
 impl Shell {
-    pub fn create(out: Box<Write + Send>, config: ShellConfig) -> Shell {
+    pub fn create<T: FnMut() -> Box<Write + Send>>(mut out_fn: T, config: ShellConfig) -> Shell {
+        let term = match Shell::get_term(out_fn()) {
+            Ok(t) => t,
+            Err(_) => NoColor(out_fn())
+        };
+
+        Shell {
+            terminal: term,
+            config: config,
+        }
+    }
+
+    #[cfg(any(windows))]
+    fn get_term(out: Box<Write + Send>) -> CargoResult<AdequateTerminal> {
+        // Check if the creation of a console will succeed
+        if ::term::WinConsole::new(vec![0u8; 0]).is_ok() {
+            let t = ::term::WinConsole::new(out)?;
+            if !t.supports_color() {
+                Ok(NoColor(Box::new(t)))
+            } else {
+                Ok(Colored(Box::new(t)))
+            }
+        } else {
+            // If we fail to get a windows console, we try to get a `TermInfo` one
+            Ok(Shell::get_terminfo_term(out))
+        }
+    }
+
+    #[cfg(any(unix))]
+    fn get_term(out: Box<Write + Send>) -> CargoResult<AdequateTerminal> {
+        Ok(Shell::get_terminfo_term(out))
+    }
+
+    fn get_terminfo_term(out: Box<Write + Send>) -> AdequateTerminal {
         // Use `TermInfo::from_env()` and `TerminfoTerminal::supports_color()`
         // to determine if creation of a TerminfoTerminal is possible regardless
         // of the tty status. --color options are parsed after Shell creation so
         // always try to create a terminal that supports color output. Fall back
         // to a no-color terminal regardless of whether or not a tty is present
         // and if color output is not possible.
-        Shell {
-            terminal: match ::term::terminfo::TermInfo::from_env() {
-                Ok(ti) => {
-                    let term = TerminfoTerminal::new_with_terminfo(out, ti);
-                    if !term.supports_color() {
-                        NoColor(term.into_inner())
-                    } else {
-                        // Color output is possible.
-                        Colored(Box::new(term))
-                    }
-                },
-                Err(_) => NoColor(out),
+        match ::term::terminfo::TermInfo::from_env() {
+            Ok(ti) => {
+                let term = TerminfoTerminal::new_with_terminfo(out, ti);
+                if !term.supports_color() {
+                    NoColor(term.into_inner())
+                } else {
+                    // Color output is possible.
+                    Colored(Box::new(term))
+                }
             },
-            config: config,
+            Err(_) => NoColor(out),
         }
     }
 
@@ -159,11 +206,11 @@ impl Shell {
     }
 
     pub fn say<T: ToString>(&mut self, message: T, color: Color) -> CargoResult<()> {
-        try!(self.reset());
-        if color != BLACK { try!(self.fg(color)); }
-        try!(write!(self, "{}\n", message.to_string()));
-        try!(self.reset());
-        try!(self.flush());
+        self.reset()?;
+        if color != BLACK { self.fg(color)?; }
+        write!(self, "{}\n", message.to_string())?;
+        self.reset()?;
+        self.flush()?;
         Ok(())
     }
 
@@ -175,17 +222,17 @@ impl Shell {
                             -> CargoResult<()>
         where T: fmt::Display, U: fmt::Display
     {
-        try!(self.reset());
-        if color != BLACK { try!(self.fg(color)); }
-        if self.supports_attr(Attr::Bold) { try!(self.attr(Attr::Bold)); }
+        self.reset()?;
+        if color != BLACK { self.fg(color)?; }
+        if self.supports_attr(Attr::Bold) { self.attr(Attr::Bold)?; }
         if justified {
-            try!(write!(self, "{:>12}", status.to_string()));
+            write!(self, "{:>12}", status.to_string())?;
         } else {
-            try!(write!(self, "{}", status));
+            write!(self, "{}", status)?;
         }
-        try!(self.reset());
-        try!(write!(self, " {}\n", message));
-        try!(self.flush());
+        self.reset()?;
+        write!(self, " {}\n", message)?;
+        self.flush()?;
         Ok(())
     }
 
@@ -193,7 +240,7 @@ impl Shell {
         let colored = self.colored();
 
         match self.terminal {
-            Colored(ref mut c) if colored => try!(c.fg(color)),
+            Colored(ref mut c) if colored => c.fg(color)?,
             _ => return Ok(false),
         }
         Ok(true)
@@ -203,7 +250,7 @@ impl Shell {
         let colored = self.colored();
 
         match self.terminal {
-            Colored(ref mut c) if colored => try!(c.attr(attr)),
+            Colored(ref mut c) if colored => c.attr(attr)?,
             _ => return Ok(false)
         }
         Ok(true)
@@ -222,7 +269,7 @@ impl Shell {
         let colored = self.colored();
 
         match self.terminal {
-            Colored(ref mut c) if colored => try!(c.reset()),
+            Colored(ref mut c) if colored => c.reset()?,
             _ => ()
         }
         Ok(())

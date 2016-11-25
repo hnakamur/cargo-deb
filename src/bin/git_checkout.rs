@@ -1,14 +1,16 @@
 use cargo::core::source::{Source, SourceId, GitReference};
 use cargo::sources::git::{GitSource};
-use cargo::util::{Config, CliResult, CliError, human, ToUrl};
+use cargo::util::{Config, CliResult, ToUrl};
 
 #[derive(RustcDecodable)]
 pub struct Options {
     flag_url: String,
     flag_reference: String,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
+    flag_frozen: bool,
+    flag_locked: bool,
 }
 
 pub const USAGE: &'static str = "
@@ -20,31 +22,29 @@ Usage:
 
 Options:
     -h, --help               Print this message
-    -v, --verbose            Use verbose output
+    -v, --verbose ...        Use verbose output
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
+    --frozen                 Require Cargo.lock and cache are up to date
+    --locked                 Require Cargo.lock is up to date
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
     let Options { flag_url: url, flag_reference: reference, .. } = options;
 
-    let url = try!(url.to_url().map_err(|e| {
-                       human(format!("The URL `{}` you passed was \
-                                      not a valid URL: {}", url, e))
-                   })
-                   .map_err(|e| CliError::from_boxed(e, 1)));
+    let url = url.to_url()?;
 
     let reference = GitReference::Branch(reference.clone());
     let source_id = SourceId::for_git(&url, reference);
 
     let mut source = GitSource::new(&source_id, config);
 
-    try!(source.update().map_err(|e| {
-        CliError::new(&format!("Couldn't update {:?}: {:?}", source, e), 1)
-    }));
+    source.update()?;
 
     Ok(None)
 }

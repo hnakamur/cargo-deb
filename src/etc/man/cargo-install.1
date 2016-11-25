@@ -5,8 +5,9 @@
 cargo\-install \- Install a Rust binary
 .SH SYNOPSIS
 .PP
-\f[I]cargo install\f[] [OPTIONS] <CRATE> \f[I]cargo install\f[]
-[OPTIONS] \-\-list
+\f[I]cargo install\f[] [OPTIONS] <CRATE>
+.PP
+\f[I]cargo install\f[] [OPTIONS] \-\-list
 .SH DESCRIPTION
 .PP
 Install a Rust binary
@@ -89,12 +90,22 @@ Print this message.
 .RE
 .TP
 .B \-j \f[I]N\f[], \-\-jobs \f[I]N\f[]
-The number of jobs to run in parallel.
+Number of parallel jobs, defaults to # of CPUs.
 .RS
 .RE
 .TP
 .B \-\-features \f[I]FEATURES\f[]
 Space\-separated list of features to activate.
+.RS
+.RE
+.TP
+.B \-\-all\-features
+Build all available features.
+.RS
+.RE
+.TP
+.B \-f, \-\-force
+Force overwriting existing crates or binaries
 .RS
 .RE
 .TP

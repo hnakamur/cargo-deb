@@ -76,6 +76,12 @@ bit versions of cargo on unix you would use:
 $ ./configure --target=i686-unknown-linux-gnu,x86_64-unknown-linux-gnu
 ```
 
+## Running the tests
+
+To run cargo's tests, use `cargo test`. If you do not have the cross-compilers
+installed locally, ignore the cross-compile test failures, or disable them by
+using `CFG_DISABLE_CROSS_TESTS=1 cargo test`.
+
 ## Adding new subcommands to Cargo
 
 Cargo is designed to be extensible with new subcommands without having to modify
@@ -96,9 +102,33 @@ make doc
 open target/doc/index.html
 ```
 
-## Release notes
+## Releases
 
-High level release notes are available as part of [Rust's release notes](https://github.com/rust-lang/rust/blob/master/RELEASES.md).
+High level release notes are available as part of [Rust's release notes][rel].
+Cargo releases coincide with Rust releases.
+
+[rel]: https://github.com/rust-lang/rust/blob/master/RELEASES.md
+
+<details>
+    <summary>Table of Rust versions with their Cargo versions</summary>
+
+Rust version | Cargo version
+-------------|--------------|
+   1.12.0    |    0.13.0    |
+   1.11.0    |    0.12.0    |
+   1.10.0    |    0.11.0    |
+   1.9.0     |    0.10.0    |
+   1.8.0     |    0.9.0     |
+   1.7.0     |    0.8.0     |
+   1.6.0     |    0.7.0     |
+   1.5.0     |    0.6.0     |
+   1.4.0     |    0.5.0     |
+   1.3.0     |    0.4.0     |
+   1.2.0     |    0.3.0     |
+   1.1.0     |    0.2.0     |
+   1.0.0     |    0.1.0     |
+
+</details>
 
 ## Reporting Issues
 

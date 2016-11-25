@@ -27,6 +27,11 @@ List all available cargo commands.
 .RS
 .RE
 .TP
+.B \-\-explain CODE
+Run \f[C]rustc\ \-\-explain\ CODE\f[]
+.RS
+.RE
+.TP
 .B \-v, \-\-verbose
 Use verbose output.
 .RS
@@ -101,6 +106,11 @@ Package and upload this project to the registry.
 .RS
 .RE
 .TP
+.B cargo\-owner(1)
+Manage the owners of a crate on the registry.
+.RS
+.RE
+.TP
 .B cargo\-uninstall(1)
 Remove a Rust binary.
 .RS
@@ -154,7 +164,7 @@ Create a new project that builds an executable
 .IP
 .nf
 \f[C]
-$\ cargo\ new\ \-\-init\ foobar
+$\ cargo\ new\ \-\-bin\ foobar
 \f[]
 .fi
 .PP

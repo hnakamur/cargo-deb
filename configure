@@ -1,5 +1,13 @@
 #!/bin/sh
 
+# /bin/sh on Solaris is not a POSIX compatible shell, but /usr/bin/bash is.
+if [ `uname -s` = 'SunOS' -a "${POSIX_SHELL}" != "true" ]; then
+    POSIX_SHELL="true"
+    export POSIX_SHELL
+    exec /usr/bin/env bash $0 "$@"
+fi
+unset POSIX_SHELL # clear it so if we invoke other scripts, they run as bash as well
+
 msg() {
     echo "configure: $1"
 }
@@ -262,9 +270,7 @@ need_cmd date
 need_cmd tr
 need_cmd sed
 need_cmd cmake
-if [ "${OS}" != "Windows_NT" ]; then
-    need_cmd curl
-fi
+need_cmd make
 
 CFG_SRC_DIR="$(cd $(dirname $0) && pwd)/"
 CFG_BUILD_DIR="$(pwd)/"
@@ -296,24 +302,25 @@ opt debug 1 "build with extra debug fun"
 opt optimize 1 "build with optimizations"
 opt nightly 0 "build nightly packages"
 opt verify-install 1 "verify installed binaries work"
+opt option-checking 1 "complain about unrecognized options in this configure script"
 opt cross-tests 1 "run cross-compilation tests"
 valopt prefix "/usr/local" "set installation prefix"
 valopt local-rust-root "" "set prefix for local rust binary"
 
+if [ ! -z "${CFG_LOCAL_RUST_ROOT}" ]; then
+    export LD_LIBRARY_PATH="${CFG_LOCAL_RUST_ROOT}/lib:$LD_LIBRARY_PATH"
+    export DYLD_LIBRARY_PATH="${CFG_LOCAL_RUST_ROOT}/lib:$DYLD_LIBRARY_PATH"
+    export PATH="${CFG_LOCAL_RUST_ROOT}/bin:$PATH"
+fi
+
+valopt cargo "cargo" "cargo to bootstrap from"
+valopt rustc "rustc" "rustc to compile with"
+valopt rustdoc "rustdoc" "rustdoc to document with"
+
 if [ $HELP -eq 0 ]; then
-    if [ ! -z "${CFG_LOCAL_RUST_ROOT}" ]; then
-        export LD_LIBRARY_PATH="${CFG_LOCAL_RUST_ROOT}/lib:$LD_LIBRARY_PATH"
-        export DYLD_LIBRARY_PATH="${CFG_LOCAL_RUST_ROOT}/lib:$DYLD_LIBRARY_PATH"
-        LRV=`${CFG_LOCAL_RUST_ROOT}/bin/rustc --version`
-        if [ $? -eq 0 ]; then
-            step_msg "using rustc at: ${CFG_LOCAL_RUST_ROOT} with version: $LRV"
-        else
-            err "failed to run rustc at: ${CFG_LOCAL_RUST_ROOT}"
-        fi
-        CFG_RUSTC="${CFG_LOCAL_RUST_ROOT}/bin/rustc"
-    else
-        probe_need CFG_RUSTC        rustc
-    fi
+    probe_need CFG_CARGO $CFG_CARGO
+    probe_need CFG_RUSTC $CFG_RUSTC
+    probe_need CFG_RUSTDOC $CFG_RUSTDOC
     DEFAULT_BUILD=$("${CFG_RUSTC}" -vV | grep 'host: ' | sed 's/host: //')
 fi
 
@@ -325,9 +332,9 @@ valopt localstatedir "/var/lib" "local state directory"
 valopt sysconfdir "/etc" "install system configuration files"
 valopt datadir "${CFG_PREFIX}/share" "install data"
 valopt infodir "${CFG_PREFIX}/share/info" "install additional info"
+valopt docdir "${CFG_PREFIX}/share/doc/cargo" "install extra docs"
 valopt mandir "${CFG_PREFIX}/share/man" "install man pages in PATH"
 valopt libdir "${CFG_PREFIX}/lib" "install libraries"
-valopt local-cargo "" "local cargo to bootstrap from"
 
 if [ $HELP -eq 1 ]
 then
@@ -336,26 +343,34 @@ then
 fi
 
 # Validate Options
-step_msg "validating $CFG_SELF args"
-validate_opt
+if [ -z "$CFG_DISABLE_OPTION_CHECKING" ]
+then
+   step_msg "validating $CFG_SELF args"
+   validate_opt
+fi
 
 step_msg "looking for build programs"
 
-probe_need CFG_CURLORWGET  curl wget
-probe_need CFG_PYTHON      python
 probe_need CFG_CC          cc gcc clang
-
-if [ ! -z "${CFG_LOCAL_RUST_ROOT}" ]; then
-    CFG_RUSTDOC="${CFG_LOCAL_RUST_ROOT}/bin/rustdoc"
-else
-    probe_need CFG_RUSTDOC        rustdoc
-fi
+probe GIT git
 
 # a little post-processing of various config values
 CFG_PREFIX=${CFG_PREFIX%/}
+CFG_DATADIR=${CFG_DATADIR%/}
+CFG_INFODIR=${CFG_INFODIR%/}
+CFG_DOCDIR=${CFG_DOCDIR%/}
 CFG_MANDIR=${CFG_MANDIR%/}
+CFG_LIBDIR=${CFG_LIBDIR%/}
 CFG_HOST="$(echo $CFG_HOST | tr ',' ' ')"
 CFG_TARGET="$(echo $CFG_TARGET | tr ',' ' ')"
+
+# strip CFG_PREFIX from variables used for installation so that
+# install.sh's --prefix value can be used instead
+CFG_DATADIR=${CFG_DATADIR#${CFG_PREFIX}}
+CFG_INFODIR=${CFG_INFODIR#${CFG_PREFIX}}
+CFG_DOCDIR=${CFG_DOCDIR#${CFG_PREFIX}}
+CFG_MANDIR=${CFG_MANDIR#${CFG_PREFIX}}
+CFG_LIBDIR=${CFG_LIBDIR#${CFG_PREFIX}}
 
 # copy host-triples to target-triples so that hosts are a subset of targets
 V_TEMP=""
@@ -371,6 +386,7 @@ if [ "$CFG_SRC_DIR" != "$CFG_BUILD_DIR" ]; then
 fi
 
 if [ ! -z "$CFG_ENABLE_NIGHTLY" ]; then
+    need_cmd curl
     if [ ! -f .cargo/config ]; then
         mkdir -p .cargo
         cat > .cargo/config <<-EOF
@@ -388,6 +404,22 @@ linker = "i686-unknown-freebsd10-gcc"
 linker = "x86_64-unknown-freebsd10-gcc"
 [target.x86_64-unknown-netbsd]
 linker = "x86_64-unknown-netbsd-gcc"
+[target.powerpc-unknown-linux-gnu]
+linker = "powerpc-linux-gnu-gcc"
+[target.powerpc64-unknown-linux-gnu]
+linker = "powerpc64-linux-gnu-gcc-5"
+[target.powerpc64le-unknown-linux-gnu]
+linker = "powerpc64le-linux-gnu-gcc"
+[target.mips-unknown-linux-gnu]
+linker = "mips-linux-gnu-gcc"
+[target.mipsel-unknown-linux-gnu]
+linker = "mipsel-linux-gnu-gcc"
+[target.mips64el-unknown-linux-gnuabi64]
+linker = "mips64el-linux-gnuabi64-gcc"
+[target.mips64-unknown-linux-gnuabi64]
+linker = "mips64-linux-gnuabi64-gcc"
+[target.s390x-unknown-linux-gnu]
+linker = "s390x-linux-gnu-gcc"
 EOF
     fi
 fi
@@ -401,10 +433,15 @@ putvar CFG_PREFIX
 putvar CFG_BUILD
 putvar CFG_HOST
 putvar CFG_TARGET
-putvar CFG_LIBDIR
+putvar CFG_DATADIR
+putvar CFG_DOCDIR
+putvar CFG_INFODIR
 putvar CFG_MANDIR
+putvar CFG_LIBDIR
 putvar CFG_RUSTC
 putvar CFG_RUSTDOC
+putvar CFG_CARGO
+putvar CFG_GIT
 
 msg
 copy_if_changed ${CFG_SRC_DIR}Makefile.in ./Makefile

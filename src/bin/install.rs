@@ -1,21 +1,24 @@
 use cargo::ops;
 use cargo::core::{SourceId, GitReference};
-use cargo::util::{CliResult, Config, ToUrl, human};
+use cargo::util::{CliResult, Config, ToUrl};
 
 #[derive(RustcDecodable)]
 pub struct Options {
     flag_jobs: Option<u32>,
     flag_features: Vec<String>,
+    flag_all_features: bool,
     flag_no_default_features: bool,
     flag_debug: bool,
     flag_bin: Vec<String>,
     flag_example: Vec<String>,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
     flag_root: Option<String>,
     flag_list: bool,
     flag_force: bool,
+    flag_frozen: bool,
+    flag_locked: bool,
 
     arg_crate: Option<String>,
     flag_vers: Option<String>,
@@ -45,17 +48,20 @@ Specifying what crate to install:
 
 Build and install options:
     -h, --help                Print this message
-    -j N, --jobs N            The number of jobs to run in parallel
-    --features FEATURES       Space-separated list of features to activate
+    -j N, --jobs N            Number of parallel jobs, defaults to # of CPUs
     -f, --force               Force overwriting existing crates or binaries
+    --features FEATURES       Space-separated list of features to activate
+    --all-features            Build all available features
     --no-default-features     Do not build the `default` feature
     --debug                   Build in debug mode instead of release mode
     --bin NAME                Only install the binary NAME
     --example EXAMPLE         Install the example EXAMPLE instead of binaries
     --root DIR                Directory to install packages into
-    -v, --verbose             Use verbose output
+    -v, --verbose ...         Use verbose output
     -q, --quiet               Less output printed to stdout
     --color WHEN              Coloring: auto, always, never
+    --frozen                  Require Cargo.lock and cache are up to date
+    --locked                  Require Cargo.lock is up to date
 
 This command manages Cargo's local set of installed binary crates. Only packages
 which have [[bin]] targets can be installed, and all binaries are installed into
@@ -89,28 +95,31 @@ The `--list` option will list all installed packages (and their versions).
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
 
     let compile_opts = ops::CompileOptions {
         config: config,
         jobs: options.flag_jobs,
         target: None,
         features: &options.flag_features,
+        all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
         spec: &[],
-        exec_engine: None,
         mode: ops::CompileMode::Build,
         release: !options.flag_debug,
         filter: ops::CompileFilter::new(false, &options.flag_bin, &[],
                                         &options.flag_example, &[]),
+        message_format: ops::MessageFormat::Human,
         target_rustc_args: None,
         target_rustdoc_args: None,
     };
 
     let source = if let Some(url) = options.flag_git {
-        let url = try!(url.to_url().map_err(human));
+        let url = url.to_url()?;
         let gitref = if let Some(branch) = options.flag_branch {
             GitReference::Branch(branch)
         } else if let Some(tag) = options.flag_tag {
@@ -122,11 +131,11 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         };
         SourceId::for_git(&url, gitref)
     } else if let Some(path) = options.flag_path {
-        try!(SourceId::for_path(&config.cwd().join(path)))
+        SourceId::for_path(&config.cwd().join(path))?
     } else if options.arg_crate == None {
-        try!(SourceId::for_path(&config.cwd()))
+        SourceId::for_path(&config.cwd())?
     } else {
-        try!(SourceId::for_central(config))
+        SourceId::crates_io(config)?
     };
 
     let krate = options.arg_crate.as_ref().map(|s| &s[..]);
@@ -134,9 +143,9 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     let root = options.flag_root.as_ref().map(|s| &s[..]);
 
     if options.flag_list {
-        try!(ops::install_list(root, config));
+        ops::install_list(root, config)?;
     } else {
-        try!(ops::install(root, krate, &source, vers, &compile_opts, options.flag_force));
+        ops::install(root, krate, &source, vers, &compile_opts, options.flag_force)?;
     }
     Ok(None)
 }

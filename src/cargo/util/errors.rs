@@ -8,7 +8,6 @@ use std::str;
 use std::string;
 
 use curl;
-use curl_sys;
 use git2;
 use rustc_serialize::json;
 use semver;
@@ -24,6 +23,7 @@ pub type CargoResult<T> = Result<T, Box<CargoError>>;
 pub trait CargoError: Error + Send + 'static {
     fn is_human(&self) -> bool { false }
     fn cargo_cause(&self) -> Option<&CargoError>{ None }
+    fn as_error(&self) -> &Error where Self: Sized { self as &Error }
 }
 
 impl Error for Box<CargoError> {
@@ -111,13 +111,13 @@ pub struct ProcessError {
     pub desc: String,
     pub exit: Option<ExitStatus>,
     pub output: Option<Output>,
-    cause: Option<io::Error>,
+    cause: Option<Box<CargoError>>,
 }
 
 impl Error for ProcessError {
     fn description(&self) -> &str { &self.desc }
     fn cause(&self) -> Option<&Error> {
-        self.cause.as_ref().map(|s| s as &Error)
+        self.cause.as_ref().map(|e| e.as_error())
     }
 }
 
@@ -190,9 +190,9 @@ struct ConcreteCargoError {
 
 impl fmt::Display for ConcreteCargoError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "{}", self.description));
+        write!(f, "{}", self.description)?;
         if let Some(ref s) = self.detail {
-            try!(write!(f, " ({})", s));
+            write!(f, " ({})", s)?;
         }
         Ok(())
     }
@@ -247,42 +247,46 @@ pub type CliResult<T> = Result<T, CliError>;
 
 #[derive(Debug)]
 pub struct CliError {
-    pub error: Box<CargoError>,
+    pub error: Option<Box<CargoError>>,
     pub unknown: bool,
     pub exit_code: i32
 }
 
 impl Error for CliError {
-    fn description(&self) -> &str { self.error.description() }
-    fn cause(&self) -> Option<&Error> { self.error.cause() }
+    fn description(&self) -> &str {
+        self.error.as_ref().map(|e| e.description())
+            .unwrap_or("unknown cli error")
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        self.error.as_ref().and_then(|e| e.cause())
+    }
 }
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.error, f)
+        if let Some(ref error) = self.error {
+            error.fmt(f)
+        } else {
+            self.description().fmt(f)
+        }
     }
 }
 
 impl CliError {
-    pub fn new(error: &str, code: i32) -> CliError {
-        let error = human(error.to_string());
-        CliError::from_boxed(error, code)
-    }
-
-    pub fn from_error<E: CargoError>(error: E, code: i32) -> CliError {
-        let error = Box::new(error);
-        CliError::from_boxed(error, code)
-    }
-
-    pub fn from_boxed(error: Box<CargoError>, code: i32) -> CliError {
+    pub fn new(error: Box<CargoError>, code: i32) -> CliError {
         let human = error.is_human();
-        CliError { error: error, exit_code: code, unknown: !human }
+        CliError { error: Some(error), exit_code: code, unknown: !human }
+    }
+
+    pub fn code(code: i32) -> CliError {
+        CliError { error: None, exit_code: code, unknown: false }
     }
 }
 
 impl From<Box<CargoError>> for CliError {
     fn from(err: Box<CargoError>) -> CliError {
-        CliError::from_boxed(err, 101)
+        CliError::new(err, 101)
     }
 }
 
@@ -302,17 +306,13 @@ impl NetworkError for git2::Error {
         }
     }
 }
-impl NetworkError for curl::ErrCode {
+impl NetworkError for curl::Error {
     fn maybe_spurious(&self) -> bool {
-        match self.code()  {
-            curl_sys::CURLcode::CURLE_COULDNT_CONNECT |
-            curl_sys::CURLcode::CURLE_COULDNT_RESOLVE_PROXY |
-            curl_sys::CURLcode::CURLE_COULDNT_RESOLVE_HOST |
-            curl_sys::CURLcode::CURLE_OPERATION_TIMEDOUT |
-            curl_sys::CURLcode::CURLE_RECV_ERROR
-            => true,
-            _ => false
-        }
+        self.is_couldnt_connect() ||
+            self.is_couldnt_resolve_proxy() ||
+            self.is_couldnt_resolve_host() ||
+            self.is_operation_timedout() ||
+            self.is_recv_error()
     }
 }
 
@@ -334,7 +334,7 @@ from_error! {
     git2::Error,
     json::DecoderError,
     json::EncoderError,
-    curl::ErrCode,
+    curl::Error,
     CliError,
     toml::Error,
     url::ParseError,
@@ -360,7 +360,7 @@ impl CargoError for io::Error {}
 impl CargoError for git2::Error {}
 impl CargoError for json::DecoderError {}
 impl CargoError for json::EncoderError {}
-impl CargoError for curl::ErrCode {}
+impl CargoError for curl::Error {}
 impl CargoError for ProcessError {}
 impl CargoError for CargoTestError {}
 impl CargoError for CliError {}
@@ -376,9 +376,10 @@ impl CargoError for str::ParseBoolError {}
 // Construction helpers
 
 pub fn process_error(msg: &str,
-                     cause: Option<io::Error>,
+                     cause: Option<Box<CargoError>>,
                      status: Option<&ExitStatus>,
-                     output: Option<&Output>) -> ProcessError {
+                     output: Option<&Output>) -> ProcessError
+{
     let exit = match status {
         Some(s) => status_to_string(s),
         None => "never executed".to_string(),
@@ -454,6 +455,10 @@ pub fn internal_error(error: &str, detail: &str) -> Box<CargoError> {
 }
 
 pub fn internal<S: fmt::Display>(error: S) -> Box<CargoError> {
+    _internal(&error)
+}
+
+fn _internal(error: &fmt::Display) -> Box<CargoError> {
     Box::new(ConcreteCargoError {
         description: error.to_string(),
         detail: None,
@@ -463,6 +468,10 @@ pub fn internal<S: fmt::Display>(error: S) -> Box<CargoError> {
 }
 
 pub fn human<S: fmt::Display>(error: S) -> Box<CargoError> {
+    _human(&error)
+}
+
+fn _human(error: &fmt::Display) -> Box<CargoError> {
     Box::new(ConcreteCargoError {
         description: error.to_string(),
         detail: None,

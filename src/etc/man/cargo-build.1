@@ -33,7 +33,7 @@ Package to build.
 .RE
 .TP
 .B \-j \f[I]IN\f[], \-\-jobs \f[I]IN\f[]
-The number of jobs to run in parallel.
+Number of parallel jobs, defaults to # of CPUs.
 .RS
 .RE
 .TP
@@ -64,6 +64,11 @@ Build only the specified benchmark target.
 .TP
 .B \-\-release
 Build artifacts in release mode, with optimizations.
+.RS
+.RE
+.TP
+.B \-\-all\-features
+Build all available features.
 .RS
 .RE
 .TP

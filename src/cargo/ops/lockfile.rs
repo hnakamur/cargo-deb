@@ -3,49 +3,69 @@ use std::io::prelude::*;
 use rustc_serialize::{Encodable, Decodable};
 use toml::{self, Encoder, Value};
 
-use core::{Resolve, resolver, Package};
-use util::{CargoResult, ChainError, human, Config, Filesystem};
+use core::{Resolve, resolver, Workspace};
+use core::resolver::WorkspaceResolve;
+use util::{CargoResult, ChainError, human, Filesystem};
 use util::toml as cargo_toml;
 
-pub fn load_pkg_lockfile(pkg: &Package, config: &Config)
-                         -> CargoResult<Option<Resolve>> {
-    if !pkg.root().join("Cargo.lock").exists() {
+pub fn load_pkg_lockfile(ws: &Workspace) -> CargoResult<Option<Resolve>> {
+    if !ws.root().join("Cargo.lock").exists() {
         return Ok(None)
     }
 
-    let root = Filesystem::new(pkg.root().to_path_buf());
-    let mut f = try!(root.open_ro("Cargo.lock", config, "Cargo.lock file"));
+    let root = Filesystem::new(ws.root().to_path_buf());
+    let mut f = root.open_ro("Cargo.lock", ws.config(), "Cargo.lock file")?;
 
     let mut s = String::new();
-    try!(f.read_to_string(&mut s).chain_error(|| {
+    f.read_to_string(&mut s).chain_error(|| {
         human(format!("failed to read file: {}", f.path().display()))
-    }));
+    })?;
 
     (|| {
-        let table = toml::Value::Table(try!(cargo_toml::parse(&s, f.path())));
+        let table = cargo_toml::parse(&s, f.path(), ws.config())?;
+        let table = toml::Value::Table(table);
         let mut d = toml::Decoder::new(table);
-        let v: resolver::EncodableResolve = try!(Decodable::decode(&mut d));
-        Ok(Some(try!(v.to_resolve(pkg, config))))
+        let v: resolver::EncodableResolve = Decodable::decode(&mut d)?;
+        Ok(Some(v.into_resolve(ws)?))
     }).chain_error(|| {
         human(format!("failed to parse lock file at: {}", f.path().display()))
     })
 }
 
-pub fn write_pkg_lockfile(pkg: &Package,
-                          resolve: &Resolve,
-                          config: &Config) -> CargoResult<()> {
+pub fn write_pkg_lockfile(ws: &Workspace, resolve: &Resolve) -> CargoResult<()> {
+    // Load the original lockfile if it exists.
+    let ws_root = Filesystem::new(ws.root().to_path_buf());
+    let orig = ws_root.open_ro("Cargo.lock", ws.config(), "Cargo.lock file");
+    let orig = orig.and_then(|mut f| {
+        let mut s = String::new();
+        f.read_to_string(&mut s)?;
+        Ok(s)
+    });
+
+    // Forward compatibility: if `orig` uses rootless format
+    // from the future, do the same.
+    let use_root_key = if let Ok(ref orig) = orig {
+        !orig.starts_with("[[package]]")
+    } else {
+        true
+    };
+
     let mut e = Encoder::new();
-    resolve.encode(&mut e).unwrap();
+    WorkspaceResolve {
+        ws: ws,
+        resolve: resolve,
+        use_root_key: use_root_key,
+    }.encode(&mut e).unwrap();
 
     let mut out = String::new();
 
     // Note that we do not use e.toml.to_string() as we want to control the
     // exact format the toml is in to ensure pretty diffs between updates to the
     // lockfile.
-    let root = e.toml.get(&"root".to_string()).unwrap();
-
-    out.push_str("[root]\n");
-    emit_package(root.as_table().unwrap(), &mut out);
+    if let Some(root) = e.toml.get(&"root".to_string()) {
+        out.push_str("[root]\n");
+        emit_package(root.as_table().unwrap(), &mut out);
+    }
 
     let deps = e.toml.get(&"package".to_string()).unwrap().as_slice().unwrap();
     for dep in deps.iter() {
@@ -63,18 +83,8 @@ pub fn write_pkg_lockfile(pkg: &Package,
         None => {}
     }
 
-    let root = Filesystem::new(pkg.root().to_path_buf());
-
-    // Load the original lockfile if it exists.
-    //
     // If the lockfile contents haven't changed so don't rewrite it. This is
     // helpful on read-only filesystems.
-    let orig = root.open_ro("Cargo.lock", config, "Cargo.lock file");
-    let orig = orig.and_then(|mut f| {
-        let mut s = String::new();
-        try!(f.read_to_string(&mut s));
-        Ok(s)
-    });
     if let Ok(orig) = orig {
         if has_crlf_line_endings(&orig) {
             out = out.replace("\n", "\r\n");
@@ -84,14 +94,20 @@ pub fn write_pkg_lockfile(pkg: &Package,
         }
     }
 
+    if !ws.config().lock_update_allowed() {
+        let flag = if ws.config().network_allowed() {"--frozen"} else {"--locked"};
+        bail!("the lock file needs to be updated but {} was passed to \
+               prevent this", flag);
+    }
+
     // Ok, if that didn't work just write it out
-    root.open_rw("Cargo.lock", config, "Cargo.lock file").and_then(|mut f| {
-        try!(f.file().set_len(0));
-        try!(f.write_all(out.as_bytes()));
+    ws_root.open_rw("Cargo.lock", ws.config(), "Cargo.lock file").and_then(|mut f| {
+        f.file().set_len(0)?;
+        f.write_all(out.as_bytes())?;
         Ok(())
     }).chain_error(|| {
         human(format!("failed to write {}",
-                      pkg.root().join("Cargo.lock").display()))
+                      ws.root().join("Cargo.lock").display()))
     })
 }
 

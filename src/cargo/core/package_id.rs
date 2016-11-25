@@ -13,12 +13,12 @@ use util::{CargoResult, CargoError, short_hash, ToSemver};
 use core::source::SourceId;
 
 /// Identifier for a specific version of a package in a specific source.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PackageId {
     inner: Arc<PackageIdInner>,
 }
 
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug)]
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
 struct PackageIdInner {
     name: String,
     version: semver::Version,
@@ -36,15 +36,21 @@ impl Encodable for PackageId {
 
 impl Decodable for PackageId {
     fn decode<D: Decoder>(d: &mut D) -> Result<PackageId, D::Error> {
-        let string: String = try!(Decodable::decode(d));
+        let string: String = Decodable::decode(d)?;
         let regex = Regex::new(r"^([^ ]+) ([^ ]+) \(([^\)]+)\)$").unwrap();
-        let captures = regex.captures(&string).expect("invalid serialized PackageId");
+        let captures = regex.captures(&string).ok_or_else(|| {
+            d.error("invalid serialized PackageId")
+        })?;
 
         let name = captures.at(1).unwrap();
         let version = captures.at(2).unwrap();
         let url = captures.at(3).unwrap();
-        let version = semver::Version::parse(version).ok().expect("invalid version");
-        let source_id = SourceId::from_url(url);
+        let version = semver::Version::parse(version).map_err(|_| {
+            d.error("invalid version")
+        })?;
+        let source_id = SourceId::from_url(url).map_err(|e| {
+            d.error(&e.to_string())
+        })?;
 
         Ok(PackageId {
             inner: Arc::new(PackageIdInner {
@@ -121,7 +127,7 @@ pub struct Metadata {
 impl PackageId {
     pub fn new<T: ToSemver>(name: &str, version: T,
                              sid: &SourceId) -> CargoResult<PackageId> {
-        let v = try!(version.to_semver().map_err(PackageIdError::InvalidVersion));
+        let v = version.to_semver().map_err(PackageIdError::InvalidVersion)?;
         Ok(PackageId {
             inner: Arc::new(PackageIdInner {
                 name: name.to_string(),
@@ -151,6 +157,16 @@ impl PackageId {
             }),
         }
     }
+
+    pub fn with_source_id(&self, source: &SourceId) -> PackageId {
+        PackageId {
+            inner: Arc::new(PackageIdInner {
+                name: self.inner.name.to_string(),
+                version: self.inner.version.clone(),
+                source_id: source.clone(),
+            }),
+        }
+    }
 }
 
 impl Metadata {
@@ -163,13 +179,23 @@ impl Metadata {
 
 impl fmt::Display for PackageId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        try!(write!(f, "{} v{}", self.inner.name, self.inner.version));
+        write!(f, "{} v{}", self.inner.name, self.inner.version)?;
 
         if !self.inner.source_id.is_default_registry() {
-            try!(write!(f, " ({})", self.inner.source_id));
+            write!(f, " ({})", self.inner.source_id)?;
         }
 
         Ok(())
+    }
+}
+
+impl fmt::Debug for PackageId {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("PackageId")
+         .field("name", &self.inner.name)
+         .field("version", &self.inner.version.to_string())
+         .field("source", &self.inner.source_id.to_string())
+         .finish()
     }
 }
 
@@ -177,12 +203,12 @@ impl fmt::Display for PackageId {
 mod tests {
     use super::PackageId;
     use core::source::SourceId;
-    use sources::RegistrySource;
+    use sources::CRATES_IO;
     use util::ToUrl;
 
     #[test]
     fn invalid_version_handled_nicely() {
-        let loc = RegistrySource::default_url().to_url().unwrap();
+        let loc = CRATES_IO.to_url().unwrap();
         let repo = SourceId::for_registry(&loc);
 
         assert!(PackageId::new("foo", "1.0", &repo).is_err());
