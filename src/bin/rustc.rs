@@ -1,9 +1,9 @@
 use std::env;
 
-use cargo::ops::{CompileOptions, CompileMode};
-use cargo::ops;
+use cargo::core::Workspace;
+use cargo::ops::{self, CompileOptions, CompileMode, MessageFormat};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
-use cargo::util::{CliResult, CliError, Config};
+use cargo::util::{CliResult, CliError, Config, human};
 
 #[derive(RustcDecodable)]
 pub struct Options {
@@ -11,12 +11,14 @@ pub struct Options {
     flag_package: Option<String>,
     flag_jobs: Option<u32>,
     flag_features: Vec<String>,
+    flag_all_features: bool,
     flag_no_default_features: bool,
     flag_target: Option<String>,
     flag_manifest_path: Option<String>,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
+    flag_message_format: MessageFormat,
     flag_release: bool,
     flag_lib: bool,
     flag_bin: Vec<String>,
@@ -24,6 +26,8 @@ pub struct Options {
     flag_test: Vec<String>,
     flag_bench: Vec<String>,
     flag_profile: Option<String>,
+    flag_frozen: bool,
+    flag_locked: bool,
 }
 
 pub const USAGE: &'static str = "
@@ -34,8 +38,8 @@ Usage:
 
 Options:
     -h, --help               Print this message
-    -p SPEC, --package SPEC  The profile to compile for
-    -j N, --jobs N           The number of jobs to run in parallel
+    -p SPEC, --package SPEC  Package to build
+    -j N, --jobs N           Number of parallel jobs, defaults to # of CPUs
     --lib                    Build only this package's library
     --bin NAME               Build only the specified binary
     --example NAME           Build only the specified example
@@ -44,12 +48,16 @@ Options:
     --release                Build artifacts in release mode, with optimizations
     --profile PROFILE        Profile to build the selected target for
     --features FEATURES      Features to compile for the package
+    --all-features           Build all available features
     --no-default-features    Do not compile default features for the package
     --target TRIPLE          Target triple which compiles will be for
     --manifest-path PATH     Path to the manifest to fetch dependencies for
-    -v, --verbose            Use verbose output
+    -v, --verbose ...        Use verbose output
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
+    --message-format FMT     Error format: human, json [default: human]
+    --frozen                 Require Cargo.lock and cache are up to date
+    --locked                 Require Cargo.lock is up to date
 
 The specified target for the current package (or package specified by SPEC if
 provided) will be compiled along with all of its dependencies. The specified
@@ -68,19 +76,22 @@ processes spawned by Cargo, use the $RUSTFLAGS environment variable or the
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     debug!("executing; cmd=cargo-rustc; args={:?}",
            env::args().collect::<Vec<_>>());
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
 
-    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path,
-                                              config.cwd()));
+    let root = find_root_manifest_for_wd(options.flag_manifest_path,
+                                         config.cwd())?;
     let mode = match options.flag_profile.as_ref().map(|t| &t[..]) {
         Some("dev") | None => CompileMode::Build,
         Some("test") => CompileMode::Test,
         Some("bench") => CompileMode::Bench,
         Some(mode) => {
-            return Err(CliError::new(&format!("unknown profile: `{}`, use dev,
-                                               test, or bench", mode), 101))
+            let err = human(format!("unknown profile: `{}`, use dev,
+                                     test, or bench", mode));
+            return Err(CliError::new(err, 101))
         }
     };
 
@@ -89,9 +100,9 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         jobs: options.flag_jobs,
         target: options.flag_target.as_ref().map(|t| &t[..]),
         features: &options.flag_features,
+        all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
         spec: &options.flag_package.map_or(Vec::new(), |s| vec![s]),
-        exec_engine: None,
         mode: mode,
         release: options.flag_release,
         filter: ops::CompileFilter::new(options.flag_lib,
@@ -99,11 +110,13 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
                                         &options.flag_test,
                                         &options.flag_example,
                                         &options.flag_bench),
+        message_format: options.flag_message_format,
         target_rustdoc_args: None,
         target_rustc_args: options.arg_opts.as_ref().map(|a| &a[..]),
     };
 
-    try!(ops::compile(&root, &opts));
+    let ws = Workspace::new(&root, config)?;
+    ops::compile(&ws, &opts)?;
     Ok(None)
 }
 

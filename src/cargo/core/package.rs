@@ -29,6 +29,8 @@ struct SerializedPackage<'a> {
     name: &'a str,
     version: &'a str,
     id: &'a PackageId,
+    license: Option<&'a str>,
+    license_file: Option<&'a str>,
     source: &'a SourceId,
     dependencies: &'a [Dependency],
     targets: &'a [Target],
@@ -40,11 +42,16 @@ impl Encodable for Package {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         let summary = self.manifest.summary();
         let package_id = summary.package_id();
+        let manmeta = self.manifest.metadata();
+        let license = manmeta.license.as_ref().map(String::as_ref);
+        let license_file = manmeta.license_file.as_ref().map(String::as_ref);
 
         SerializedPackage {
             name: &package_id.name(),
             version: &package_id.version().to_string(),
             id: package_id,
+            license: license,
+            license_file: license_file,
             source: summary.source_id(),
             dependencies: summary.dependencies(),
             targets: &self.manifest.targets(),
@@ -65,9 +72,9 @@ impl Package {
 
     pub fn for_path(manifest_path: &Path, config: &Config) -> CargoResult<Package> {
         let path = manifest_path.parent().unwrap();
-        let source_id = try!(SourceId::for_path(path));
-        let (pkg, _) = try!(ops::read_package(&manifest_path, &source_id,
-                                              config));
+        let source_id = SourceId::for_path(path)?;
+        let (pkg, _) = ops::read_package(&manifest_path, &source_id,
+                                         config)?;
         Ok(pkg)
     }
 
@@ -78,7 +85,7 @@ impl Package {
     pub fn package_id(&self) -> &PackageId { self.manifest.package_id() }
     pub fn root(&self) -> &Path { self.manifest_path.parent().unwrap() }
     pub fn summary(&self) -> &Summary { self.manifest.summary() }
-    pub fn targets(&self) -> &[Target] { self.manifest().targets() }
+    pub fn targets(&self) -> &[Target] { self.manifest.targets() }
     pub fn version(&self) -> &Version { self.package_id().version() }
     pub fn authors(&self) -> &Vec<String> { &self.manifest.metadata().authors }
     pub fn publish(&self) -> bool { self.manifest.publish() }
@@ -98,6 +105,14 @@ impl Package {
                                     .map(|t| (lev_distance(target, t.name()), t))
                                     .filter(|&(d, _)| d < 4);
         matches.min_by_key(|t| t.0).map(|t| t.1)
+    }
+
+    pub fn map_source(self, to_replace: &SourceId, replace_with: &SourceId)
+                      -> Package {
+        Package {
+            manifest: self.manifest.map_source(to_replace, replace_with),
+            manifest_path: self.manifest_path,
+        }
     }
 }
 
@@ -131,7 +146,7 @@ impl<'cfg> PackageSet<'cfg> {
                sources: SourceMap<'cfg>) -> PackageSet<'cfg> {
         PackageSet {
             packages: package_ids.iter().map(|id| {
-                (id.clone(), LazyCell::new(None))
+                (id.clone(), LazyCell::new())
             }).collect(),
             sources: RefCell::new(sources),
         }
@@ -142,20 +157,20 @@ impl<'cfg> PackageSet<'cfg> {
     }
 
     pub fn get(&self, id: &PackageId) -> CargoResult<&Package> {
-        let slot = try!(self.packages.iter().find(|p| p.0 == *id).chain_error(|| {
+        let slot = self.packages.iter().find(|p| p.0 == *id).chain_error(|| {
             internal(format!("couldn't find `{}` in package set", id))
-        }));
+        })?;
         let slot = &slot.1;
         if let Some(pkg) = slot.borrow() {
             return Ok(pkg)
         }
         let mut sources = self.sources.borrow_mut();
-        let source = try!(sources.get_mut(id.source_id()).chain_error(|| {
+        let source = sources.get_mut(id.source_id()).chain_error(|| {
             internal(format!("couldn't find source for `{}`", id))
-        }));
-        let pkg = try!(source.download(id).chain_error(|| {
+        })?;
+        let pkg = source.download(id).chain_error(|| {
             human("unable to get packages from source")
-        }));
+        })?;
         assert!(slot.fill(pkg).is_ok());
         Ok(slot.borrow().unwrap())
     }

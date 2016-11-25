@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use core::{Package, PackageIdSpec};
+use core::{PackageIdSpec, Workspace};
 use ops;
 use util::CargoResult;
 
@@ -12,9 +12,8 @@ pub struct DocOptions<'a> {
     pub compile_opts: ops::CompileOptions<'a>,
 }
 
-pub fn doc(manifest_path: &Path,
-           options: &DocOptions) -> CargoResult<()> {
-    let package = try!(Package::for_path(manifest_path, options.compile_opts.config));
+pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
+    let package = ws.current()?;
 
     let mut lib_names = HashSet::new();
     let mut bin_names = HashSet::new();
@@ -35,36 +34,40 @@ pub fn doc(manifest_path: &Path,
         }
     }
 
-    try!(ops::compile(manifest_path, &options.compile_opts));
+    ops::compile(ws, &options.compile_opts)?;
 
     if options.open_result {
         let name = if options.compile_opts.spec.len() > 1 {
             bail!("Passing multiple packages and `open` is not supported")
         } else if options.compile_opts.spec.len() == 1 {
-            try!(PackageIdSpec::parse(&options.compile_opts.spec[0]))
-                                             .name().replace("-", "_")
+            PackageIdSpec::parse(&options.compile_opts.spec[0])?
+                .name()
+                .replace("-", "_")
         } else {
             match lib_names.iter().chain(bin_names.iter()).nth(0) {
                 Some(s) => s.to_string(),
-                None => return Ok(())
+                None => return Ok(()),
             }
         };
 
         // Don't bother locking here as if this is getting deleted there's
         // nothing we can do about it and otherwise if it's getting overwritten
         // then that's also ok!
-        let target_dir = options.compile_opts.config.target_dir(&package);
+        let mut target_dir = ws.target_dir();
+        if let Some(triple) = options.compile_opts.target {
+            target_dir.push(Path::new(triple).file_stem().unwrap());
+        }
         let path = target_dir.join("doc").join(&name).join("index.html");
         let path = path.into_path_unlocked();
         if fs::metadata(&path).is_ok() {
             let mut shell = options.compile_opts.config.shell();
             match open_docs(&path) {
-                Ok(m) => try!(shell.status("Launching", m)),
+                Ok(m) => shell.status("Launching", m)?,
                 Err(e) => {
-                    try!(shell.warn(
-                            "warning: could not determine a browser to open docs with, tried:"));
+                    shell.warn(
+                            "warning: could not determine a browser to open docs with, tried:")?;
                     for method in e {
-                        try!(shell.warn(format!("\t{}", method)));
+                        shell.warn(format!("\t{}", method))?;
                     }
                 }
             }
@@ -79,18 +82,17 @@ fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
     use std::env;
     let mut methods = Vec::new();
     // trying $BROWSER
-    match env::var("BROWSER"){
-        Ok(name) => match Command::new(name).arg(path).status() {
+    if let Ok(name) = env::var("BROWSER") {
+        match Command::new(name).arg(path).status() {
             Ok(_) => return Ok("$BROWSER"),
-            Err(_) => methods.push("$BROWSER")
-        },
-        Err(_) => () // Do nothing here if $BROWSER is not found
+            Err(_) => methods.push("$BROWSER"),
+        }
     }
 
     for m in ["xdg-open", "gnome-open", "kde-open"].iter() {
         match Command::new(m).arg(path).status() {
             Ok(_) => return Ok(m),
-            Err(_) => methods.push(m)
+            Err(_) => methods.push(m),
         }
     }
 
@@ -99,9 +101,9 @@ fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
 
 #[cfg(target_os = "windows")]
 fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
-    match Command::new("cmd").arg("/C").arg("start").arg("").arg(path).status() {
-        Ok(_) => return Ok("cmd /C start"),
-        Err(_) => return Err(vec!["cmd /C start"])
+    match Command::new("cmd").arg("/C").arg(path).status() {
+        Ok(_) => return Ok("cmd /C"),
+        Err(_) => return Err(vec!["cmd /C"]),
     };
 }
 
@@ -109,6 +111,6 @@ fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
 fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
     match Command::new("open").arg(path).status() {
         Ok(_) => return Ok("open"),
-        Err(_) => return Err(vec!["open"])
+        Err(_) => return Err(vec!["open"]),
     };
 }

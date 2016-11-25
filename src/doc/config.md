@@ -21,7 +21,7 @@ With this structure you can specify local configuration per-project, and even
 possibly check it into version control. You can also specify personal default
 with a configuration file in your home directory.
 
-# Configuration Format
+# Configuration format
 
 All configuration is currently in the [TOML format][toml] (like the manifest),
 with simple key-value pairs inside of sections (tables) which all get merged
@@ -41,7 +41,7 @@ given. Relative paths are resolved relative to the parent directory of the
 
 ```toml
 # An array of paths to local repositories which are to be used as overrides for
-# dependencies. For more information see the Cargo Guide.
+# dependencies. For more information see the Specifying Dependencies guide.
 paths = ["/path/to/override"]
 
 [cargo-new]
@@ -51,8 +51,9 @@ paths = ["/path/to/override"]
 name = "..."
 email = "..."
 
-# By default `cargo new` will initialize a new git repository. This key can be
-# set to `none` to disable this behavior.
+# By default `cargo new` will initialize a new Git repository. This key can be
+# set to `hg` to create a Mercurial repository, or `none` to disable this
+# behavior.
 vcs = "none"
 
 # For the following sections, $triple refers to any valid target triple, not the
@@ -68,6 +69,9 @@ linker = ".."
 # Similar to the above linker configuration, but this only applies to
 # when the `$triple` is being compiled for.
 linker = ".."
+# custom flags to pass to all compiler invocations that target $triple
+# this value overrides build.rustflags when both are present
+rustflags = ["..", ".."]
 
 # Configuration keys related to the registry
 [registry]
@@ -75,11 +79,12 @@ index = "..."   # URL of the registry index (defaults to the central repository)
 token = "..."   # Access token (found on the central repo’s website)
 
 [http]
-proxy = "..."     # HTTP proxy to use for HTTP requests (defaults to none)
-timeout = 60000   # Timeout for each HTTP request, in milliseconds
+proxy = "..."       # HTTP proxy to use for HTTP requests (defaults to none)
+timeout = 60000     # Timeout for each HTTP request, in milliseconds
+cainfo = "cert.pem" # Path to Certificate Authority (CA) bundle (optional)
 
 [build]
-jobs = 1                  # number of jobs to run by default (default to # cpus)
+jobs = 1                  # number of parallel jobs, defaults to # of CPUs
 rustc = "rustc"           # the rust compiler tool
 rustdoc = "rustdoc"       # the doc generator tool
 target = "triple"         # build for the target triple
@@ -93,9 +98,18 @@ color = 'auto'         # whether cargo colorizes output
 # Network configuration
 [net]
 retry = 2 # number of times a network call will automatically retried
+
+# Alias cargo commands. The first 3 aliases are built in. If your
+# command requires grouped whitespace use the list format.
+[alias]
+b = "build"
+t = "test"
+r = "run"
+rr = "run --release"
+space_example = ["run", "--release", "--", "\"command list\""]
 ```
 
-# Environment Variables
+# Environment variables
 
 Cargo can also be configured through environment variables in addition to the
 TOML syntax above. For each configuration key above of the form `foo.bar` the

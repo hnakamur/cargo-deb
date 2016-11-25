@@ -1,12 +1,12 @@
 use std::fmt::{self, Debug, Formatter};
-use std::hash::{Hash, Hasher, SipHasher};
 
 use url::Url;
 
 use core::source::{Source, SourceId};
 use core::GitReference;
 use core::{Package, PackageId, Summary, Registry, Dependency};
-use util::{CargoResult, Config, FileLock, to_hex};
+use util::{CargoResult, Config};
+use util::hex::short_hash;
 use sources::PathSource;
 use sources::git::utils::{GitRemote, GitRevision};
 
@@ -18,7 +18,6 @@ pub struct GitSource<'cfg> {
     source_id: SourceId,
     path_source: Option<PathSource<'cfg>>,
     rev: Option<GitRevision>,
-    checkout_lock: Option<FileLock>,
     ident: String,
     config: &'cfg Config,
 }
@@ -42,7 +41,6 @@ impl<'cfg> GitSource<'cfg> {
             source_id: source_id.clone(),
             path_source: None,
             rev: None,
-            checkout_lock: None,
             ident: ident,
             config: config,
         }
@@ -52,15 +50,13 @@ impl<'cfg> GitSource<'cfg> {
 
     pub fn read_packages(&mut self) -> CargoResult<Vec<Package>> {
         if self.path_source.is_none() {
-            try!(self.update());
+            self.update()?;
         }
         self.path_source.as_mut().unwrap().read_packages()
     }
 }
 
 fn ident(url: &Url) -> String {
-    let mut hasher = SipHasher::new_with_keys(0,0);
-
     let url = canonicalize_url(url);
     let ident = url.path_segments().and_then(|mut s| s.next_back()).unwrap_or("");
 
@@ -70,8 +66,7 @@ fn ident(url: &Url) -> String {
         ident
     };
 
-    url.hash(&mut hasher);
-    format!("{}-{}", ident, to_hex(hasher.finish()))
+    format!("{}-{}", ident, short_hash(&url))
 }
 
 // Some hacks and heuristics for making equivalent URLs hash the same
@@ -79,7 +74,9 @@ pub fn canonicalize_url(url: &Url) -> Url {
     let mut url = url.clone();
 
     // Strip a trailing slash
-    url.path_segments_mut().unwrap().pop_if_empty();
+    if url.path().ends_with('/') {
+        url.path_segments_mut().unwrap().pop_if_empty();
+    }
 
     // HACKHACK: For github URL's specifically just lowercase
     // everything.  GitHub treats both the same, but they hash
@@ -107,7 +104,7 @@ pub fn canonicalize_url(url: &Url) -> Url {
 
 impl<'cfg> Debug for GitSource<'cfg> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        try!(write!(f, "git repo at {}", self.remote.url()));
+        write!(f, "git repo at {}", self.remote.url())?;
 
         match self.reference.to_ref_string() {
             Some(s) => write!(f, " ({})", s),
@@ -126,31 +123,13 @@ impl<'cfg> Registry for GitSource<'cfg> {
 
 impl<'cfg> Source for GitSource<'cfg> {
     fn update(&mut self) -> CargoResult<()> {
-        // First, lock both the global database and checkout locations that
-        // we're going to use. We may be performing a fetch into these locations
-        // so we need writable access.
-        let db_lock = format!(".cargo-lock-{}", self.ident);
-        let db_lock = try!(self.config.git_db_path()
-                                      .open_rw(&db_lock, self.config,
-                                               "the git database"));
-        let db_path = db_lock.parent().join(&self.ident);
+        let lock = self.config.git_path()
+            .open_rw(".cargo-lock-git", self.config, "the git checkouts")?;
 
-        let reference_path = match self.source_id.git_reference() {
-            Some(&GitReference::Branch(ref s)) |
-            Some(&GitReference::Tag(ref s)) |
-            Some(&GitReference::Rev(ref s)) => s,
-            None => panic!("not a git source"),
-        };
-        let checkout_lock = format!(".cargo-lock-{}-{}", self.ident,
-                                    reference_path);
-        let checkout_lock = try!(self.config.git_checkout_path()
-                                     .join(&self.ident)
-                                     .open_rw(&checkout_lock, self.config,
-                                              "the git checkout"));
-        let checkout_path = checkout_lock.parent().join(reference_path);
+        let db_path = lock.parent().join("db").join(&self.ident);
 
         // Resolve our reference to an actual revision, and check if the
-        // databaes already has that revision. If it does, we just load a
+        // database already has that revision. If it does, we just load a
         // database pinned at that revision, and if we don't we issue an update
         // to try to find the revision.
         let actual_rev = self.remote.rev_for(&db_path, &self.reference);
@@ -158,34 +137,35 @@ impl<'cfg> Source for GitSource<'cfg> {
                             self.source_id.precise().is_none();
 
         let (repo, actual_rev) = if should_update {
-            try!(self.config.shell().status("Updating",
-                format!("git repository `{}`", self.remote.url())));
+            self.config.shell().status("Updating",
+                format!("git repository `{}`", self.remote.url()))?;
 
             trace!("updating git source `{:?}`", self.remote);
 
-            let repo = try!(self.remote.checkout(&db_path, &self.config));
-            let rev = try!(repo.rev_for(&self.reference));
+            let repo = self.remote.checkout(&db_path, &self.config)?;
+            let rev = repo.rev_for(&self.reference)?;
             (repo, rev)
         } else {
-            (try!(self.remote.db_at(&db_path)), actual_rev.unwrap())
+            (self.remote.db_at(&db_path)?, actual_rev.unwrap())
         };
+
+        let checkout_path = lock.parent().join("checkouts")
+            .join(&self.ident).join(actual_rev.to_string());
 
         // Copy the database to the checkout location. After this we could drop
         // the lock on the database as we no longer needed it, but we leave it
         // in scope so the destructors here won't tamper with too much.
-        try!(repo.copy_to(actual_rev.clone(), &checkout_path, &self.config));
+        // Checkout is immutable, so we don't need to protect it with a lock once
+        // it is created.
+        repo.copy_to(actual_rev.clone(), &checkout_path, &self.config)?;
 
         let source_id = self.source_id.with_precise(Some(actual_rev.to_string()));
         let path_source = PathSource::new_recursive(&checkout_path,
                                                     &source_id,
                                                     self.config);
 
-        // Cache the information we just learned, and crucially also cache the
-        // lock on the checkout location. We wouldn't want someone else to come
-        // swipe our checkout location to another revision while we're using it!
         self.path_source = Some(path_source);
         self.rev = Some(actual_rev);
-        self.checkout_lock = Some(checkout_lock);
         self.path_source.as_mut().unwrap().update()
     }
 

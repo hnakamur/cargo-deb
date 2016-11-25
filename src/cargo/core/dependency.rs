@@ -3,10 +3,11 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use semver::VersionReq;
+use semver::ReqParseError;
 use rustc_serialize::{Encoder, Encodable};
 
 use core::{SourceId, Summary, PackageId};
-use util::{CargoError, CargoResult, Cfg, CfgExpr, ChainError, human};
+use util::{CargoError, CargoResult, Cfg, CfgExpr, ChainError, human, Config};
 
 /// Information about a dependency requested by a Cargo manifest.
 /// Cheap to copy.
@@ -21,7 +22,7 @@ pub struct DependencyInner {
     name: String,
     source_id: SourceId,
     req: VersionReq,
-    specified_req: Option<String>,
+    specified_req: bool,
     kind: Kind,
     only_match_name: bool,
 
@@ -87,20 +88,64 @@ impl Encodable for Kind {
 
 impl DependencyInner {
     /// Attempt to create a `Dependency` from an entry in the manifest.
+    ///
+    /// The `deprecated_extra` information is set to `Some` when this method
+    /// should *also* parse historically deprecated semver requirements. This
+    /// information allows providing diagnostic information about what's going
+    /// on.
+    ///
+    /// If set to `None`, then historically deprecated semver requirements will
+    /// all be rejected.
     pub fn parse(name: &str,
                  version: Option<&str>,
-                 source_id: &SourceId) -> CargoResult<DependencyInner> {
-        let version_req = match version {
-            Some(v) => try!(VersionReq::parse(v)),
-            None => VersionReq::any()
+                 source_id: &SourceId,
+                 deprecated_extra: Option<(&PackageId, &Config)>)
+                 -> CargoResult<DependencyInner> {
+        let (specified_req, version_req) = match version {
+            Some(v) => (true, DependencyInner::parse_with_deprecated(v, deprecated_extra)?),
+            None => (false, VersionReq::any())
         };
 
         Ok(DependencyInner {
             only_match_name: false,
             req: version_req,
-            specified_req: version.map(|s| s.to_string()),
+            specified_req: specified_req,
             .. DependencyInner::new_override(name, source_id)
         })
+    }
+
+    fn parse_with_deprecated(req: &str,
+                             extra: Option<(&PackageId, &Config)>)
+                             -> CargoResult<VersionReq> {
+        match VersionReq::parse(req) {
+            Err(e) => {
+                let (inside, config) = match extra {
+                    Some(pair) => pair,
+                    None => return Err(e.into()),
+                };
+                match e {
+                    ReqParseError::DeprecatedVersionRequirement(requirement) => {
+                        let msg = format!("\
+parsed version requirement `{}` is no longer valid
+
+Previous versions of Cargo accepted this malformed requirement,
+but it is being deprecated. This was found when parsing the manifest
+of {} {}, and the correct version requirement is `{}`.
+
+This will soon become a hard error, so it's either recommended to
+update to a fixed version or contact the upstream maintainer about
+this warning.
+",
+	req, inside.name(), inside.version(), requirement);
+                        config.shell().warn(&msg)?;
+
+                        Ok(requirement)
+                    }
+                    e => Err(From::from(e)),
+                }
+            },
+            Ok(v) => Ok(v),
+        }
     }
 
     pub fn new_override(name: &str, source_id: &SourceId) -> DependencyInner {
@@ -113,7 +158,7 @@ impl DependencyInner {
             optional: false,
             features: Vec::new(),
             default_features: true,
-            specified_req: None,
+            specified_req: false,
             platform: None,
         }
     }
@@ -122,9 +167,7 @@ impl DependencyInner {
     pub fn name(&self) -> &str { &self.name }
     pub fn source_id(&self) -> &SourceId { &self.source_id }
     pub fn kind(&self) -> Kind { self.kind }
-    pub fn specified_req(&self) -> Option<&str> {
-        self.specified_req.as_ref().map(|s| &s[..])
-    }
+    pub fn specified_req(&self) -> bool { self.specified_req }
 
     /// If none, this dependency must be built for all platforms.
     /// If some, it must only be built for matching platforms.
@@ -218,8 +261,20 @@ impl Dependency {
     /// Attempt to create a `Dependency` from an entry in the manifest.
     pub fn parse(name: &str,
                  version: Option<&str>,
-                 source_id: &SourceId) -> CargoResult<Dependency> {
-        DependencyInner::parse(name, version, source_id).map(|di| {
+                 source_id: &SourceId,
+                 inside: &PackageId,
+                 config: &Config) -> CargoResult<Dependency> {
+        let arg = Some((inside, config));
+        DependencyInner::parse(name, version, source_id, arg).map(|di| {
+            di.into_dependency()
+        })
+    }
+
+    /// Attempt to create a `Dependency` from an entry in the manifest.
+    pub fn parse_no_deprecated(name: &str,
+                               version: Option<&str>,
+                               source_id: &SourceId) -> CargoResult<Dependency> {
+        DependencyInner::parse(name, version, source_id, None).map(|di| {
             di.into_dependency()
         })
     }
@@ -234,7 +289,7 @@ impl Dependency {
     pub fn name(&self) -> &str { self.inner.name() }
     pub fn source_id(&self) -> &SourceId { self.inner.source_id() }
     pub fn kind(&self) -> Kind { self.inner.kind() }
-    pub fn specified_req(&self) -> Option<&str> { self.inner.specified_req() }
+    pub fn specified_req(&self) -> bool { self.inner.specified_req() }
 
     /// If none, this dependencies must be built for all platforms.
     /// If some, it must only be built for the specified platform.
@@ -251,6 +306,7 @@ impl Dependency {
     pub fn is_transitive(&self) -> bool { self.inner.is_transitive() }
     pub fn is_build(&self) -> bool { self.inner.is_build() }
     pub fn is_optional(&self) -> bool { self.inner.is_optional() }
+
     /// Returns true if the default features of the dependency are requested.
     pub fn uses_default_features(&self) -> bool {
         self.inner.uses_default_features()
@@ -264,6 +320,17 @@ impl Dependency {
     /// Returns true if the package (`id`) can fulfill this dependency request.
     pub fn matches_id(&self, id: &PackageId) -> bool {
         self.inner.matches_id(id)
+    }
+
+    pub fn map_source(self, to_replace: &SourceId, replace_with: &SourceId)
+                      -> Dependency {
+        if self.source_id() != to_replace {
+            self
+        } else {
+            Rc::try_unwrap(self.inner).unwrap_or_else(|r| (*r).clone())
+               .set_source_id(replace_with.clone())
+               .into_dependency()
+        }
     }
 }
 

@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf, Display};
 
 use term::color::CYAN;
 use fs2::{FileExt, lock_contended_error};
+#[allow(unused_imports)]
+use libc;
 
 use util::{CargoResult, ChainError, Config, human};
 
@@ -48,16 +50,16 @@ impl FileLock {
     /// needs to be cleared out as it may be corrupt.
     pub fn remove_siblings(&self) -> io::Result<()> {
         let path = self.path();
-        for entry in try!(path.parent().unwrap().read_dir()) {
-            let entry = try!(entry);
+        for entry in path.parent().unwrap().read_dir()? {
+            let entry = entry?;
             if Some(&entry.file_name()[..]) == path.file_name() {
                 continue
             }
-            let kind = try!(entry.file_type());
+            let kind = entry.file_type()?;
             if kind.is_dir() {
-                try!(fs::remove_dir_all(entry.path()));
+                fs::remove_dir_all(entry.path())?;
             } else {
-                try!(fs::remove_file(entry.path()));
+                fs::remove_file(entry.path())?;
             }
         }
         Ok(())
@@ -202,26 +204,26 @@ impl Filesystem {
         // If we want an exclusive lock then if we fail because of NotFound it's
         // likely because an intermediate directory didn't exist, so try to
         // create the directory and then continue.
-        let f = try!(opts.open(&path).or_else(|e| {
+        let f = opts.open(&path).or_else(|e| {
             if e.kind() == io::ErrorKind::NotFound && state == State::Exclusive {
-                try!(create_dir_all(path.parent().unwrap()));
+                create_dir_all(path.parent().unwrap())?;
                 opts.open(&path)
             } else {
                 Err(e)
             }
         }).chain_error(|| {
             human(format!("failed to open: {}", path.display()))
-        }));
+        })?;
         match state {
             State::Exclusive => {
-                try!(acquire(config, msg, &path,
-                             &|| f.try_lock_exclusive(),
-                             &|| f.lock_exclusive()));
+                acquire(config, msg, &path,
+                        &|| f.try_lock_exclusive(),
+                        &|| f.lock_exclusive())?;
             }
             State::Shared => {
-                try!(acquire(config, msg, &path,
-                             &|| f.try_lock_shared(),
-                             &|| f.lock_shared()));
+                acquire(config, msg, &path,
+                        &|| f.try_lock_shared(),
+                        &|| f.lock_shared())?;
             }
             State::Unlocked => {}
 
@@ -267,6 +269,13 @@ fn acquire(config: &Config,
 
     match try() {
         Ok(()) => return Ok(()),
+
+        // Like above, where we ignore file locking on NFS mounts on Linux, we
+        // do the same on OSX here. Note that ENOTSUP is an OSX_specific
+        // constant.
+        #[cfg(target_os = "macos")]
+        Err(ref e) if e.raw_os_error() == Some(libc::ENOTSUP) => return Ok(()),
+
         Err(e) => {
             if e.raw_os_error() != lock_contended_error().raw_os_error() {
                 return Err(human(e)).chain_error(|| {
@@ -276,18 +285,17 @@ fn acquire(config: &Config,
         }
     }
     let msg = format!("waiting for file lock on {}", msg);
-    try!(config.shell().err().say_status("Blocking", &msg, CYAN, true));
+    config.shell().err().say_status("Blocking", &msg, CYAN, true)?;
 
     return block().chain_error(|| {
         human(format!("failed to lock file: {}", path.display()))
     });
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
     fn is_on_nfs_mount(path: &Path) -> bool {
         use std::ffi::CString;
         use std::mem;
         use std::os::unix::prelude::*;
-        use libc;
 
         let path = match CString::new(path.as_os_str().as_bytes()) {
             Ok(path) => path,
@@ -298,11 +306,11 @@ fn acquire(config: &Config,
             let mut buf: libc::statfs = mem::zeroed();
             let r = libc::statfs(path.as_ptr(), &mut buf);
 
-            r == 0 && buf.f_type == libc::NFS_SUPER_MAGIC
+            r == 0 && buf.f_type as u32 == libc::NFS_SUPER_MAGIC as u32
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(any(not(target_os = "linux"), target_env = "musl"))]
     fn is_on_nfs_mount(_path: &Path) -> bool {
         false
     }

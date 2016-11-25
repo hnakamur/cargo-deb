@@ -1,6 +1,7 @@
-use std::cell::{RefCell, RefMut, Ref, Cell};
+use std::cell::{RefCell, RefMut, Cell};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
-use std::collections::hash_map::{HashMap};
+use std::collections::hash_map::HashMap;
+use std::collections::HashSet;
 use std::env;
 use std::fmt;
 use std::fs::{self, File};
@@ -13,9 +14,9 @@ use std::str::FromStr;
 use rustc_serialize::{Encodable,Encoder};
 use toml;
 use core::shell::{Verbosity, ColorConfig};
-use core::{MultiShell, Package};
+use core::MultiShell;
 use util::{CargoResult, CargoError, ChainError, Rustc, internal, human};
-use util::Filesystem;
+use util::{Filesystem, LazyCell};
 
 use util::toml as cargo_toml;
 
@@ -24,58 +25,48 @@ use self::ConfigValue as CV;
 pub struct Config {
     home_path: Filesystem,
     shell: RefCell<MultiShell>,
-    rustc_info: Rustc,
-    values: RefCell<HashMap<String, ConfigValue>>,
-    values_loaded: Cell<bool>,
+    rustc: LazyCell<Rustc>,
+    values: LazyCell<HashMap<String, ConfigValue>>,
     cwd: PathBuf,
-    rustc: PathBuf,
-    rustdoc: PathBuf,
-    target_dir: RefCell<Option<Filesystem>>,
+    rustdoc: LazyCell<PathBuf>,
+    extra_verbose: Cell<bool>,
+    frozen: Cell<bool>,
+    locked: Cell<bool>,
 }
 
 impl Config {
     pub fn new(shell: MultiShell,
                cwd: PathBuf,
-               homedir: PathBuf) -> CargoResult<Config> {
-        let mut cfg = Config {
+               homedir: PathBuf) -> Config {
+        Config {
             home_path: Filesystem::new(homedir),
             shell: RefCell::new(shell),
-            rustc_info: Rustc::blank(),
+            rustc: LazyCell::new(),
             cwd: cwd,
-            values: RefCell::new(HashMap::new()),
-            values_loaded: Cell::new(false),
-            rustc: PathBuf::from("rustc"),
-            rustdoc: PathBuf::from("rustdoc"),
-            target_dir: RefCell::new(None),
-        };
-
-        try!(cfg.scrape_tool_config());
-        try!(cfg.scrape_rustc_version());
-        try!(cfg.scrape_target_dir_config());
-
-        Ok(cfg)
+            values: LazyCell::new(),
+            rustdoc: LazyCell::new(),
+            extra_verbose: Cell::new(false),
+            frozen: Cell::new(false),
+            locked: Cell::new(false),
+        }
     }
 
     pub fn default() -> CargoResult<Config> {
         let shell = ::shell(Verbosity::Verbose, ColorConfig::Auto);
-        let cwd = try!(env::current_dir().chain_error(|| {
+        let cwd = env::current_dir().chain_error(|| {
             human("couldn't get the current directory of the process")
-        }));
-        let homedir = try!(homedir(&cwd).chain_error(|| {
+        })?;
+        let homedir = homedir(&cwd).chain_error(|| {
             human("Cargo couldn't find your home directory. \
                   This probably means that $HOME was not set.")
-        }));
-        Config::new(shell, cwd, homedir)
+        })?;
+        Ok(Config::new(shell, cwd, homedir))
     }
 
     pub fn home(&self) -> &Filesystem { &self.home_path }
 
-    pub fn git_db_path(&self) -> Filesystem {
-        self.home_path.join("git").join("db")
-    }
-
-    pub fn git_checkout_path(&self) -> Filesystem {
-        self.home_path.join("git").join("checkouts")
+    pub fn git_path(&self) -> Filesystem {
+        self.home_path.join("git")
     }
 
     pub fn registry_index_path(&self) -> Filesystem {
@@ -94,34 +85,33 @@ impl Config {
         self.shell.borrow_mut()
     }
 
-    pub fn rustc(&self) -> &Path { &self.rustc }
+    pub fn rustdoc(&self) -> CargoResult<&Path> {
+        self.rustdoc.get_or_try_init(|| self.get_tool("rustdoc")).map(AsRef::as_ref)
+    }
 
-    pub fn rustdoc(&self) -> &Path { &self.rustdoc }
+    pub fn rustc(&self) -> CargoResult<&Rustc> {
+        self.rustc.get_or_try_init(|| Rustc::new(self.get_tool("rustc")?))
+    }
 
-    pub fn rustc_info(&self) -> &Rustc { &self.rustc_info }
-
-    pub fn values(&self) -> CargoResult<Ref<HashMap<String, ConfigValue>>> {
-        if !self.values_loaded.get() {
-            try!(self.load_values());
-            self.values_loaded.set(true);
-        }
-        Ok(self.values.borrow())
+    pub fn values(&self) -> CargoResult<&HashMap<String, ConfigValue>> {
+        self.values.get_or_try_init(|| self.load_values())
     }
 
     pub fn cwd(&self) -> &Path { &self.cwd }
 
-    pub fn target_dir(&self, pkg: &Package) -> Filesystem {
-        self.target_dir.borrow().clone().unwrap_or_else(|| {
-            Filesystem::new(pkg.root().join("target"))
-        })
-    }
-
-    pub fn set_target_dir(&self, path: Filesystem) {
-        *self.target_dir.borrow_mut() = Some(path);
+    pub fn target_dir(&self) -> CargoResult<Option<Filesystem>> {
+        if let Some(dir) = env::var_os("CARGO_TARGET_DIR") {
+            Ok(Some(Filesystem::new(self.cwd.join(dir))))
+        } else if let Some(val) = self.get_path("build.target-dir")? {
+            let val = self.cwd.join(val.val);
+            Ok(Some(Filesystem::new(val)))
+        } else {
+            Ok(None)
+        }
     }
 
     fn get(&self, key: &str) -> CargoResult<Option<ConfigValue>> {
-        let vals = try!(self.values());
+        let vals = self.values()?;
         let mut parts = key.split('.').enumerate();
         let mut val = match vals.get(parts.next().unwrap().1) {
             Some(val) => val,
@@ -162,7 +152,7 @@ impl Config {
         match env::var(&format!("CARGO_{}", key)) {
             Ok(value) => {
                 Ok(Some(Value {
-                    val: try!(value.parse()),
+                    val: value.parse()?,
                     definition: Definition::Environment,
                 }))
             }
@@ -171,10 +161,10 @@ impl Config {
     }
 
     pub fn get_string(&self, key: &str) -> CargoResult<Option<Value<String>>> {
-        if let Some(v) = try!(self.get_env(key)) {
+        if let Some(v) = self.get_env(key)? {
             return Ok(Some(v))
         }
-        match try!(self.get(key)) {
+        match self.get(key)? {
             Some(CV::String(i, path)) => {
                 Ok(Some(Value {
                     val: i,
@@ -187,10 +177,10 @@ impl Config {
     }
 
     pub fn get_bool(&self, key: &str) -> CargoResult<Option<Value<bool>>> {
-        if let Some(v) = try!(self.get_env(key)) {
+        if let Some(v) = self.get_env(key)? {
             return Ok(Some(v))
         }
-        match try!(self.get(key)) {
+        match self.get(key)? {
             Some(CV::Boolean(b, path)) => {
                 Ok(Some(Value {
                     val: b,
@@ -203,9 +193,9 @@ impl Config {
     }
 
     pub fn get_path(&self, key: &str) -> CargoResult<Option<Value<PathBuf>>> {
-        if let Some(val) = try!(self.get_string(&key)) {
-            let is_path = val.val.contains("/") ||
-                          (cfg!(windows) && val.val.contains("\\"));
+        if let Some(val) = self.get_string(&key)? {
+            let is_path = val.val.contains('/') ||
+                          (cfg!(windows) && val.val.contains('\\'));
             let path = if is_path {
                 val.definition.root(self).join(val.val)
             } else {
@@ -223,7 +213,7 @@ impl Config {
 
     pub fn get_list(&self, key: &str)
                     -> CargoResult<Option<Value<Vec<(String, PathBuf)>>>> {
-        match try!(self.get(key)) {
+        match self.get(key)? {
             Some(CV::List(i, path)) => {
                 Ok(Some(Value {
                     val: i,
@@ -237,7 +227,7 @@ impl Config {
 
     pub fn get_table(&self, key: &str)
                     -> CargoResult<Option<Value<HashMap<String, CV>>>> {
-        match try!(self.get(key)) {
+        match self.get(key)? {
             Some(CV::Table(i, path)) => {
                 Ok(Some(Value {
                     val: i,
@@ -250,10 +240,10 @@ impl Config {
     }
 
     pub fn get_i64(&self, key: &str) -> CargoResult<Option<Value<i64>>> {
-        if let Some(v) = try!(self.get_env(key)) {
+        if let Some(v) = self.get_env(key)? {
             return Ok(Some(v))
         }
-        match try!(self.get(key)) {
+        match self.get(key)? {
             Some(CV::Integer(i, path)) => {
                 Ok(Some(Value {
                     val: i,
@@ -266,7 +256,7 @@ impl Config {
     }
 
     pub fn net_retry(&self) -> CargoResult<i64> {
-        match try!(self.get_i64("net.retry")) {
+        match self.get_i64("net.retry")? {
             Some(v) => {
                 let value = v.val;
                 if value < 0 {
@@ -281,17 +271,24 @@ impl Config {
     }
 
     pub fn expected<T>(&self, ty: &str, key: &str, val: CV) -> CargoResult<T> {
-        val.expected(ty).map_err(|e| {
+        val.expected(ty, key).map_err(|e| {
             human(format!("invalid configuration for key `{}`\n{}", key, e))
         })
     }
 
-    pub fn configure_shell(&self,
-                           verbose: Option<bool>,
-                           quiet: Option<bool>,
-                           color: &Option<String>) -> CargoResult<()> {
-        let cfg_verbose = try!(self.get_bool("term.verbose")).map(|v| v.val);
-        let cfg_color = try!(self.get_string("term.color")).map(|v| v.val);
+    pub fn configure(&self,
+                     verbose: u32,
+                     quiet: Option<bool>,
+                     color: &Option<String>,
+                     frozen: bool,
+                     locked: bool) -> CargoResult<()> {
+        let extra_verbose = verbose >= 2;
+        let verbose = if verbose == 0 {None} else {Some(true)};
+
+        // Ignore errors in the configuration files.
+        let cfg_verbose = self.get_bool("term.verbose").unwrap_or(None).map(|v| v.val);
+        let cfg_color = self.get_string("term.color").unwrap_or(None).map(|v| v.val);
+
         let color = color.as_ref().or(cfg_color.as_ref());
 
         let verbosity = match (verbose, cfg_verbose, quiet) {
@@ -319,57 +316,52 @@ impl Config {
         };
 
         self.shell().set_verbosity(verbosity);
-        try!(self.shell().set_color_config(color.map(|s| &s[..])));
+        self.shell().set_color_config(color.map(|s| &s[..]))?;
+        self.extra_verbose.set(extra_verbose);
+        self.frozen.set(frozen);
+        self.locked.set(locked);
 
         Ok(())
     }
 
-    fn load_values(&self) -> CargoResult<()> {
+    pub fn extra_verbose(&self) -> bool {
+        self.extra_verbose.get()
+    }
+
+    pub fn network_allowed(&self) -> bool {
+        !self.frozen.get()
+    }
+
+    pub fn lock_update_allowed(&self) -> bool {
+        !self.frozen.get() && !self.locked.get()
+    }
+
+    fn load_values(&self) -> CargoResult<HashMap<String, ConfigValue>> {
         let mut cfg = CV::Table(HashMap::new(), PathBuf::from("."));
 
-        try!(walk_tree(&self.cwd, |mut file, path| {
+        walk_tree(&self.cwd, |mut file, path| {
             let mut contents = String::new();
-            try!(file.read_to_string(&mut contents));
-            let table = try!(cargo_toml::parse(&contents, &path).chain_error(|| {
+            file.read_to_string(&mut contents)?;
+            let table = cargo_toml::parse(&contents,
+                                               &path,
+                                               self).chain_error(|| {
                 human(format!("could not parse TOML configuration in `{}`",
                               path.display()))
-            }));
+            })?;
             let toml = toml::Value::Table(table);
-            let value = try!(CV::from_toml(&path, toml).chain_error(|| {
+            let value = CV::from_toml(&path, toml).chain_error(|| {
                 human(format!("failed to load TOML configuration from `{}`",
                               path.display()))
-            }));
-            try!(cfg.merge(value));
+            })?;
+            cfg.merge(value)?;
             Ok(())
-        }).chain_error(|| human("Couldn't load Cargo configuration")));
+        }).chain_error(|| human("Couldn't load Cargo configuration"))?;
 
 
-        *self.values.borrow_mut() = match cfg {
-            CV::Table(map, _) => map,
+        match cfg {
+            CV::Table(map, _) => Ok(map),
             _ => unreachable!(),
-        };
-        Ok(())
-    }
-
-    fn scrape_tool_config(&mut self) -> CargoResult<()> {
-        self.rustc = try!(self.get_tool("rustc"));
-        self.rustdoc = try!(self.get_tool("rustdoc"));
-        Ok(())
-    }
-
-    fn scrape_rustc_version(&mut self) -> CargoResult<()> {
-        self.rustc_info = try!(Rustc::new(&self.rustc));
-        Ok(())
-    }
-
-    fn scrape_target_dir_config(&mut self) -> CargoResult<()> {
-        if let Some(dir) = env::var_os("CARGO_TARGET_DIR") {
-            *self.target_dir.borrow_mut() = Some(Filesystem::new(self.cwd.join(dir)));
-        } else if let Some(val) = try!(self.get_path("build.target-dir")) {
-            let val = self.cwd.join(val.val);
-            *self.target_dir.borrow_mut() = Some(Filesystem::new(val));
         }
-        Ok(())
     }
 
     fn get_tool(&self, tool: &str) -> CargoResult<PathBuf> {
@@ -379,7 +371,7 @@ impl Config {
         }
 
         let var = format!("build.{}", tool);
-        if let Some(tool_path) = try!(self.get_path(&var)) {
+        if let Some(tool_path) = self.get_path(&var)? {
             return Ok(tool_path.val);
         }
 
@@ -422,10 +414,10 @@ impl fmt::Debug for ConfigValue {
             CV::String(ref s, ref path) => write!(f, "{} (from {})", s,
                                                   path.display()),
             CV::List(ref list, ref path) => {
-                try!(write!(f, "["));
+                write!(f, "[")?;
                 for (i, &(ref s, ref path)) in list.iter().enumerate() {
-                    if i > 0 { try!(write!(f, ", ")); }
-                    try!(write!(f, "{} (from {})", s, path.display()));
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{} (from {})", s, path.display())?;
                 }
                 write!(f, "] (from {})", path.display())
             }
@@ -456,21 +448,21 @@ impl ConfigValue {
             toml::Value::Boolean(b) => Ok(CV::Boolean(b, path.to_path_buf())),
             toml::Value::Integer(i) => Ok(CV::Integer(i, path.to_path_buf())),
             toml::Value::Array(val) => {
-                Ok(CV::List(try!(val.into_iter().map(|toml| {
+                Ok(CV::List(val.into_iter().map(|toml| {
                     match toml {
                         toml::Value::String(val) => Ok((val, path.to_path_buf())),
                         v => Err(human(format!("expected string but found {} \
                                                 in list", v.type_str()))),
                     }
-                }).collect::<CargoResult<_>>()), path.to_path_buf()))
+                }).collect::<CargoResult<_>>()?, path.to_path_buf()))
             }
             toml::Value::Table(val) => {
-                Ok(CV::Table(try!(val.into_iter().map(|(key, value)| {
-                    let value = try!(CV::from_toml(path, value).chain_error(|| {
+                Ok(CV::Table(val.into_iter().map(|(key, value)| {
+                    let value = CV::from_toml(path, value).chain_error(|| {
                         human(format!("failed to parse key `{}`", key))
-                    }));
+                    })?;
                     Ok((key, value))
-                }).collect::<CargoResult<_>>()), path.to_path_buf()))
+                }).collect::<CargoResult<_>>()?, path.to_path_buf()))
             }
             v => bail!("found TOML configuration value of unknown type `{}`",
                        v.type_str()),
@@ -493,7 +485,7 @@ impl ConfigValue {
                         Occupied(mut entry) => {
                             let path = value.definition_path().to_path_buf();
                             let entry = entry.get_mut();
-                            try!(entry.merge(value).chain_error(|| {
+                            entry.merge(value).chain_error(|| {
                                 human(format!("failed to merge key `{}` between \
                                                files:\n  \
                                                file 1: {}\n  \
@@ -502,7 +494,7 @@ impl ConfigValue {
                                               entry.definition_path().display(),
                                               path.display()))
 
-                            }));
+                            })?;
                         }
                         Vacant(entry) => { entry.insert(value); }
                     };
@@ -517,38 +509,39 @@ impl ConfigValue {
         Ok(())
     }
 
-    pub fn i64(&self) -> CargoResult<(i64, &Path)> {
+    pub fn i64(&self, key: &str) -> CargoResult<(i64, &Path)> {
         match *self {
             CV::Integer(i, ref p) => Ok((i, p)),
-            _ => self.expected("integer"),
+            _ => self.expected("integer", key),
         }
     }
 
-    pub fn string(&self) -> CargoResult<(&str, &Path)> {
+    pub fn string(&self, key: &str) -> CargoResult<(&str, &Path)> {
         match *self {
             CV::String(ref s, ref p) => Ok((s, p)),
-            _ => self.expected("string"),
+            _ => self.expected("string", key),
         }
     }
 
-    pub fn table(&self) -> CargoResult<(&HashMap<String, ConfigValue>, &Path)> {
+    pub fn table(&self, key: &str)
+                 -> CargoResult<(&HashMap<String, ConfigValue>, &Path)> {
         match *self {
             CV::Table(ref table, ref p) => Ok((table, p)),
-            _ => self.expected("table"),
+            _ => self.expected("table", key),
         }
     }
 
-    pub fn list(&self) -> CargoResult<&[(String, PathBuf)]> {
+    pub fn list(&self, key: &str) -> CargoResult<&[(String, PathBuf)]> {
         match *self {
             CV::List(ref list, _) => Ok(list),
-            _ => self.expected("list"),
+            _ => self.expected("list", key),
         }
     }
 
-    pub fn boolean(&self) -> CargoResult<(bool, &Path)> {
+    pub fn boolean(&self, key: &str) -> CargoResult<(bool, &Path)> {
         match *self {
             CV::Boolean(b, ref p) => Ok((b, p)),
-            _ => self.expected("bool"),
+            _ => self.expected("bool", key),
         }
     }
 
@@ -572,10 +565,10 @@ impl ConfigValue {
         }
     }
 
-    fn expected<T>(&self, wanted: &str) -> CargoResult<T> {
-        Err(internal(format!("expected a {}, but found a {} in {}",
-                             wanted, self.desc(),
-                             self.definition_path().display())))
+    fn expected<T>(&self, wanted: &str, key: &str) -> CargoResult<T> {
+        Err(human(format!("expected a {}, but found a {} for `{}` in {}",
+                          wanted, self.desc(), key,
+                          self.definition_path().display())))
     }
 
     fn into_toml(self) -> toml::Value {
@@ -666,14 +659,18 @@ fn walk_tree<F>(pwd: &Path, mut walk: F) -> CargoResult<()>
     where F: FnMut(File, &Path) -> CargoResult<()>
 {
     let mut current = pwd;
+    let mut stash: HashSet<PathBuf> = HashSet::new();
 
     loop {
         let possible = current.join(".cargo").join("config");
         if fs::metadata(&possible).is_ok() {
-            let file = try!(File::open(&possible));
+            let file = File::open(&possible)?;
 
-            try!(walk(file, &possible));
+            walk(file, &possible)?;
+
+            stash.insert(possible);
         }
+
         match current.parent() {
             Some(p) => current = p,
             None => break,
@@ -683,16 +680,14 @@ fn walk_tree<F>(pwd: &Path, mut walk: F) -> CargoResult<()>
     // Once we're done, also be sure to walk the home directory even if it's not
     // in our history to be sure we pick up that standard location for
     // information.
-    let home = try!(homedir(pwd).chain_error(|| {
+    let home = homedir(pwd).chain_error(|| {
         human("Cargo couldn't find your home directory. \
               This probably means that $HOME was not set.")
-    }));
-    if !pwd.starts_with(&home) {
-        let config = home.join("config");
-        if fs::metadata(&config).is_ok() {
-            let file = try!(File::open(&config));
-            try!(walk(file, &config));
-        }
+    })?;
+    let config = home.join("config");
+    if !stash.contains(&config) && fs::metadata(&config).is_ok() {
+        let file = File::open(&config)?;
+        walk(file, &config)?;
     }
 
     Ok(())
@@ -709,19 +704,20 @@ pub fn set_config(cfg: &Config,
     // 3. This blows away the previous ordering of a file.
     let mut file = match loc {
         Location::Global => {
-            try!(cfg.home_path.create_dir());
-            try!(cfg.home_path.open_rw(Path::new("config"), cfg,
-                                       "the global config file"))
+            cfg.home_path.create_dir()?;
+            cfg.home_path.open_rw(Path::new("config"), cfg,
+                                       "the global config file")?
         }
         Location::Project => unimplemented!(),
     };
     let mut contents = String::new();
     let _ = file.read_to_string(&mut contents);
-    let mut toml = try!(cargo_toml::parse(&contents, file.path()));
+    let mut toml = cargo_toml::parse(&contents, file.path(), cfg)?;
     toml.insert(key.to_string(), value.into_toml());
 
     let contents = toml::Value::Table(toml).to_string();
-    try!(file.seek(SeekFrom::Start(0)));
-    try!(file.write_all(contents.as_bytes()));
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(contents.as_bytes())?;
+    file.file().set_len(contents.len() as u64)?;
     Ok(())
 }

@@ -69,7 +69,7 @@ Package to benchmarks for.
 .RE
 .TP
 .B \-j \f[I]IN\f[], \-\-jobs \f[I]IN\f[]
-The number of jobs to run in parallel.
+Number of parallel jobs, defaults to # of CPUs.
 .RS
 .RE
 .TP
@@ -80,6 +80,11 @@ Build artifacts in release mode, with optimizations.
 .TP
 .B \-\-features \f[I]FEATURES\f[]
 Space\-separated list of features to also build.
+.RS
+.RE
+.TP
+.B \-\-all\-features
+Build all available features.
 .RS
 .RE
 .TP

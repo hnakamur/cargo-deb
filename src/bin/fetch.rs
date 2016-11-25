@@ -1,3 +1,4 @@
+use cargo::core::Workspace;
 use cargo::ops;
 use cargo::util::{CliResult, Config};
 use cargo::util::important_paths::find_root_manifest_for_wd;
@@ -5,9 +6,11 @@ use cargo::util::important_paths::find_root_manifest_for_wd;
 #[derive(RustcDecodable)]
 pub struct Options {
     flag_manifest_path: Option<String>,
-    flag_verbose: Option<bool>,
+    flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
+    flag_frozen: bool,
+    flag_locked: bool,
 }
 
 pub const USAGE: &'static str = "
@@ -19,9 +22,11 @@ Usage:
 Options:
     -h, --help               Print this message
     --manifest-path PATH     Path to the manifest to fetch dependencies for
-    -v, --verbose            Use verbose output
+    -v, --verbose ...        Use verbose output
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
+    --frozen                 Require Cargo.lock and cache are up to date
+    --locked                 Require Cargo.lock is up to date
 
 If a lockfile is available, this command will ensure that all of the git
 dependencies and/or registries dependencies are downloaded and locally
@@ -34,11 +39,14 @@ all updated.
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
-    try!(config.configure_shell(options.flag_verbose,
-                                options.flag_quiet,
-                                &options.flag_color));
-    let root = try!(find_root_manifest_for_wd(options.flag_manifest_path, config.cwd()));
-    try!(ops::fetch(&root, config));
+    config.configure(options.flag_verbose,
+                     options.flag_quiet,
+                     &options.flag_color,
+                     options.flag_frozen,
+                     options.flag_locked)?;
+    let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
+    let ws = Workspace::new(&root, config)?;
+    ops::fetch(&ws)?;
     Ok(None)
 }
 

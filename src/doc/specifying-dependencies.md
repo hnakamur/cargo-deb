@@ -7,7 +7,7 @@ dependency that you are working on locally. You can have different
 dependencies for different platforms, and dependencies that are only used during
 development. Let's take a look at how to do each of these.
 
-# Specifying Dependencies from crates.io
+# Specifying dependencies from crates.io
 
 Cargo is configured to look for dependencies on [crates.io] by default. Only
 the name and a version string are required in this case. In [the cargo
@@ -162,14 +162,72 @@ repository location) and specify its version in the dependencies line as well:
 hello_utils = { path = "hello_utils", version = "0.1.0" }
 ```
 
-# Overriding Dependencies
+# Overriding dependencies
 
-Sometimes you may want to override one of Cargo’s dependencies. For example,
-let’s say you’re working on a project,
+Sometimes you may want to override one of Cargo’s dependencies. For example
+let's say you're working on a project using the
+[`uuid`](https://crates.io/crates/uuid) crate which depends on
+[`rand`](https://crates.io/crates/rand). You've discovered there's a bug in
+`rand`, however, and it's already fixed upstream but hasn't been published yet.
+You'd like to test out the fix, so let's first take a look at what your
+`Cargo.toml` will look like:
+
+```toml
+[package]
+name = "my-awesome-crate"
+version = "0.2.0"
+authors = ["The Rust Project Developers"]
+
+[dependencies]
+uuid = "0.2"
+```
+
+To override the `rand` dependency of `uuid`, we'll leverage the [`[replace]`
+section][replace-section] of `Cargo.toml` by appending this to the end:
+
+[replace-section]: manifest.html#the-replace-section
+
+```toml
+[replace]
+"rand:0.3.14" = { git = 'https://github.com/rust-lang-nursery/rand' }
+```
+
+This indicates that the version of `rand` we're currently using, 0.3.14, will be
+replaced with the master branch of `rand` on GitHub. Next time when you execute
+`cargo build` Cargo will take care of checking out this repository and hooking
+the `uuid` crate up to the new version.
+
+Note that a restriction of `[replace]`, however, is that the replaced crate must
+not only have the same name but also the same version. This means that if the
+`master` branch of `rand` has migrated to, for example, 0.4.3, you'll need to
+follow a few extra steps to test out the crate:
+
+1. Fork the upstream repository to your account
+2. Create a branch which starts from the 0.3.14 release (likely tagged as
+   0.3.14)
+3. Identify the fix of the bug at hand and cherry-pick it onto your branch
+4. Update `[replace]` to point to your git repository and branch
+
+This technique can also be useful when testing out new features for a
+dependency. Following the workflow above you can have a branch where you add
+features, and then once it's ready to go you can send a PR to the upstream
+repository. While you're waiting for the PR to get merged you can continue to
+work locally with a `[replace]`, and then once the PR is merged and published
+you can remove `[replace]` and use the newly-published version.
+
+### Overriding with local dependencies
+
+Sometimes you're only temporarily working on a crate and you don't want to have
+to modify `Cargo.toml` like with the `[replace]` section above. For this use
+case Cargo offers a much more limited version of overrides called **path
+overrides**.
+
+Similar to before, let’s say you’re working on a project,
 [`uuid`](https://crates.io/crates/uuid), which depends on
-the package [`rand`](https://crates.io/crates/rand). You find a bug in `rand`, and
-you want to write a patch and be able to test out your patch by using your
-version of `rand` in `uuid`. Here’s what `uuid`’s `Cargo.toml` looks like:
+[`rand`](https://crates.io/crates/rand). This time you're the one who finds a
+bug in `rand`, and you want to write a patch and be able to test out your patch
+by using your version of `rand` in `uuid`. Here’s what `uuid`’s `Cargo.toml`
+looks like:
 
 ```toml
 [package]
@@ -185,16 +243,13 @@ You check out a local copy of `rand`, let’s say in your `~/src` directory:
 
 ```shell
 $ cd ~/src
-$ git clone https://github.com/rust-lang-nursery/rand.git
+$ git clone https://github.com/rust-lang-nursery/rand
 ```
 
-You’d like to have `uuid` use your local version of `rand`,
-rather than the one on [crates.io], while you fix the bug.
-
-Cargo solves this problem by allowing you to have a local configuration
-that specifies an **override**. If Cargo finds this configuration when
-building your package, it will use the override on your local machine
-instead of the source specified in your `Cargo.toml`.
+A path override is communicated to Cargo through the `.cargo/config`
+configuration mechanism. If Cargo finds this configuration when building your
+package, it will use the override on your local machine instead of the source
+specified in your `Cargo.toml`.
 
 Cargo looks for a directory named `.cargo` up the directory hierarchy of
 your project. If your project is in `/path/to/project/uuid`,
@@ -224,9 +279,16 @@ This array should be filled with directories that contain a `Cargo.toml`. In
 this instance, we’re just adding `rand`, so it will be the only one that’s
 overridden. This path must be an absolute path.
 
+Path overrides are more restricted than the `[replace]` section, however, in
+that they cannot change the structure of the dependency graph. When a
+replacement is applied it must be the case that the previous set of dependencies
+all match exactly and can be used for the replacement. For example this means
+that path overrides cannot be used to test out adding a dependency to a crate,
+instead `[replace]` must be used in that situation.
+
 Note: using a local configuration to override paths will only work for crates
-that have been published to [crates.io]. You cannot use this feature to tell Cargo
-how to find local unpublished crates.
+that have been published to [crates.io]. You cannot use this feature to tell
+Cargo how to find local unpublished crates.
 
 More information about local configuration can be found in the [configuration
 documentation](config.html).
@@ -245,10 +307,10 @@ winhttp = "0.4.0"
 [target.'cfg(unix)'.dependencies]
 openssl = "1.0.1"
 
-[target.'cfg(target_pointer_width = "32")'.dependencies]
+[target.'cfg(target_arch = "x86")'.dependencies]
 native = { path = "native/i686" }
 
-[target.'cfg(target_pointer_width = "64")'.dependencies]
+[target.'cfg(target_arch = "x86_64")'.dependencies]
 native = { path = "native/x86_64" }
 ```
 
@@ -322,7 +384,26 @@ manifest:
 gcc = "0.3"
 ```
 
-The build script **does not** have access to the dependencies listed in the
-`dependencies` or `dev-dependencies` section (they’re not built yet!). All build
-dependencies will also not be available to the package itself unless listed
-under the `dependencies` section as well.
+The build script **does not** have access to the dependencies listed
+in the `dependencies` or `dev-dependencies` section. Build
+dependencies will likewise not be available to the package itself
+unless listed under the `dependencies` section as well. A package
+itself and its build script are built separately, so their
+dependencies need not coincide. Cargo is kept simpler and cleaner by
+using independent dependencies for independent purposes.
+
+# Choosing features
+
+If a package you depend on offers conditional features, you can
+specify which to use:
+
+```toml
+[dependencies.awesome]
+version = "1.3.5"
+default-features = false # do not include the default features, and optionally
+                         # cherry-pick individual features
+features = ["secure-password", "civet"]
+```
+
+More information about features can be found in the
+[manifest documentation](manifest.html#the-features-section).

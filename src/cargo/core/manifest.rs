@@ -4,9 +4,14 @@ use std::path::{PathBuf, Path};
 use semver::Version;
 use rustc_serialize::{Encoder, Encodable};
 
-use core::{Dependency, PackageId, PackageIdSpec, Summary};
+use core::{Dependency, PackageId, Summary, SourceId, PackageIdSpec};
+use core::WorkspaceConfig;
 use core::package_id::Metadata;
-use util::{CargoResult, human};
+
+pub enum EitherManifest {
+    Real(Manifest),
+    Virtual(VirtualManifest),
+}
 
 /// Contains all the information about a package, as loaded from a Cargo.toml.
 #[derive(Clone, Debug)]
@@ -21,6 +26,14 @@ pub struct Manifest {
     profiles: Profiles,
     publish: bool,
     replace: Vec<(PackageIdSpec, Dependency)>,
+    workspace: WorkspaceConfig,
+}
+
+#[derive(Clone, Debug)]
+pub struct VirtualManifest {
+    replace: Vec<(PackageIdSpec, Dependency)>,
+    workspace: WorkspaceConfig,
+    profiles: Profiles,
 }
 
 /// General metadata about a package which is just blindly uploaded to the
@@ -44,33 +57,44 @@ pub struct ManifestMetadata {
     pub documentation: Option<String>,  // url
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, RustcEncodable, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LibKind {
     Lib,
     Rlib,
     Dylib,
-    StaticLib
+    ProcMacro,
+    Other(String),
 }
 
 impl LibKind {
-    pub fn from_str(string: &str) -> CargoResult<LibKind> {
+    pub fn from_str(string: &str) -> LibKind {
         match string {
-            "lib" => Ok(LibKind::Lib),
-            "rlib" => Ok(LibKind::Rlib),
-            "dylib" => Ok(LibKind::Dylib),
-            "staticlib" => Ok(LibKind::StaticLib),
-            _ => Err(human(format!("crate-type \"{}\" was not one of lib|rlib|dylib|staticlib",
-                                   string)))
+            "lib" => LibKind::Lib,
+            "rlib" => LibKind::Rlib,
+            "dylib" => LibKind::Dylib,
+            "procc-macro" => LibKind::ProcMacro,
+            s => LibKind::Other(s.to_string()),
         }
     }
 
     /// Returns the argument suitable for `--crate-type` to pass to rustc.
-    pub fn crate_type(&self) -> &'static str {
+    pub fn crate_type(&self) -> &str {
         match *self {
             LibKind::Lib => "lib",
             LibKind::Rlib => "rlib",
             LibKind::Dylib => "dylib",
-            LibKind::StaticLib => "staticlib"
+            LibKind::ProcMacro => "proc-macro",
+            LibKind::Other(ref s) => s,
+        }
+    }
+
+    pub fn linkable(&self) -> bool {
+        match *self {
+            LibKind::Lib |
+            LibKind::Rlib |
+            LibKind::Dylib |
+            LibKind::ProcMacro => true,
+            LibKind::Other(..) => false,
         }
     }
 }
@@ -102,7 +126,7 @@ impl Encodable for TargetKind {
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Profile {
-    pub opt_level: u32,
+    pub opt_level: String,
     pub lto: bool,
     pub codegen_units: Option<u32>,    // None = use rustc default
     pub rustc_args: Option<Vec<String>>,
@@ -116,7 +140,7 @@ pub struct Profile {
     pub panic: Option<String>,
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, PartialEq, Eq)]
 pub struct Profiles {
     pub release: Profile,
     pub dev: Profile,
@@ -162,14 +186,16 @@ impl Encodable for Target {
 }
 
 impl Manifest {
-    pub fn new(summary: Summary, targets: Vec<Target>,
+    pub fn new(summary: Summary,
+               targets: Vec<Target>,
                exclude: Vec<String>,
                include: Vec<String>,
                links: Option<String>,
                metadata: ManifestMetadata,
                profiles: Profiles,
                publish: bool,
-               replace: Vec<(PackageIdSpec, Dependency)>) -> Manifest {
+               replace: Vec<(PackageIdSpec, Dependency)>,
+               workspace: WorkspaceConfig) -> Manifest {
         Manifest {
             summary: summary,
             targets: targets,
@@ -181,6 +207,7 @@ impl Manifest {
             profiles: profiles,
             publish: publish,
             replace: replace,
+            workspace: workspace,
         }
     }
 
@@ -201,12 +228,48 @@ impl Manifest {
         self.links.as_ref().map(|s| &s[..])
     }
 
+    pub fn workspace_config(&self) -> &WorkspaceConfig {
+        &self.workspace
+    }
+
     pub fn add_warning(&mut self, s: String) {
         self.warnings.push(s)
     }
 
     pub fn set_summary(&mut self, summary: Summary) {
         self.summary = summary;
+    }
+
+    pub fn map_source(self, to_replace: &SourceId, replace_with: &SourceId)
+                      -> Manifest {
+        Manifest {
+            summary: self.summary.map_source(to_replace, replace_with),
+            ..self
+        }
+    }
+}
+
+impl VirtualManifest {
+    pub fn new(replace: Vec<(PackageIdSpec, Dependency)>,
+               workspace: WorkspaceConfig,
+               profiles: Profiles) -> VirtualManifest {
+        VirtualManifest {
+            replace: replace,
+            workspace: workspace,
+            profiles: profiles,
+        }
+    }
+
+    pub fn replace(&self) -> &[(PackageIdSpec, Dependency)] {
+        &self.replace
+    }
+
+    pub fn workspace_config(&self) -> &WorkspaceConfig {
+        &self.workspace
+    }
+
+    pub fn profiles(&self) -> &Profiles {
+        &self.profiles
     }
 }
 
@@ -332,15 +395,17 @@ impl Target {
         }
     }
 
+    pub fn is_dylib(&self) -> bool {
+        match self.kind {
+            TargetKind::Lib(ref libs) => libs.iter().any(|l| *l == LibKind::Dylib),
+            _ => false
+        }
+    }
+
     pub fn linkable(&self) -> bool {
         match self.kind {
             TargetKind::Lib(ref kinds) => {
-                kinds.iter().any(|k| {
-                    match *k {
-                        LibKind::Lib | LibKind::Rlib | LibKind::Dylib => true,
-                        LibKind::StaticLib => false,
-                    }
-                })
+                kinds.iter().any(|k| k.linkable())
             }
             _ => false
         }
@@ -353,7 +418,7 @@ impl Target {
     pub fn is_custom_build(&self) -> bool { self.kind == TargetKind::CustomBuild }
 
     /// Returns the arguments suitable for `--crate-type` to pass to rustc.
-    pub fn rustc_crate_types(&self) -> Vec<&'static str> {
+    pub fn rustc_crate_types(&self) -> Vec<&str> {
         match self.kind {
             TargetKind::Lib(ref kinds) => {
                 kinds.iter().map(|kind| kind.crate_type()).collect()
@@ -368,7 +433,11 @@ impl Target {
 
     pub fn can_lto(&self) -> bool {
         match self.kind {
-            TargetKind::Lib(ref v) => *v == [LibKind::StaticLib],
+            TargetKind::Lib(ref v) => {
+                !v.contains(&LibKind::Rlib) &&
+                    !v.contains(&LibKind::Dylib) &&
+                    !v.contains(&LibKind::Lib)
+            }
             _ => true,
         }
     }
@@ -423,7 +492,7 @@ impl Profile {
 
     pub fn default_release() -> Profile {
         Profile {
-            opt_level: 3,
+            opt_level: "3".to_string(),
             debuginfo: false,
             ..Profile::default()
         }
@@ -461,7 +530,7 @@ impl Profile {
 impl Default for Profile {
     fn default() -> Profile {
         Profile {
-            opt_level: 0,
+            opt_level: "0".to_string(),
             lto: false,
             codegen_units: None,
             rustc_args: None,

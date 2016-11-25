@@ -17,15 +17,23 @@ else:
 if sys.platform == 'linux' or sys.platform == 'linux2':
     host = host_bits + '-unknown-linux-gnu'
     targets = [
-        'i686-unknown-linux-gnu',
-        'x86_64-unknown-linux-gnu',
-        'x86_64-unknown-linux-musl',
+        'aarch64-unknown-linux-gnu',
         'arm-unknown-linux-gnueabi',
         'arm-unknown-linux-gnueabihf',
         'armv7-unknown-linux-gnueabihf',
-        'aarch64-unknown-linux-gnu',
         'i686-unknown-freebsd',
+        'i686-unknown-linux-gnu',
+        'mips-unknown-linux-gnu',
+        'mipsel-unknown-linux-gnu',
+        'mips64-unknown-linux-gnuabi64',
+        'mips64el-unknown-linux-gnuabi64',
+        's390x-unknown-linux-gnu',
+        'powerpc-unknown-linux-gnu',
+        'powerpc64-unknown-linux-gnu',
+        'powerpc64le-unknown-linux-gnu',
         'x86_64-unknown-freebsd',
+        'x86_64-unknown-linux-gnu',
+        'x86_64-unknown-linux-musl',
         'x86_64-unknown-netbsd',
     ]
 elif sys.platform == 'darwin':
@@ -47,11 +55,18 @@ else:
 
 rust_date = open('src/rustversion.txt').read().strip()
 url = 'https://static.rust-lang.org/dist/' + rust_date
+cargo_url = 'https://static.rust-lang.org/cargo-dist/2016-03-21'
 
 
 def install_via_tarballs():
     if os.path.isdir("rustc-install"):
         shutil.rmtree("rustc-install")
+
+    # Download cargo
+    host_fname = 'cargo-nightly-' + host + '.tar.gz'
+    download.get(cargo_url + '/' + host_fname, host_fname)
+    download.unpack(host_fname, "rustc-install", quiet=True, strip=2)
+    os.remove(host_fname)
 
     # Download the compiler
     host_fname = 'rustc-nightly-' + host + '.tar.gz'

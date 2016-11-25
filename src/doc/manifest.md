@@ -1,6 +1,6 @@
 % The Manifest Format
 
-# The `[package]` Section
+# The `[package]` section
 
 The first section in a `Cargo.toml` is `[package]`.
 
@@ -13,7 +13,7 @@ authors = ["you@example.com"]
 
 All three of these fields are mandatory.
 
-## The `version` Field
+## The `version` field
 
 Cargo bakes in the concept of [Semantic
 Versioning](http://semver.org/), so make sure you follow some basic rules:
@@ -27,7 +27,7 @@ Versioning](http://semver.org/), so make sure you follow some basic rules:
   traits, fields, types, functions, methods or anything else.
 * Use version numbers with three numeric parts such as 1.0.0 rather than 1.0.
 
-## The `build` Field (optional)
+## The `build` field (optional)
 
 This field specifies a file in the repository which is a [build script][1] for
 building native code. More information can be found in the build script
@@ -41,7 +41,7 @@ building native code. More information can be found in the build script
 build = "build.rs"
 ```
 
-## The `exclude` and `include` Fields (optional)
+## The `exclude` and `include` fields (optional)
 
 You can explicitly specify to Cargo that a set of [globs][globs] should be
 ignored or included for the purposes of packaging and rebuilding a package. The
@@ -71,7 +71,7 @@ necessary source files may not be included.
 
 [globs]: http://doc.rust-lang.org/glob/glob/struct.Pattern.html
 
-## The `publish`  Field (optional)
+## The `publish`  field (optional)
 
 The `publish` field can be used to prevent a package from being published to a
 repository by mistake.
@@ -82,7 +82,21 @@ repository by mistake.
 publish = false
 ```
 
-## Package Metadata
+## The `workspace`  field (optional)
+
+The `workspace` field can be used to configure the workspace that this package
+will be a member of. If not specified this will be inferred as the first
+Cargo.toml with `[workspace]` upwards in the filesystem.
+
+```toml
+[package]
+# ...
+workspace = "path/to/root"
+```
+
+For more information, see the documentation for the workspace table below.
+
+## Package metadata
 
 There are a number of optional metadata fields also accepted under the
 `[package]` section:
@@ -126,13 +140,32 @@ provide useful information to users of the registry and also influence the
 search ranking of a crate. It is highly discouraged to omit everything in a
 published crate.
 
-# Dependency Sections
+## The `metadata` table (optional)
+
+Cargo by default will warn about unused keys in `Cargo.toml` to assist in
+detecting typos and such. The `package.metadata` table, however, is completely
+ignored by Cargo and will not be warned about. This section can be used for
+tools which would like to store project configuration in `Cargo.toml`. For
+example:
+
+```toml
+[package]
+name = "..."
+# ...
+
+# Metadata used when generating an Android APK, for example.
+[package.metadata.android]
+package-name = "my-awesome-android-app"
+assets = "path/to/static"
+```
+
+# Dependency sections
 
 See the [specifying dependencies page](specifying-dependencies.html) for
 information on the `[dependencies]`, `[dev-dependencies]`, and target-specific
 `[target.*.dependencies]` sections.
 
-# The `[profile.*]` Sections
+# The `[profile.*]` sections
 
 Cargo supports custom configuration of how rustc is invoked through profiles at
 the top level. Any manifest may declare a profile, but only the top level
@@ -154,6 +187,7 @@ lto = false        # controls `-C lto` for binaries and staticlibs
 debug-assertions = true # controls whether debug assertions are enabled
 codegen-units = 1  # controls whether the compiler passes `-C codegen-units`
                    # `codegen-units` is ignored when `lto = true`
+panic = 'unwind'   # panic strategy (`-C panic=...`), can also be 'abort'
 
 # The release profile, used for `cargo build --release`.
 [profile.release]
@@ -163,6 +197,7 @@ rpath = false
 lto = false
 debug-assertions = false
 codegen-units = 1
+panic = 'unwind'
 
 # The testing profile, used for `cargo test`.
 [profile.test]
@@ -172,6 +207,7 @@ rpath = false
 lto = false
 debug-assertions = true
 codegen-units = 1
+panic = 'unwind'
 
 # The benchmarking profile, used for `cargo bench`.
 [profile.bench]
@@ -181,6 +217,7 @@ rpath = false
 lto = false
 debug-assertions = false
 codegen-units = 1
+panic = 'unwind'
 
 # The documentation profile, used for `cargo doc`.
 [profile.doc]
@@ -190,9 +227,10 @@ rpath = false
 lto = false
 debug-assertions = true
 codegen-units = 1
+panic = 'unwind'
 ```
 
-# The `[features]` Section
+# The `[features]` section
 
 Cargo supports features to allow expression of:
 
@@ -275,7 +313,7 @@ Note that it is explicitly allowed for features to not actually activate any
 optional dependencies. This allows packages to internally enable/disable
 features without requiring a new dependency.
 
-## Usage in End Products
+## Usage in end products
 
 One major use-case for this feature is specifying optional features in
 end-products. For example, the Servo project may want to include optional
@@ -290,7 +328,7 @@ $ cargo build --release --features "shumway pdf"
 
 Default features could be excluded using `--no-default-features`.
 
-## Usage in Packages
+## Usage in packages
 
 In most cases, the concept of *optional dependency* in a library is best
 expressed as a separate package that the top-level application depends on.
@@ -317,7 +355,54 @@ In almost all cases, it is an antipattern to use these features outside of
 high-level packages that are designed for curation. If a feature is optional, it
 can almost certainly be expressed as a separate package.
 
-# The Project Layout
+# The `[workspace]` section
+
+Projects can define a workspace which is a set of crates that will all share the
+same `Cargo.lock` and output directory. The `[workspace]` table can be defined
+as:
+
+```toml
+[workspace]
+
+# Optional key, inferred if not present
+members = ["path/to/member1", "path/to/member2"]
+```
+
+Workspaces were added to Cargo as part [RFC 1525] and have a number of
+properties:
+
+* A workspace can contain multiple crates where one of them is the root crate.
+* The root crate's `Cargo.toml` contains the `[workspace]` table, but is not
+  required to have other configuration.
+* Whenever any crate in the workspace is compiled, output is placed next to the
+  root crate's `Cargo.toml`.
+* The lock file for all crates in the workspace resides next to the root crate's
+  `Cargo.toml`.
+* The `[replace]` section in `Cargo.toml` is only recognized at the workspace
+  root crate, it's ignored in member crates' manifests.
+
+[RFC 1525]: https://github.com/rust-lang/rfcs/blob/master/text/1525-cargo-workspace.md
+
+The root crate of a workspace, indicated by the presence of `[workspace]` in
+its manifest, is responsible for defining the entire workspace (listing all
+members). This can be done through the `members` key, and if it is omitted then
+members are implicitly included through all `path` dependencies. Note that
+members of the workspaces listed explicitly will also have their path
+dependencies included in the workspace.
+
+The `package.workspace` manifest key (described above) is used in member crates
+to point at a workspace's root crate. If this key is omitted then it is inferred
+to be the first crate whose manifest contains `[workspace]` upwards in the
+filesystem.
+
+A crate may either specify `package.workspace` or specify `[workspace]`. That
+is, a crate cannot both be a root crate in a workspace (contain `[workspace]`)
+and also be a member crate of another workspace (contain `package.workspace`).
+
+Most of the time workspaces will not need to be dealt with as `cargo new` and
+`cargo init` will handle workspace configuration automatically.
+
+# The project layout
 
 If your project is an executable, name the main source file `src/main.rs`. If it
 is a library, name the main source file `src/lib.rs`.
@@ -341,6 +426,8 @@ integration tests, and benchmarks respectively.
 ▾ benches/       # (optional) benchmarks
   *.rs
 ```
+
+To structure your code after you've created the files and folders for your project, you should remember to use Rust's module system, which you can read about in [the book](https://doc.rust-lang.org/book/crates-and-modules.html).
 
 # Examples
 
@@ -366,7 +453,7 @@ When you run `cargo test`, Cargo will:
 * compile and run your library’s [integration tests](#integration-tests); and
 * compile your library’s examples.
 
-## Integration Tests
+## Integration tests
 
 Each file in `tests/*.rs` is an integration test. When you run `cargo test`,
 Cargo will compile each of these files as a separate crate. The crate can link
@@ -379,11 +466,15 @@ example, if you want several integration tests to share some code, you can put
 the shared code in `tests/common/mod.rs` and then put `mod common;` in each of
 the test files.
 
-# Configuring a Target
+# Configuring a target
 
 All of the  `[[bin]]`, `[lib]`, `[[bench]]`, `[[test]]`, and `[[example]]`
 sections support similar configuration for specifying how a target should be
-built. The example below uses `[lib]`, but it also applies to all other sections
+built. The double-bracket sections like `[[bin]]` are array-of-table of
+[TOML](https://github.com/toml-lang/toml#array-of-tables), which means you can
+write more than one `[[bin]]` section to make several executables in your crate.
+
+The example below uses `[lib]`, but it also applies to all other sections
 as well. All values listed are the defaults for that option unless otherwise
 specified.
 
@@ -393,7 +484,9 @@ specified.
 
 [lib]
 # The name of a target is the name of the library that will be generated. This
-# is defaulted to the name of the package or project.
+# is defaulted to the name of the package or project, with any dashes replaced
+# with underscores. (Rust `extern crate` declarations reference this name;
+# therefore the value must be a valid Rust identifier to be usable.)
 name = "foo"
 
 # This field points at where the crate is located, relative to the `Cargo.toml`.
@@ -417,13 +510,17 @@ doc = true
 # for Cargo to correctly compile it and make it available for all dependencies.
 plugin = false
 
+# If the target is meant to be a "macros 1.1" procedural macro, this field must
+# be set to true.
+proc-macro = false
+
 # If set to false, `cargo test` will omit the `--test` flag to rustc, which
 # stops it from generating a test harness. This is useful when the binary being
 # built manages the test runner itself.
 harness = true
 ```
 
-# Building Dynamic or Static Libraries
+# Building dynamic or static libraries
 
 If your project produces a library, you can specify which kind of library to
 build by explicitly listing the library in your `Cargo.toml`:
@@ -436,6 +533,34 @@ name = "..."
 crate-type = ["dylib"] # could be `staticlib` as well
 ```
 
-The available options are `dylib`, `rlib`, and `staticlib`. You should only use
-this option in a project. Cargo will always compile packages (dependencies)
-based on the requirements of the project that includes them.
+The available options are `dylib`, `rlib`, `staticlib`, `cdylib`, and
+`proc-macro`. You should only use this option in a project. Cargo will always
+compile packages (dependencies) based on the requirements of the project that
+includes them.
+
+You can read more about the different crate types in the
+[Rust Reference Manual](https://doc.rust-lang.org/reference.html#linkage)
+
+# The `[replace]` Section
+
+This section of Cargo.toml can be used to [override dependencies][replace] with
+other copies. The syntax is similar to the `[dependencies]` section:
+
+```toml
+[replace]
+"foo:0.1.0" = { git = 'https://github.com/example/foo' }
+"bar:1.0.2" = { path = 'my/local/bar' }
+```
+
+Each key in the `[replace]` table is a [package id
+specification](pkgid-spec.html) which allows arbitrarily choosing a node in the
+dependency graph to override. The value of each key is the same as the
+`[dependencies]` syntax for specifying dependencies, except that you can't
+specify features. Note that when a crate is overridden the copy it's overridden
+with must have both the same name and version, but it can come from a different
+source (e.g. git or a local path).
+
+More information about overriding dependencies can be found in the [overriding
+dependencies][replace] section of the documentation.
+
+[replace]: specifying-dependencies.html#overriding-dependencies
