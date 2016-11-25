@@ -1,4 +1,3 @@
 clean-cargo-deps.patch
-deps-adjust-versions.patch
-libgit2-fixes.patch
+deps-adjust.patch
 local-jquery.patch
