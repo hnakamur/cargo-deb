@@ -6,41 +6,46 @@ Description: Remove stage1 extra dependencies
 Forwarded: not-needed
 Index: cargo/Cargo.toml
 ===================================================================
---- cargo.orig/Cargo.toml	2016-08-14 21:44:57.968086257 +0000
-+++ cargo/Cargo.toml	2016-08-14 21:45:07.994531762 +0000
+--- cargo.orig/Cargo.toml	2016-11-25 23:14:50.854412390 +0000
++++ cargo/Cargo.toml	2016-11-25 23:15:24.399062256 +0000
 @@ -17,7 +17,7 @@
  path = "src/cargo/lib.rs"
  
  [dependencies]
--advapi32-sys = "0.1"
-+#advapi32-sys = "0.1"
- crates-io = { path = "src/crates-io", version = "0.2" }
+-advapi32-sys = "0.2"
++#advapi32-sys = "0.2"
+ crates-io = { path = "src/crates-io", version = "0.4" }
  crossbeam = "0.2"
- curl = "0.2"
-@@ -30,7 +30,7 @@
- git2 = "0.4"
- git2-curl = "0.4"
+ curl = "0.4"
+@@ -29,7 +29,7 @@
+ git2 = "0.6"
+ git2-curl = "0.7"
  glob = "0.2"
 -kernel32-sys = "0.2"
 +#kernel32-sys = "0.2"
  libc = "0.2"
- libgit2-sys = "0.4"
+ libgit2-sys = "0.6"
  log = "0.3"
-@@ -43,12 +43,12 @@
+@@ -44,16 +44,16 @@
  term = "0.4.4"
- toml = "0.1"
+ toml = "0.2"
  url = "1.1"
 -winapi = "0.2"
 +#winapi = "0.2"
+ 
+ [target.'cfg(unix)'.dependencies]
+ openssl = "0.9"
  
 -[dev-dependencies]
 -hamcrest = "0.1"
 -bufstream = "0.1"
 -filetime = "0.1"
+-cargotest = { path = "tests/cargotest" }
 +#[dev-dependencies]
 +#hamcrest = "0.1"
 +#bufstream = "0.1"
 +#filetime = "0.1"
++#cargotest = { path = "tests/cargotest" }
  
  [[bin]]
  name = "cargo"
