@@ -1,4 +1,4 @@
-cargo (0.15.0~dev-1) UNRELEASED; urgency=medium
+cargo (0.15.0~dev-1) unstable; urgency=medium
 
   * New upstream snapshot (git 1877f59d6b2cb057f7ef6c6b34b926fd96a683c1)
     - Compatible with OpenSSL 1.1.0 (Closes: #828259)
