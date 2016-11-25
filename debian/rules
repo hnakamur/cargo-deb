@@ -3,7 +3,7 @@
 include /usr/share/dpkg/pkg-info.mk
 include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/buildflags.mk
-RUSTFLAGS = -C link-args=$(LDFLAGS)
+RUSTFLAGS += $(foreach flag,$(LDFLAGS),-C link-arg=$(flag))
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 
 rust_cpu = $(subst i586,i686,$(1))
@@ -55,7 +55,7 @@ endif
 		--disable-debug \
 		--enable-optimize \
 		--local-rust-root=/usr \
-		--local-cargo=$(CURDIR)/cargo-stage0
+		--cargo=$(CURDIR)/cargo-stage0
 	# Build final cargo binary and docs
 	$(MAKE)
 ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))

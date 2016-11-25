@@ -1,7 +1,9 @@
 cargo (0.15.0~dev-1) UNRELEASED; urgency=medium
 
   * New upstream snapshot (git 1877f59d6b2cb057f7ef6c6b34b926fd96a683c1)
-    - Build with OpenSSL 1.1.0 (Closes: #828259)
+    - Compatible with OpenSSL 1.1.0 (Closes: #828259)
+  * rules: use new link-arg options (Closes: #834980, #837433)
+    - Requires rustc >= 1.13
 
  -- Luca Bruno <lucab@debian.org>  Fri, 25 Nov 2016 23:30:03 +0000
 
