@@ -1,3 +1,19 @@
+Updating the package
+====================
+
+1. Run d/make_orig_multi.sh.
+2. Verify the -deps component tarball to make sure it looks good.
+   If not, edit d/make_orig_multi.sh and the surrounding files (such as patches
+   and exclude files) and repeat the above until it looks good.
+3. $ git fetch upstream
+   You might have to first run:
+   $ git remote add upstream https://github.com/rust-lang/cargo
+4. $ gbp import-orig ../cargo_0.16.0.orig.tar.gz
+   If you get errors, check the extra default flags in d/gbp.conf
+
+General info
+============
+
 Current packaging of cargo is sub-optimal due to the fact that
 both the language (Rust) and its package manager (Cargo)
 are involved into self-dependency loops to bootstrap.
