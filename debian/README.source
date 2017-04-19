@@ -10,6 +10,11 @@ Updating the package
    $ git remote add upstream https://github.com/rust-lang/cargo
 4. $ gbp import-orig ../cargo_<version>.orig.tar.gz
    If you get errors, check the extra default flags in d/gbp.conf
+5. Check that no old versions remain in deps/. If there are, then your git repo
+   was messed up when you ran (4). Rewind the debian/sid, upstream, and
+   pristine-tar branches, delete the upstream/<version> tag; this reverts step
+   (4). Clean up your git repo, and then try (4) again.
+6. Update d/patches and the rest of the packaging, as normal.
 
 General info
 ============

@@ -1,3 +1,9 @@
+cargo (0.17.0-1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+
+ -- Ximin Luo <infinity0@debian.org>  Thu, 20 Apr 2017 00:30:13 +0200
+
 cargo (0.15.0~dev-1) unstable; urgency=medium
 
   * New upstream snapshot (git 1877f59d6b2cb057f7ef6c6b34b926fd96a683c1)
