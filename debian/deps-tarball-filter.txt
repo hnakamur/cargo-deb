@@ -6,6 +6,7 @@ libgit2-sys-*/libgit2/examples/
 libgit2-sys-*/libgit2/tests/
 libssh2-sys-*/libssh2*/
 libz-sys-*/src/zlib-*/
+strsim-*/docs/
 
 # To clean deps before making a new tarball, run
 # grep -v '^#' debian/deps-tarball-filter.txt | xargs -I% sh -c 'rm -rf %'
