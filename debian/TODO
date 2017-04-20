@@ -2,3 +2,5 @@ For 0.17.0 in unstable
 - update d/copyright
 - try to run the tests
 - remove embedded libgit2-sys
+  LIBGIT2_SYS_USE_PKG_CONFIG
+  https://github.com/alexcrichton/git2-rs/commit/ed629d783f629838611f07c5940a2608b7f97959
