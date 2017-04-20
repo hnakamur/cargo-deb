@@ -1,6 +1,6 @@
-cargo (0.17.0-1) UNRELEASED; urgency=medium
+cargo (0.17.0-1~exp1) UNRELEASED; urgency=medium
 
-  * New upstream release.
+  * New upstream release. (Closes: #851089, #859312)
 
  -- Ximin Luo <infinity0@debian.org>  Thu, 20 Apr 2017 00:30:13 +0200
 
