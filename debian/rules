@@ -25,8 +25,6 @@ DEPSDIR := $(CURDIR)/deps
 
 override_dh_auto_configure:
 	cp -a $(CURDIR)/Cargo.lock $(CURDIR)/.Cargo.lock.orig
-
-override_dh_auto_build:
 ifneq ($(filter stage0,$(DEB_BUILD_PROFILES)),)
 	# Bootstrap cargo stage0
 	./debian/bootstrap.py \
@@ -51,12 +49,22 @@ endif
 		--enable-optimize \
 		--local-rust-root=/usr \
 		--cargo=$(CURDIR)/cargo-stage0
+
+override_dh_auto_build:
 	# Build final cargo binary and docs
 	$(MAKE)
 ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 	$(MAKE) doc
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
 endif
+
+override_dh_auto_install:
+	# We pick stuff directly from target/
+
+override_dh_auto_test:
+	# We don't run tests at the moment, it can't find "cargotest" crate
+	# which seems to be part of the *rustc* source code :/
+	# https://github.com/rust-lang/rust/tree/master/src/tools/cargotest
 
 override_dh_auto_clean:
 	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock
@@ -72,10 +80,3 @@ override_dh_auto_clean:
 			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0 \
 			$(VENDORDIR)
-
-override_dh_auto_install:
-	# We pick stuff directly from target/
-
-override_dh_auto_test:
-	# we don't run tests at the moment due to too many deps
-
