@@ -1,5 +1,0 @@
-# When snapshotted rust-lang/crates.io-index at this commit:
-COMMIT_SHA='ad9a3abfecf6340aed54a0ede0b63349e830d79b'
-
-# Download URL is:
-DOWNLOAD_URL="https://github.com/rust-lang/crates.io-index/archive/${COMMIT_SHA}.tar.gz"
