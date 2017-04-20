@@ -25,7 +25,7 @@ DEPSDIR := $(CURDIR)/deps
 
 override_dh_auto_configure:
 	cp -a $(CURDIR)/Cargo.lock $(CURDIR)/.Cargo.lock.orig
-ifneq ($(filter stage0,$(DEB_BUILD_PROFILES)),)
+ifneq ($(filter pkg.cargo.mkstage0,$(DEB_BUILD_PROFILES)),)
 	# Bootstrap cargo stage0
 	./debian/bootstrap.py \
 		--no-clean \
