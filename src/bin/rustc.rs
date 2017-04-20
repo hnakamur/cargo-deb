@@ -1,7 +1,7 @@
 use std::env;
 
 use cargo::core::Workspace;
-use cargo::ops::{self, CompileOptions, CompileMode, MessageFormat};
+use cargo::ops::{self, CompileOptions, CompileMode, MessageFormat, Packages};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 use cargo::util::{CliResult, CliError, Config, human};
 
@@ -52,7 +52,7 @@ Options:
     --no-default-features    Do not compile default features for the package
     --target TRIPLE          Target triple which compiles will be for
     --manifest-path PATH     Path to the manifest to fetch dependencies for
-    -v, --verbose ...        Use verbose output
+    -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
     --message-format FMT     Error format: human, json [default: human]
@@ -73,7 +73,7 @@ processes spawned by Cargo, use the $RUSTFLAGS environment variable or the
 `build.rustflags` configuration option.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     debug!("executing; cmd=cargo-rustc; args={:?}",
            env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,
@@ -88,12 +88,15 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         Some("dev") | None => CompileMode::Build,
         Some("test") => CompileMode::Test,
         Some("bench") => CompileMode::Bench,
+        Some("check") => CompileMode::Check,
         Some(mode) => {
             let err = human(format!("unknown profile: `{}`, use dev,
                                      test, or bench", mode));
             return Err(CliError::new(err, 101))
         }
     };
+
+    let spec = options.flag_package.map_or_else(Vec::new, |s| vec![s]);
 
     let opts = CompileOptions {
         config: config,
@@ -102,7 +105,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         features: &options.flag_features,
         all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
-        spec: &options.flag_package.map_or(Vec::new(), |s| vec![s]),
+        spec: Packages::Packages(&spec),
         mode: mode,
         release: options.flag_release,
         filter: ops::CompileFilter::new(options.flag_lib,
@@ -117,6 +120,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let ws = Workspace::new(&root, config)?;
     ops::compile(&ws, &opts)?;
-    Ok(None)
+    Ok(())
 }
 

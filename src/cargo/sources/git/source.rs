@@ -122,6 +122,10 @@ impl<'cfg> Registry for GitSource<'cfg> {
 }
 
 impl<'cfg> Source for GitSource<'cfg> {
+    fn source_id(&self) -> &SourceId {
+        &self.source_id
+    }
+
     fn update(&mut self) -> CargoResult<()> {
         let lock = self.config.git_path()
             .open_rw(".cargo-lock-git", self.config, "the git checkouts")?;
@@ -149,8 +153,13 @@ impl<'cfg> Source for GitSource<'cfg> {
             (self.remote.db_at(&db_path)?, actual_rev.unwrap())
         };
 
+        // Don’t use the full hash,
+        // to contribute less to reaching the path length limit on Windows:
+        // https://github.com/servo/servo/pull/14397
+        let short_id = repo.to_short_id(actual_rev.clone()).unwrap();
+
         let checkout_path = lock.parent().join("checkouts")
-            .join(&self.ident).join(actual_rev.to_string());
+            .join(&self.ident).join(short_id.as_str());
 
         // Copy the database to the checkout location. After this we could drop
         // the lock on the database as we no longer needed it, but we leave it

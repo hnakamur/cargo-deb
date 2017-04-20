@@ -1,7 +1,7 @@
 use std::env;
 
 use cargo::core::Workspace;
-use cargo::ops::{self, CompileOptions, MessageFormat};
+use cargo::ops::{self, CompileOptions, MessageFormat, Packages};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 use cargo::util::{CliResult, Config};
 
@@ -26,6 +26,7 @@ pub struct Options {
     flag_bench: Vec<String>,
     flag_locked: bool,
     flag_frozen: bool,
+    flag_all: bool,
 }
 
 pub const USAGE: &'static str = "
@@ -37,6 +38,7 @@ Usage:
 Options:
     -h, --help                   Print this message
     -p SPEC, --package SPEC ...  Package to build
+    --all                        Build all packages in the workspace
     -j N, --jobs N               Number of parallel jobs, defaults to # of CPUs
     --lib                        Build only this package's library
     --bin NAME                   Build only the specified binary
@@ -49,7 +51,7 @@ Options:
     --no-default-features        Do not build the `default` feature
     --target TRIPLE              Build for the target triple
     --manifest-path PATH         Path to the manifest to compile
-    -v, --verbose ...            Use verbose output
+    -v, --verbose ...            Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet                  No output printed to stdout
     --color WHEN                 Coloring: auto, always, never
     --message-format FMT         Error format: human, json [default: human]
@@ -61,12 +63,15 @@ which indicates which package should be built. If it is not given, then the
 current package is built. For more information on SPEC and its format, see the
 `cargo help pkgid` command.
 
+All packages in the workspace are built if the `--all` flag is supplied. The
+`--all` flag may be supplied in the presence of a virtual manifest.
+
 Compilation can be configured via the use of profiles which are configured in
 the manifest. The default profile for this command is `dev`, but passing
 the --release flag will use the `release` profile instead.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     debug!("executing; cmd=cargo-build; args={:?}",
            env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,
@@ -77,6 +82,12 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
 
+    let spec = if options.flag_all {
+        Packages::All
+    } else {
+        Packages::Packages(&options.flag_package)
+    };
+
     let opts = CompileOptions {
         config: config,
         jobs: options.flag_jobs,
@@ -84,7 +95,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         features: &options.flag_features,
         all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
-        spec: &options.flag_package,
+        spec: spec,
         mode: ops::CompileMode::Build,
         release: options.flag_release,
         filter: ops::CompileFilter::new(options.flag_lib,
@@ -99,5 +110,5 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let ws = Workspace::new(&root, config)?;
     ops::compile(&ws, &opts)?;
-    Ok(None)
+    Ok(())
 }

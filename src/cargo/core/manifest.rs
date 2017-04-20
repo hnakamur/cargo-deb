@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{PathBuf, Path};
 
@@ -6,7 +7,6 @@ use rustc_serialize::{Encoder, Encodable};
 
 use core::{Dependency, PackageId, Summary, SourceId, PackageIdSpec};
 use core::WorkspaceConfig;
-use core::package_id::Metadata;
 
 pub enum EitherManifest {
     Real(Manifest),
@@ -48,6 +48,7 @@ pub struct VirtualManifest {
 pub struct ManifestMetadata {
     pub authors: Vec<String>,
     pub keywords: Vec<String>,
+    pub categories: Vec<String>,
     pub license: Option<String>,
     pub license_file: Option<String>,
     pub description: Option<String>,    // not markdown
@@ -55,6 +56,7 @@ pub struct ManifestMetadata {
     pub homepage: Option<String>,       // url
     pub repository: Option<String>,     // url
     pub documentation: Option<String>,  // url
+    pub badges: HashMap<String, HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -72,7 +74,7 @@ impl LibKind {
             "lib" => LibKind::Lib,
             "rlib" => LibKind::Rlib,
             "dylib" => LibKind::Dylib,
-            "procc-macro" => LibKind::ProcMacro,
+            "proc-macro" => LibKind::ProcMacro,
             s => LibKind::Other(s.to_string()),
         }
     }
@@ -105,18 +107,20 @@ pub enum TargetKind {
     Bin,
     Test,
     Bench,
-    Example,
+    ExampleLib(Vec<LibKind>),
+    ExampleBin,
     CustomBuild,
 }
 
 impl Encodable for TargetKind {
     fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
         match *self {
-            TargetKind::Lib(ref kinds) => {
-                kinds.iter().map(|k| k.crate_type()).collect()
+            TargetKind::Lib(ref kinds) |
+            TargetKind::ExampleLib(ref kinds) => {
+                kinds.iter().map(LibKind::crate_type).collect()
             }
             TargetKind::Bin => vec!["bin"],
-            TargetKind::Example => vec!["example"],
+            TargetKind::ExampleBin => vec!["example"],
             TargetKind::Test => vec!["test"],
             TargetKind::CustomBuild => vec!["custom-build"],
             TargetKind::Bench => vec!["bench"],
@@ -124,20 +128,40 @@ impl Encodable for TargetKind {
     }
 }
 
-#[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Profile {
     pub opt_level: String,
     pub lto: bool,
     pub codegen_units: Option<u32>,    // None = use rustc default
     pub rustc_args: Option<Vec<String>>,
     pub rustdoc_args: Option<Vec<String>>,
-    pub debuginfo: bool,
+    pub debuginfo: Option<u32>,
     pub debug_assertions: bool,
     pub rpath: bool,
     pub test: bool,
     pub doc: bool,
     pub run_custom_build: bool,
+    pub check: bool,
     pub panic: Option<String>,
+}
+
+#[derive(RustcEncodable)]
+struct SerializedProfile<'a> {
+    opt_level: &'a str,
+    debuginfo: Option<u32>,
+    debug_assertions: bool,
+    test: bool,
+}
+
+impl Encodable for Profile {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        SerializedProfile {
+            opt_level: &self.opt_level,
+            debuginfo: self.debuginfo,
+            debug_assertions: self.debug_assertions,
+            test: self.test,
+        }.encode(s)
+    }
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
@@ -150,6 +174,8 @@ pub struct Profiles {
     pub bench_deps: Profile,
     pub doc: Profile,
     pub custom_build: Profile,
+    pub check: Profile,
+    pub doctest: Profile,
 }
 
 /// Information about a binary, a library, an example, etc. that is part of the
@@ -159,7 +185,6 @@ pub struct Target {
     kind: TargetKind,
     name: String,
     src_path: PathBuf,
-    metadata: Option<Metadata>,
     tested: bool,
     benched: bool,
     doc: bool,
@@ -274,12 +299,12 @@ impl VirtualManifest {
 }
 
 impl Target {
-    fn blank() -> Target {
+    fn with_path(src_path: PathBuf) -> Target {
+        assert!(src_path.is_absolute());
         Target {
             kind: TargetKind::Bin,
             name: String::new(),
-            src_path: PathBuf::new(),
-            metadata: None,
+            src_path: src_path,
             doc: false,
             doctest: false,
             harness: true,
@@ -289,85 +314,77 @@ impl Target {
         }
     }
 
-    pub fn lib_target(name: &str, crate_targets: Vec<LibKind>,
-                      src_path: &Path,
-                      metadata: Metadata) -> Target {
+    pub fn lib_target(name: &str,
+                      crate_targets: Vec<LibKind>,
+                      src_path: PathBuf) -> Target {
         Target {
             kind: TargetKind::Lib(crate_targets),
             name: name.to_string(),
-            src_path: src_path.to_path_buf(),
-            metadata: Some(metadata),
             doctest: true,
             doc: true,
-            ..Target::blank()
+            ..Target::with_path(src_path)
         }
     }
 
-    pub fn bin_target(name: &str, src_path: &Path,
-                      metadata: Option<Metadata>) -> Target {
+    pub fn bin_target(name: &str, src_path: PathBuf) -> Target {
         Target {
             kind: TargetKind::Bin,
             name: name.to_string(),
-            src_path: src_path.to_path_buf(),
-            metadata: metadata,
             doc: true,
-            ..Target::blank()
+            ..Target::with_path(src_path)
         }
     }
 
     /// Builds a `Target` corresponding to the `build = "build.rs"` entry.
-    pub fn custom_build_target(name: &str, src_path: &Path,
-                               metadata: Option<Metadata>) -> Target {
+    pub fn custom_build_target(name: &str, src_path: PathBuf) -> Target {
         Target {
             kind: TargetKind::CustomBuild,
             name: name.to_string(),
-            src_path: src_path.to_path_buf(),
-            metadata: metadata,
             for_host: true,
             benched: false,
             tested: false,
-            ..Target::blank()
+            ..Target::with_path(src_path)
         }
     }
 
-    pub fn example_target(name: &str, src_path: &Path) -> Target {
+    pub fn example_target(name: &str,
+                          crate_targets: Vec<LibKind>,
+                          src_path: PathBuf) -> Target {
+        let kind = if crate_targets.is_empty() {
+            TargetKind::ExampleBin
+        } else {
+            TargetKind::ExampleLib(crate_targets)
+        };
+
         Target {
-            kind: TargetKind::Example,
+            kind: kind,
             name: name.to_string(),
-            src_path: src_path.to_path_buf(),
             benched: false,
-            ..Target::blank()
+            ..Target::with_path(src_path)
         }
     }
 
-    pub fn test_target(name: &str, src_path: &Path,
-                       metadata: Metadata) -> Target {
+    pub fn test_target(name: &str, src_path: PathBuf) -> Target {
         Target {
             kind: TargetKind::Test,
             name: name.to_string(),
-            src_path: src_path.to_path_buf(),
-            metadata: Some(metadata),
             benched: false,
-            ..Target::blank()
+            ..Target::with_path(src_path)
         }
     }
 
-    pub fn bench_target(name: &str, src_path: &Path,
-                        metadata: Metadata) -> Target {
+    pub fn bench_target(name: &str, src_path: PathBuf) -> Target {
         Target {
             kind: TargetKind::Bench,
             name: name.to_string(),
-            src_path: src_path.to_path_buf(),
-            metadata: Some(metadata),
             tested: false,
-            ..Target::blank()
+            ..Target::with_path(src_path)
         }
     }
 
     pub fn name(&self) -> &str { &self.name }
     pub fn crate_name(&self) -> String { self.name.replace("-", "_") }
     pub fn src_path(&self) -> &Path { &self.src_path }
-    pub fn metadata(&self) -> Option<&Metadata> { self.metadata.as_ref() }
     pub fn kind(&self) -> &TargetKind { &self.kind }
     pub fn tested(&self) -> bool { self.tested }
     pub fn harness(&self) -> bool { self.harness }
@@ -378,7 +395,11 @@ impl Target {
     pub fn doctested(&self) -> bool {
         self.doctest && match self.kind {
             TargetKind::Lib(ref kinds) => {
-                kinds.contains(&LibKind::Rlib) || kinds.contains(&LibKind::Lib)
+                kinds.iter().find(|k| {
+                  *k == &LibKind::Rlib ||
+                  *k == &LibKind::Lib ||
+                  *k == &LibKind::ProcMacro
+                }).is_some()
             }
             _ => false,
         }
@@ -412,7 +433,15 @@ impl Target {
     }
 
     pub fn is_bin(&self) -> bool { self.kind == TargetKind::Bin }
-    pub fn is_example(&self) -> bool { self.kind == TargetKind::Example }
+
+    pub fn is_example(&self) -> bool {
+        match self.kind {
+            TargetKind::ExampleBin |
+            TargetKind::ExampleLib(..) => true,
+            _ => false
+        }
+    }
+
     pub fn is_test(&self) -> bool { self.kind == TargetKind::Test }
     pub fn is_bench(&self) -> bool { self.kind == TargetKind::Bench }
     pub fn is_custom_build(&self) -> bool { self.kind == TargetKind::CustomBuild }
@@ -420,13 +449,14 @@ impl Target {
     /// Returns the arguments suitable for `--crate-type` to pass to rustc.
     pub fn rustc_crate_types(&self) -> Vec<&str> {
         match self.kind {
-            TargetKind::Lib(ref kinds) => {
-                kinds.iter().map(|kind| kind.crate_type()).collect()
-            },
+            TargetKind::Lib(ref kinds) |
+            TargetKind::ExampleLib(ref kinds) => {
+                kinds.iter().map(LibKind::crate_type).collect()
+            }
             TargetKind::CustomBuild |
             TargetKind::Bench |
             TargetKind::Test |
-            TargetKind::Example |
+            TargetKind::ExampleBin |
             TargetKind::Bin => vec!["bin"],
         }
     }
@@ -475,7 +505,8 @@ impl fmt::Display for Target {
             TargetKind::Bin => write!(f, "Target(bin: {})", self.name),
             TargetKind::Test => write!(f, "Target(test: {})", self.name),
             TargetKind::Bench => write!(f, "Target(bench: {})", self.name),
-            TargetKind::Example => write!(f, "Target(example: {})", self.name),
+            TargetKind::ExampleBin |
+            TargetKind::ExampleLib(..) => write!(f, "Target(example: {})", self.name),
             TargetKind::CustomBuild => write!(f, "Target(script)"),
         }
     }
@@ -484,7 +515,7 @@ impl fmt::Display for Target {
 impl Profile {
     pub fn default_dev() -> Profile {
         Profile {
-            debuginfo: true,
+            debuginfo: Some(2),
             debug_assertions: true,
             ..Profile::default()
         }
@@ -493,7 +524,7 @@ impl Profile {
     pub fn default_release() -> Profile {
         Profile {
             opt_level: "3".to_string(),
-            debuginfo: false,
+            debuginfo: None,
             ..Profile::default()
         }
     }
@@ -525,6 +556,21 @@ impl Profile {
             ..Profile::default_dev()
         }
     }
+
+    pub fn default_check() -> Profile {
+        Profile {
+            check: true,
+            ..Profile::default_dev()
+        }
+    }
+
+    pub fn default_doctest() -> Profile {
+        Profile {
+            doc: true,
+            test: true,
+            ..Profile::default_dev()
+        }
+    }
 }
 
 impl Default for Profile {
@@ -535,12 +581,13 @@ impl Default for Profile {
             codegen_units: None,
             rustc_args: None,
             rustdoc_args: None,
-            debuginfo: false,
+            debuginfo: None,
             debug_assertions: false,
             rpath: false,
             test: false,
             doc: false,
             run_custom_build: false,
+            check: false,
             panic: None,
         }
     }
@@ -554,6 +601,8 @@ impl fmt::Display for Profile {
             write!(f, "Profile(doc)")
         } else if self.run_custom_build {
             write!(f, "Profile(run)")
+        } else if self.check {
+            write!(f, "Profile(check)")
         } else {
             write!(f, "Profile(build)")
         }

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use core::{PackageIdSpec, Workspace};
+use core::Workspace;
 use ops;
 use util::CargoResult;
 
@@ -13,11 +13,28 @@ pub struct DocOptions<'a> {
 }
 
 pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
-    let package = ws.current()?;
+    let specs = options.compile_opts.spec.into_package_id_specs(ws)?;
+    let resolve = ops::resolve_ws_precisely(ws,
+                                            None,
+                                            options.compile_opts.features,
+                                            options.compile_opts.all_features,
+                                            options.compile_opts.no_default_features,
+                                            &specs)?;
+    let (packages, resolve_with_overrides) = resolve;
+
+    let mut pkgs = Vec::new();
+    if specs.len() > 0 {
+        for p in specs.iter() {
+            pkgs.push(packages.get(p.query(resolve_with_overrides.iter())?)?);
+        }
+    } else {
+        let root_package = ws.current()?;
+        pkgs.push(root_package);
+    };
 
     let mut lib_names = HashSet::new();
     let mut bin_names = HashSet::new();
-    if options.compile_opts.spec.is_empty() {
+    for package in &pkgs {
         for target in package.targets().iter().filter(|t| t.documented()) {
             if target.is_lib() {
                 assert!(lib_names.insert(target.crate_name()));
@@ -37,12 +54,10 @@ pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
     ops::compile(ws, &options.compile_opts)?;
 
     if options.open_result {
-        let name = if options.compile_opts.spec.len() > 1 {
+        let name = if pkgs.len() > 1 {
             bail!("Passing multiple packages and `open` is not supported")
-        } else if options.compile_opts.spec.len() == 1 {
-            PackageIdSpec::parse(&options.compile_opts.spec[0])?
-                .name()
-                .replace("-", "_")
+        } else if pkgs.len() == 1 {
+            pkgs[0].name().replace("-", "_")
         } else {
             match lib_names.iter().chain(bin_names.iter()).nth(0) {
                 Some(s) => s.to_string(),
@@ -61,6 +76,7 @@ pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
         let path = path.into_path_unlocked();
         if fs::metadata(&path).is_ok() {
             let mut shell = options.compile_opts.config.shell();
+            shell.status("Opening", path.display())?;
             match open_docs(&path) {
                 Ok(m) => shell.status("Launching", m)?,
                 Err(e) => {
@@ -102,15 +118,15 @@ fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
 #[cfg(target_os = "windows")]
 fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
     match Command::new("cmd").arg("/C").arg(path).status() {
-        Ok(_) => return Ok("cmd /C"),
-        Err(_) => return Err(vec!["cmd /C"]),
-    };
+        Ok(_) => Ok("cmd /C"),
+        Err(_) => Err(vec!["cmd /C"]),
+    }
 }
 
 #[cfg(target_os = "macos")]
 fn open_docs(path: &Path) -> Result<&'static str, Vec<&'static str>> {
     match Command::new("open").arg(path).status() {
-        Ok(_) => return Ok("open"),
-        Err(_) => return Err(vec!["open"]),
-    };
+        Ok(_) => Ok("open"),
+        Err(_) => Err(vec!["open"]),
+    }
 }

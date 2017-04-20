@@ -32,14 +32,14 @@ Options:
     --allow-dirty           Allow dirty working directories to be packaged
     --manifest-path PATH    Path to the manifest to compile
     -j N, --jobs N          Number of parallel jobs, defaults to # of CPUs
-    -v, --verbose ...       Use verbose output
+    -v, --verbose ...       Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet             No output printed to stdout
     --color WHEN            Coloring: auto, always, never
     --frozen                Require Cargo.lock and cache are up to date
     --locked                Require Cargo.lock is up to date
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -55,5 +55,5 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         allow_dirty: options.flag_allow_dirty,
         jobs: options.flag_jobs,
     })?;
-    Ok(None)
+    Ok(())
 }

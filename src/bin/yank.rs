@@ -27,7 +27,7 @@ Options:
     --undo              Undo a yank, putting a version back into the index
     --index INDEX       Registry index to yank from
     --token TOKEN       API token to use when authenticating
-    -v, --verbose ...   Use verbose output
+    -v, --verbose ...   Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet         No output printed to stdout
     --color WHEN        Coloring: auto, always, never
     --frozen            Require Cargo.lock and cache are up to date
@@ -42,7 +42,7 @@ download the yanked version to use it. Cargo will, however, not allow any new
 crates to be locked to any yanked version.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -54,6 +54,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
               options.flag_token,
               options.flag_index,
               options.flag_undo)?;
-    Ok(None)
+    Ok(())
 }
 

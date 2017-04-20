@@ -6,13 +6,15 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use semver::Version;
 use tempdir::TempDir;
 use toml;
 
 use core::{SourceId, Source, Package, Dependency, PackageIdSpec};
 use core::{PackageId, Workspace};
-use ops::{self, CompileFilter};
+use ops::{self, CompileFilter, DefaultExecutor};
 use sources::{GitSource, PathSource, SourceConfigMap};
 use util::{CargoResult, ChainError, Config, human, internal};
 use util::{Filesystem, FileLock};
@@ -56,8 +58,8 @@ pub fn install(root: Option<&str>,
     let root = resolve_root(root, config)?;
     let map = SourceConfigMap::new(config)?;
     let (pkg, source) = if source_id.is_git() {
-        select_pkg(GitSource::new(source_id, config), source_id,
-                   krate, vers, &mut |git| git.read_packages())?
+        select_pkg(GitSource::new(source_id, config),
+                   krate, vers, config, &mut |git| git.read_packages())?
     } else if source_id.is_path() {
         let path = source_id.url().to_file_path().ok()
                             .expect("path sources must have a valid path");
@@ -68,11 +70,10 @@ pub fn install(root: Option<&str>,
                            specify an alternate source", path.display()))
         })?;
         select_pkg(PathSource::new(&path, source_id, config),
-                   source_id, krate, vers,
-                   &mut |path| path.read_packages())?
+                   krate, vers, config, &mut |path| path.read_packages())?
     } else {
         select_pkg(map.load(source_id)?,
-                   source_id, krate, vers,
+                   krate, vers, config,
                    &mut |_| Err(human("must specify a crate to install from \
                                        crates.io, or use --path or --git to \
                                        specify alternate source")))?
@@ -91,10 +92,12 @@ pub fn install(root: Option<&str>,
     };
 
     let ws = match overidden_target_dir {
-        Some(dir) => Workspace::one(pkg, config, Some(dir))?,
+        Some(dir) => Workspace::ephemeral(pkg, config, Some(dir))?,
         None => Workspace::new(pkg.manifest_path(), config)?,
     };
     let pkg = ws.current()?;
+
+    config.shell().status("Installing", pkg)?;
 
     // Preflight checks to check up front whether we'll overwrite something.
     // We have to check this again afterwards, but may as well avoid building
@@ -106,7 +109,10 @@ pub fn install(root: Option<&str>,
         check_overwrites(&dst, pkg, &opts.filter, &list, force)?;
     }
 
-    let compile = ops::compile_ws(&ws, Some(source), opts).chain_error(|| {
+    let compile = ops::compile_ws(&ws,
+                                  Some(source),
+                                  opts,
+                                  Arc::new(DefaultExecutor)).chain_error(|| {
         if let Some(td) = td_opt.take() {
             // preserve the temporary directory, so the user can inspect it
             td.into_path();
@@ -248,9 +254,9 @@ pub fn install(root: Option<&str>,
 }
 
 fn select_pkg<'a, T>(mut source: T,
-                     source_id: &SourceId,
                      name: Option<&str>,
                      vers: Option<&str>,
+                     config: &Config,
                      list_all: &mut FnMut(&mut T) -> CargoResult<Vec<Package>>)
                      -> CargoResult<(Package, Box<Source + 'a>)>
     where T: Source + 'a
@@ -258,7 +264,27 @@ fn select_pkg<'a, T>(mut source: T,
     source.update()?;
     match name {
         Some(name) => {
-            let dep = Dependency::parse_no_deprecated(name, vers, source_id)?;
+            let vers = match vers {
+                Some(v) => {
+                    match v.parse::<Version>() {
+                        Ok(v) => Some(format!("={}", v)),
+                        Err(_) => {
+                            let msg = format!("the `--vers` provided, `{}`, is \
+                                               not a valid semver version\n\n\
+                                               historically Cargo treated this \
+                                               as a semver version requirement \
+                                               accidentally\nand will continue \
+                                               to do so, but this behavior \
+                                               will be removed eventually", v);
+                            config.shell().warn(&msg)?;
+                            Some(v.to_string())
+                        }
+                    }
+                }
+                None => None,
+            };
+            let vers = vers.as_ref().map(|s| &**s);
+            let dep = Dependency::parse_no_deprecated(name, vers, source.source_id())?;
             let deps = source.query(&dep)?;
             match deps.iter().map(|p| p.package_id()).max() {
                 Some(pkgid) => {
@@ -269,7 +295,7 @@ fn select_pkg<'a, T>(mut source: T,
                     let vers_info = vers.map(|v| format!(" with version `{}`", v))
                                         .unwrap_or(String::new());
                     Err(human(format!("could not find `{}` in `{}`{}", name,
-                                      source_id, vers_info)))
+                                      source.source_id(), vers_info)))
                 }
             }
         }

@@ -25,7 +25,7 @@ Options:
     -h, --help                Print this message
     --root DIR                Directory to uninstall packages from
     --bin NAME                Only uninstall the binary NAME
-    -v, --verbose ...         Use verbose output
+    -v, --verbose ...         Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet               Less output printed to stdout
     --color WHEN              Coloring: auto, always, never
     --frozen                  Require Cargo.lock and cache are up to date
@@ -37,7 +37,7 @@ uninstalled for a crate but the `--bin` and `--example` flags can be used to
 only uninstall particular binaries.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -46,6 +46,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let root = options.flag_root.as_ref().map(|s| &s[..]);
     ops::uninstall(root, &options.arg_spec, &options.flag_bin, config)?;
-    Ok(None)
+    Ok(())
 }
 

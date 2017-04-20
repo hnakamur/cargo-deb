@@ -34,7 +34,7 @@ Options:
     --manifest-path PATH     Path to the manifest of the package to publish
     -j N, --jobs N           Number of parallel jobs, defaults to # of CPUs
     --dry-run                Perform all checks without uploading
-    -v, --verbose ...        Use verbose output
+    -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
     --frozen                 Require Cargo.lock and cache are up to date
@@ -42,7 +42,7 @@ Options:
 
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -70,5 +70,5 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         jobs: jobs,
         dry_run: dry_run,
     })?;
-    Ok(None)
+    Ok(())
 }

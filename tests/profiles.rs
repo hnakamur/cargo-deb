@@ -27,15 +27,15 @@ fn profile_overrides() {
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0).with_stderr(&format!("\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc src[/]lib.rs --crate-name test --crate-type lib \
+[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+        --emit=dep-info,link \
         -C opt-level=1 \
         -C debug-assertions=on \
         -C metadata=[..] \
         -C rpath \
         --out-dir [..] \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]debug[/]deps`
-[FINISHED] debug [optimized] target(s) in [..]
+[FINISHED] dev [optimized] target(s) in [..]
 ",
 dir = p.root().display(),
 url = p.url(),
@@ -60,11 +60,42 @@ fn opt_level_override_0() {
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0).with_stderr(&format!("\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc src[/]lib.rs --crate-name test --crate-type lib \
-        -g \
+[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+        --emit=dep-info,link \
+        -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir [..] \
+        -L dependency={dir}[/]target[/]debug[/]deps`
+[FINISHED] [..] target(s) in [..]
+",
+dir = p.root().display(),
+url = p.url()
+)));
+}
+
+#[test]
+fn debug_override_1() {
+    let mut p = project("foo");
+
+    p = p
+        .file("Cargo.toml", r#"
+            [package]
+            name = "test"
+            version = "0.0.0"
+            authors = []
+
+            [profile.dev]
+            debug = 1
+        "#)
+        .file("src/lib.rs", "");
+    assert_that(p.cargo_process("build").arg("-v"),
+                execs().with_status(0).with_stderr(&format!("\
+[COMPILING] test v0.0.0 ({url})
+[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
         --emit=dep-info,link \
+        -C debuginfo=1 \
+        -C metadata=[..] \
+        --out-dir [..] \
         -L dependency={dir}[/]target[/]debug[/]deps`
 [FINISHED] [..] target(s) in [..]
 ",
@@ -90,13 +121,13 @@ fn check_opt_level_override(profile_level: &str, rustc_level: &str) {
     assert_that(p.cargo_process("build").arg("-v"),
                 execs().with_status(0).with_stderr(&format!("\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc src[/]lib.rs --crate-name test --crate-type lib \
+[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+        --emit=dep-info,link \
         -C opt-level={level} \
-        -g \
+        -C debuginfo=2 \
         -C debug-assertions=on \
         -C metadata=[..] \
         --out-dir [..] \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]debug[/]deps`
 [FINISHED] [..] target(s) in [..]
 ",
@@ -159,21 +190,22 @@ fn top_level_overrides_deps() {
     assert_that(p.cargo_process("build").arg("-v").arg("--release"),
                 execs().with_status(0).with_stderr(&format!("\
 [COMPILING] foo v0.0.0 ({url}/foo)
-[RUNNING] `rustc foo[/]src[/]lib.rs --crate-name foo \
-        --crate-type dylib --crate-type rlib -C prefer-dynamic \
+[RUNNING] `rustc --crate-name foo foo[/]src[/]lib.rs \
+        --crate-type dylib --crate-type rlib \
+        --emit=dep-info,link \
+        -C prefer-dynamic \
         -C opt-level=1 \
-        -g \
+        -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir {dir}[/]target[/]release[/]deps \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]release[/]deps`
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc src[/]lib.rs --crate-name test --crate-type lib \
+[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+        --emit=dep-info,link \
         -C opt-level=1 \
-        -g \
+        -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir [..] \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]release[/]deps \
         --extern foo={dir}[/]target[/]release[/]deps[/]\
                      {prefix}foo[..]{suffix} \
@@ -222,7 +254,7 @@ package:   [..]
 workspace: [..]
 [COMPILING] bar v0.1.0 ([..])
 [RUNNING] `rustc [..]`
-[FINISHED] debug [unoptimized] target(s) in [..]"));
+[FINISHED] dev [unoptimized] target(s) in [..]"));
 }
 
 #[test]
@@ -251,5 +283,5 @@ fn profile_in_virtual_manifest_works() {
                 execs().with_status(0).with_stderr("\
 [COMPILING] bar v0.1.0 ([..])
 [RUNNING] `rustc [..]`
-[FINISHED] debug [optimized] target(s) in [..]"));
+[FINISHED] dev [optimized] target(s) in [..]"));
 }

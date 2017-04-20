@@ -24,15 +24,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use core::registry::PackageRegistry;
-use core::{Source, SourceId, PackageSet, Package, Target};
+use core::{Source, Package, Target};
 use core::{Profile, TargetKind, Profiles, Workspace, PackageIdSpec};
-use core::resolver::{Method, Resolve};
-use ops::{self, BuildOutput};
-use sources::PathSource;
+use ops::{self, BuildOutput, Executor, DefaultExecutor};
 use util::config::Config;
-use util::{CargoResult, profile, human, ChainError};
+use util::{CargoResult, profile};
 
 /// Contains information about how a package should be compiled.
 pub struct CompileOptions<'a> {
@@ -47,8 +45,8 @@ pub struct CompileOptions<'a> {
     pub all_features: bool,
     /// Flag if the default feature should be built for the root package
     pub no_default_features: bool,
-    /// Root package to build (if None it's the current one)
-    pub spec: &'a [String],
+    /// A set of packages to build.
+    pub spec: Packages<'a>,
     /// Filter to apply to the root package to select which targets will be
     /// built.
     pub filter: CompileFilter<'a>,
@@ -65,18 +63,64 @@ pub struct CompileOptions<'a> {
     pub target_rustc_args: Option<&'a [String]>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+impl<'a> CompileOptions<'a> {
+    pub fn default(config: &'a Config, mode: CompileMode) -> CompileOptions<'a>
+    {
+        CompileOptions {
+            config: config,
+            jobs: None,
+            target: None,
+            features: &[],
+            all_features: false,
+            no_default_features: false,
+            spec: ops::Packages::Packages(&[]),
+            mode: mode,
+            release: false,
+            filter: ops::CompileFilter::new(false, &[], &[], &[], &[]),
+            message_format: MessageFormat::Human,
+            target_rustdoc_args: None,
+            target_rustc_args: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum CompileMode {
     Test,
     Build,
+    Check,
     Bench,
     Doc { deps: bool },
+    Doctest,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, RustcDecodable)]
 pub enum MessageFormat {
     Human,
     Json
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Packages<'a> {
+    All,
+    Packages(&'a [String]),
+}
+
+impl<'a> Packages<'a> {
+    pub fn into_package_id_specs(self, ws: &Workspace) -> CargoResult<Vec<PackageIdSpec>> {
+        let specs = match self {
+            Packages::All => {
+                ws.members()
+                    .map(Package::package_id)
+                    .map(PackageIdSpec::from_package_id)
+                    .collect()
+            }
+            Packages::Packages(packages) => {
+                packages.iter().map(|p| PackageIdSpec::parse(&p)).collect::<CargoResult<Vec<_>>>()?
+            }
+        };
+        Ok(specs)
+    }
 }
 
 pub enum CompileFilter<'a> {
@@ -92,67 +136,26 @@ pub enum CompileFilter<'a> {
 
 pub fn compile<'a>(ws: &Workspace<'a>, options: &CompileOptions<'a>)
                    -> CargoResult<ops::Compilation<'a>> {
-    for key in ws.current()?.manifest().warnings().iter() {
-        options.config.shell().warn(key)?
-    }
-    compile_ws(ws, None, options)
+    compile_with_exec(ws, options, Arc::new(DefaultExecutor))
 }
 
-pub fn resolve_dependencies<'a>(ws: &Workspace<'a>,
-                                source: Option<Box<Source + 'a>>,
-                                features: &[String],
-                                all_features: bool,
-                                no_default_features: bool,
-                                specs: &[PackageIdSpec])
-                                -> CargoResult<(PackageSet<'a>, Resolve)> {
-    let features = features.iter().flat_map(|s| {
-        s.split_whitespace()
-    }).map(|s| s.to_string()).collect::<Vec<String>>();
-
-    let mut registry = PackageRegistry::new(ws.config())?;
-
-    if let Some(source) = source {
-        registry.add_preloaded(ws.current()?.package_id().source_id(),
-                               source);
-    }
-
-    // First, resolve the root_package's *listed* dependencies, as well as
-    // downloading and updating all remotes and such.
-    let resolve = ops::resolve_ws(&mut registry, ws)?;
-
-    // Second, resolve with precisely what we're doing. Filter out
-    // transitive dependencies if necessary, specify features, handle
-    // overrides, etc.
-    let _p = profile::start("resolving w/ overrides...");
-
-    add_overrides(&mut registry, ws)?;
-
-    let method = if all_features {
-        Method::Everything
-    } else {
-        Method::Required {
-            dev_deps: true, // TODO: remove this option?
-            features: &features,
-            uses_default_features: !no_default_features,
+pub fn compile_with_exec<'a>(ws: &Workspace<'a>,
+                             options: &CompileOptions<'a>, 
+                             exec: Arc<Executor>)
+                             -> CargoResult<ops::Compilation<'a>> {
+    for member in ws.members() {
+        for key in member.manifest().warnings().iter() {
+            options.config.shell().warn(key)?
         }
-    };
-
-    let resolved_with_overrides =
-            ops::resolve_with_previous(&mut registry, ws,
-                                            method, Some(&resolve), None,
-                                            specs)?;
-
-    let packages = ops::get_resolved_packages(&resolved_with_overrides,
-                                              registry);
-
-    Ok((packages, resolved_with_overrides))
+    }
+    compile_ws(ws, None, options, exec)
 }
 
 pub fn compile_ws<'a>(ws: &Workspace<'a>,
                       source: Option<Box<Source + 'a>>,
-                      options: &CompileOptions<'a>)
+                      options: &CompileOptions<'a>,
+                      exec: Arc<Executor>)
                       -> CargoResult<ops::Compilation<'a>> {
-    let root_package = ws.current()?;
     let CompileOptions { config, jobs, target, spec, features,
                          all_features, no_default_features,
                          release, mode, message_format,
@@ -167,27 +170,24 @@ pub fn compile_ws<'a>(ws: &Workspace<'a>,
     }
 
     let profiles = ws.profiles();
-    if spec.len() == 0 {
-        generate_targets(root_package, profiles, mode, filter, release)?;
-    }
 
-    let specs = spec.iter().map(|p| PackageIdSpec::parse(p))
-                                .collect::<CargoResult<Vec<_>>>()?;
-
-    let pair = resolve_dependencies(ws,
-                                         source,
-                                         features,
-                                         all_features,
-                                         no_default_features,
-                                         &specs)?;
-    let (packages, resolve_with_overrides) = pair;
+    let specs = spec.into_package_id_specs(ws)?;
+    let resolve = ops::resolve_ws_precisely(ws,
+                                            source,
+                                            features,
+                                            all_features,
+                                            no_default_features,
+                                            &specs)?;
+    let (packages, resolve_with_overrides) = resolve;
 
     let mut pkgids = Vec::new();
-    if spec.len() > 0 {
-        for p in spec {
-            pkgids.push(resolve_with_overrides.query(&p)?);
+    if specs.len() > 0 {
+        for p in specs.iter() {
+            pkgids.push(p.query(resolve_with_overrides.iter())?);
         }
     } else {
+        let root_package = ws.current()?;
+        generate_targets(root_package, profiles, mode, filter, release)?;
         pkgids.push(root_package.package_id());
     };
 
@@ -251,7 +251,7 @@ pub fn compile_ws<'a>(ws: &Workspace<'a>,
         let mut build_config = scrape_build_config(config, jobs, target)?;
         build_config.release = release;
         build_config.test = mode == CompileMode::Test || mode == CompileMode::Bench;
-        build_config.json_errors = message_format == MessageFormat::Json;
+        build_config.json_messages = message_format == MessageFormat::Json;
         if let CompileMode::Doc { deps } = mode {
             build_config.doc_all = deps;
         }
@@ -262,7 +262,8 @@ pub fn compile_ws<'a>(ws: &Workspace<'a>,
                              &resolve_with_overrides,
                              config,
                              build_config,
-                             profiles)?
+                             profiles,
+                             exec)?
     };
 
     ret.to_doc_test = to_builds.iter().map(|&p| p.clone()).collect();
@@ -295,7 +296,8 @@ impl<'a> CompileFilter<'a> {
                     TargetKind::Bin => bins,
                     TargetKind::Test => tests,
                     TargetKind::Bench => benches,
-                    TargetKind::Example => examples,
+                    TargetKind::ExampleBin |
+                    TargetKind::ExampleLib(..) => examples,
                     TargetKind::Lib(..) => return lib,
                     TargetKind::CustomBuild => return false,
                 };
@@ -319,7 +321,9 @@ fn generate_targets<'a>(pkg: &'a Package,
         CompileMode::Test => test,
         CompileMode::Bench => &profiles.bench,
         CompileMode::Build => build,
+        CompileMode::Check => &profiles.check,
         CompileMode::Doc { .. } => &profiles.doc,
+        CompileMode::Doctest => &profiles.doctest,
     };
     match *filter {
         CompileFilter::Everything => {
@@ -350,7 +354,7 @@ fn generate_targets<'a>(pkg: &'a Package,
                     }
                     Ok(base)
                 }
-                CompileMode::Build => {
+                CompileMode::Build | CompileMode::Check => {
                     Ok(pkg.targets().iter().filter(|t| {
                         t.is_bin() || t.is_lib()
                     }).map(|t| (t, profile)).collect())
@@ -358,6 +362,15 @@ fn generate_targets<'a>(pkg: &'a Package,
                 CompileMode::Doc { .. } => {
                     Ok(pkg.targets().iter().filter(|t| t.documented())
                           .map(|t| (t, profile)).collect())
+                }
+                CompileMode::Doctest => {
+                    if let Some(t) = pkg.targets().iter().find(|t| t.is_lib()) {
+                        if t.doctested() {
+                            return Ok(vec![(t, profile)])
+                        }
+                    }
+
+                    Ok(Vec::new())
                 }
             }
         }
@@ -373,15 +386,18 @@ fn generate_targets<'a>(pkg: &'a Package,
             }
 
             {
-                let mut find = |names: &[String], desc, kind, profile| {
+                let mut find = |names: &[String],
+                                desc,
+                                is_expected_kind: fn(&Target) -> bool,
+                                profile| {
                     for name in names {
                         let target = pkg.targets().iter().find(|t| {
-                            t.name() == *name && *t.kind() == kind
+                            t.name() == *name && is_expected_kind(t)
                         });
                         let t = match target {
                             Some(t) => t,
                             None => {
-                                let suggestion = pkg.find_closest_target(name, kind);
+                                let suggestion = pkg.find_closest_target(name, is_expected_kind);
                                 match suggestion {
                                     Some(s) => {
                                         let suggested_name = s.name();
@@ -397,43 +413,14 @@ fn generate_targets<'a>(pkg: &'a Package,
                     }
                     Ok(())
                 };
-                find(bins, "bin", TargetKind::Bin, profile)?;
-                find(examples, "example", TargetKind::Example, build)?;
-                find(tests, "test", TargetKind::Test, test)?;
-                find(benches, "bench", TargetKind::Bench, &profiles.bench)?;
+                find(bins, "bin", Target::is_bin, profile)?;
+                find(examples, "example", Target::is_example, build)?;
+                find(tests, "test", Target::is_test, test)?;
+                find(benches, "bench", Target::is_bench, &profiles.bench)?;
             }
             Ok(targets)
         }
     }
-}
-
-/// Read the `paths` configuration variable to discover all path overrides that
-/// have been configured.
-fn add_overrides<'a>(registry: &mut PackageRegistry<'a>,
-                     ws: &Workspace<'a>) -> CargoResult<()> {
-    let paths = match ws.config().get_list("paths")? {
-        Some(list) => list,
-        None => return Ok(())
-    };
-
-    let paths = paths.val.iter().map(|&(ref s, ref p)| {
-        // The path listed next to the string is the config file in which the
-        // key was located, so we want to pop off the `.cargo/config` component
-        // to get the directory containing the `.cargo` folder.
-        (p.parent().unwrap().parent().unwrap().join(s), p)
-    });
-
-    for (path, definition) in paths {
-        let id = SourceId::for_path(&path)?;
-        let mut source = PathSource::new_recursive(&path, &id, ws.config());
-        source.update().chain_error(|| {
-            human(format!("failed to update path override `{}` \
-                           (defined in `{}`)", path.display(),
-                          definition.display()))
-        })?;
-        registry.add_override(&id, Box::new(source));
-    }
-    Ok(())
 }
 
 /// Parse all config files to learn about build configuration. Currently
@@ -512,7 +499,7 @@ fn scrape_target_config(config: &Config, triple: &str)
                     let (flags, definition) = value.string(&k)?;
                     let whence = format!("in `{}` (in {})", key,
                                          definition.display());
-                    let (paths, links) = 
+                    let (paths, links) =
                         BuildOutput::parse_rustc_flags(&flags, &whence)
                     ?;
                     output.library_paths.extend(paths);
@@ -532,6 +519,9 @@ fn scrape_target_config(config: &Config, triple: &str)
                 "rustc-cfg" => {
                     let list = value.list(&k)?;
                     output.cfgs.extend(list.iter().map(|v| v.0.clone()));
+                }
+                "warning" | "rerun-if-changed" => {
+                    bail!("`{}` is not supported in build script overrides", k);
                 }
                 _ => {
                     let val = value.string(&k)?.0;

@@ -9,7 +9,8 @@ use term::color::YELLOW;
 
 use core::{PackageId, Target, Profile};
 use util::{Config, DependencyQueue, Fresh, Dirty, Freshness};
-use util::{CargoResult, ProcessBuilder, profile, internal};
+use util::{CargoResult, ProcessBuilder, profile, internal, human};
+use {handle_error};
 
 use super::{Context, Kind, Unit};
 use super::job::Job;
@@ -30,7 +31,6 @@ pub struct JobQueue<'a> {
     documented: HashSet<&'a PackageId>,
     counts: HashMap<&'a PackageId, usize>,
     is_release: bool,
-    is_doc_all: bool,
 }
 
 /// A helper structure for metadata about the state of a building package.
@@ -90,7 +90,6 @@ impl<'a> JobQueue<'a> {
             documented: HashSet::new(),
             counts: HashMap::new(),
             is_release: cx.build_config.release,
-            is_doc_all: cx.build_config.doc_all,
         }
     }
 
@@ -184,6 +183,8 @@ impl<'a> JobQueue<'a> {
                         Ok(()) => self.finish(key, cx)?,
                         Err(e) => {
                             if self.active > 0 {
+                                error = Some(human("build failed"));
+                                handle_error(&*e, &mut *cx.config.shell());
                                 cx.config.shell().say(
                                             "Build failed, waiting for other \
                                              jobs to finish...", YELLOW)?;
@@ -197,11 +198,11 @@ impl<'a> JobQueue<'a> {
             }
         }
 
-        let build_type = if self.is_release { "release" } else { "debug" };
-        let profile = cx.lib_profile(&cx.current_package);
+        let build_type = if self.is_release { "release" } else { "dev" };
+        let profile = cx.lib_profile();
         let mut opt_type = String::from(if profile.opt_level == "0" { "unoptimized" }
                                         else { "optimized" });
-        if profile.debuginfo {
+        if profile.debuginfo.is_some() {
             opt_type = opt_type + " + debuginfo";
         }
         let duration = start_time.elapsed();
@@ -209,12 +210,11 @@ impl<'a> JobQueue<'a> {
                                    duration.as_secs(),
                                    duration.subsec_nanos() / 10000000);
         if self.queue.is_empty() {
-            if !self.is_doc_all {
-                cx.config.shell().status("Finished", format!("{} [{}] target(s) in {}",
-                                                                  build_type,
-                                                                  opt_type,
-                                                                  time_elapsed))?;
-            }
+            let message = format!("{} [{}] target(s) in {}",
+                                  build_type,
+                                  opt_type,
+                                  time_elapsed);
+            cx.config.shell().status("Finished", message)?;
             Ok(())
         } else if let Some(e) = error {
             Err(e)
@@ -292,8 +292,10 @@ impl<'a> JobQueue<'a> {
             // being a compiled package
             Dirty => {
                 if key.profile.doc {
-                    self.documented.insert(key.pkg);
-                    config.shell().status("Documenting", key.pkg)?;
+                    if !key.profile.test {
+                        self.documented.insert(key.pkg);
+                        config.shell().status("Documenting", key.pkg)?;
+                    }
                 } else {
                     self.compiled.insert(key.pkg);
                     config.shell().status("Compiling", key.pkg)?;

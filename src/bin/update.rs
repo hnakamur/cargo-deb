@@ -30,7 +30,7 @@ Options:
     --aggressive                 Force updating all dependencies of <name> as well
     --precise PRECISE            Update a single dependency to exactly PRECISE
     --manifest-path PATH         Path to the crate's manifest
-    -v, --verbose ...            Use verbose output
+    -v, --verbose ...            Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet                  No output printed to stdout
     --color WHEN                 Coloring: auto, always, never
     --frozen                     Require Cargo.lock and cache are up to date
@@ -57,7 +57,7 @@ updated.
 For more information about package id specifications, see `cargo help pkgid`.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     debug!("executing; cmd=cargo-update; args={:?}", env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,
                      options.flag_quiet,
@@ -75,5 +75,5 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let ws = Workspace::new(&root, config)?;
     ops::update_lockfile(&ws, &update_opts)?;
-    Ok(None)
+    Ok(())
 }

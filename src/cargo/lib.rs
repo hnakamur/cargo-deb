@@ -18,21 +18,21 @@ extern crate num_cpus;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate semver;
+extern crate shell_escape;
 extern crate tar;
 extern crate tempdir;
 extern crate term;
 extern crate toml;
 extern crate url;
 
-use std::env;
 use std::io;
+use std::fmt;
 use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize::json;
 use docopt::Docopt;
 
 use core::{Shell, MultiShell, ShellConfig, Verbosity, ColorConfig};
 use core::shell::Verbosity::{Verbose};
-use core::shell::ColorConfig::{Auto};
 use term::color::{BLACK};
 
 pub use util::{CargoError, CargoResult, CliError, CliResult, human, Config, ChainError};
@@ -48,60 +48,94 @@ pub mod ops;
 pub mod sources;
 pub mod util;
 
-pub fn execute_main_without_stdin<T, V>(
-                                      exec: fn(T, &Config) -> CliResult<Option<V>>,
-                                      options_first: bool,
-                                      usage: &str)
-    where V: Encodable, T: Decodable
-{
-    process::<V, _>(|rest, config| {
-        call_main_without_stdin(exec, config, usage, rest, options_first)
-    });
+pub struct CommitInfo {
+    pub short_commit_hash: String,
+    pub commit_hash: String,
+    pub commit_date: String,
 }
 
-pub fn call_main_without_stdin<T, V>(
-            exec: fn(T, &Config) -> CliResult<Option<V>>,
+pub struct CfgInfo {
+    // Information about the git repository we may have been built from.
+    pub commit_info: Option<CommitInfo>,
+    // The date that the build was performed.
+    pub build_date: String,
+    // The release channel we were built for.
+    pub release_channel: String,
+}
+
+pub struct VersionInfo {
+    pub major: String,
+    pub minor: String,
+    pub patch: String,
+    pub pre_release: Option<String>,
+    // Information that's only available when we were built with
+    // configure/make, rather than cargo itself.
+    pub cfg_info: Option<CfgInfo>,
+}
+
+impl fmt::Display for VersionInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "cargo-{}.{}.{}",
+               self.major, self.minor, self.patch)?;
+        match self.cfg_info.as_ref().map(|ci| &ci.release_channel) {
+            Some(channel) => {
+                if channel != "stable" {
+                    write!(f, "-{}", channel)?;
+                    let empty = String::from("");
+                    write!(f, "{}", self.pre_release.as_ref().unwrap_or(&empty))?;
+                }
+            },
+            None => (),
+        };
+
+        if let Some(ref cfg) = self.cfg_info {
+            match cfg.commit_info {
+                Some(ref ci) => {
+                    write!(f, " ({} {})",
+                           ci.short_commit_hash, ci.commit_date)?;
+                },
+                None => {
+                    write!(f, " (built {})",
+                           cfg.build_date)?;
+                }
+            }
+        };
+        Ok(())
+    }
+}
+
+pub fn call_main_without_stdin<Flags: Decodable>(
+            exec: fn(Flags, &Config) -> CliResult,
             config: &Config,
             usage: &str,
             args: &[String],
-            options_first: bool) -> CliResult<Option<V>>
-    where V: Encodable, T: Decodable
+            options_first: bool) -> CliResult
 {
-    let flags = flags_from_args::<T>(usage, args, options_first)?;
+    let docopt = Docopt::new(usage).unwrap()
+        .options_first(options_first)
+        .argv(args.iter().map(|s| &s[..]))
+        .help(true);
+
+    let flags = docopt.decode().map_err(|e| {
+        let code = if e.fatal() {1} else {0};
+        CliError::new(human(e.to_string()), code)
+    })?;
+
     exec(flags, config)
 }
 
-fn process<V, F>(mut callback: F)
-    where F: FnMut(&[String], &Config) -> CliResult<Option<V>>,
-          V: Encodable
-{
-    let mut config = None;
-    let result = (|| {
-        config = Some(Config::default()?);
-        let args: Vec<_> = try!(env::args_os().map(|s| {
-            s.into_string().map_err(|s| {
-                human(format!("invalid unicode in argument: {:?}", s))
-            })
-        }).collect());
-        callback(&args, config.as_ref().unwrap())
-    })();
-    let mut verbose_shell = shell(Verbose, Auto);
-    let mut shell = config.as_ref().map(|s| s.shell());
-    let shell = shell.as_mut().map(|s| &mut **s).unwrap_or(&mut verbose_shell);
-    process_executed(result, shell)
-}
-
-pub fn process_executed<T>(result: CliResult<Option<T>>, shell: &mut MultiShell)
-    where T: Encodable
+// This will diverge if `result` is an `Err` and return otherwise.
+pub fn process_executed(result: CliResult, shell: &mut MultiShell)
 {
     match result {
-        Err(e) => handle_error(e, shell),
-        Ok(Some(encodable)) => {
-            let encoded = json::encode(&encodable).unwrap();
-            println!("{}", encoded);
-        }
-        Ok(None) => {}
+        Err(e) => handle_cli_error(e, shell),
+        Ok(()) => {}
     }
+}
+
+pub fn print_json<T: Encodable>(obj: &T) {
+    let encoded = json::encode(&obj).unwrap();
+    println!("{}", encoded);
 }
 
 pub fn shell(verbosity: Verbosity, color_config: ColorConfig) -> MultiShell {
@@ -149,8 +183,8 @@ pub fn shell(verbosity: Verbosity, color_config: ColorConfig) -> MultiShell {
     }
 }
 
-pub fn handle_error(err: CliError, shell: &mut MultiShell) {
-    debug!("handle_error; err={:?}", err);
+pub fn handle_cli_error(err: CliError, shell: &mut MultiShell) -> ! {
+    debug!("handle_cli_error; err={:?}", err);
 
     let CliError { error, exit_code, unknown } = err;
     // exit_code == 0 is non-fatal error, e.g. docopt version info
@@ -173,7 +207,14 @@ pub fn handle_error(err: CliError, shell: &mut MultiShell) {
         }
     }
 
-    std::process::exit(exit_code);
+    std::process::exit(exit_code)
+}
+
+pub fn handle_error(err: &CargoError, shell: &mut MultiShell) {
+    debug!("handle_error; err={:?}", err);
+
+    let _ignored_result = shell.error(err);
+    handle_cause(err, shell);
 }
 
 fn handle_cause(mut cargo_err: &CargoError, shell: &mut MultiShell) -> bool {
@@ -200,26 +241,45 @@ fn handle_cause(mut cargo_err: &CargoError, shell: &mut MultiShell) -> bool {
     }
 }
 
-pub fn version() -> String {
-    format!("cargo {}", match option_env!("CFG_VERSION") {
-        Some(s) => s.to_string(),
-        None => format!("{}.{}.{}{}",
-                        env!("CARGO_PKG_VERSION_MAJOR"),
-                        env!("CARGO_PKG_VERSION_MINOR"),
-                        env!("CARGO_PKG_VERSION_PATCH"),
-                        option_env!("CARGO_PKG_VERSION_PRE").unwrap_or(""))
-    })
-}
-
-fn flags_from_args<T>(usage: &str, args: &[String], options_first: bool) -> CliResult<T>
-    where T: Decodable
-{
-    let docopt = Docopt::new(usage).unwrap()
-                                   .options_first(options_first)
-                                   .argv(args.iter().map(|s| &s[..]))
-                                   .help(true);
-    docopt.decode().map_err(|e| {
-        let code = if e.fatal() {1} else {0};
-        CliError::new(human(e.to_string()), code)
-    })
+pub fn version() -> VersionInfo {
+    macro_rules! env_str {
+        ($name:expr) => { env!($name).to_string() }
+    }
+    macro_rules! option_env_str {
+        ($name:expr) => { option_env!($name).map(|s| s.to_string()) }
+    }
+    match option_env!("CFG_RELEASE_CHANNEL") {
+        // We have environment variables set up from configure/make.
+        Some(_) => {
+            let commit_info =
+                option_env!("CFG_COMMIT_HASH").map(|s| {
+                    CommitInfo {
+                        commit_hash: s.to_string(),
+                        short_commit_hash: option_env_str!("CFG_SHORT_COMMIT_HASH").unwrap(),
+                        commit_date: option_env_str!("CFG_COMMIT_DATE").unwrap(),
+                    }
+                });
+            VersionInfo {
+                major: option_env_str!("CFG_VERSION_MAJOR").unwrap(),
+                minor: option_env_str!("CFG_VERSION_MINOR").unwrap(),
+                patch: option_env_str!("CFG_VERSION_PATCH").unwrap(),
+                pre_release: option_env_str!("CFG_PRERELEASE_VERSION"),
+                cfg_info: Some(CfgInfo {
+                    build_date: option_env_str!("CFG_BUILD_DATE").unwrap(),
+                    release_channel: option_env_str!("CFG_RELEASE_CHANNEL").unwrap(),
+                    commit_info: commit_info,
+                }),
+            }
+        },
+        // We are being compiled by Cargo itself.
+        None => {
+            VersionInfo {
+                major: env_str!("CARGO_PKG_VERSION_MAJOR"),
+                minor: env_str!("CARGO_PKG_VERSION_MINOR"),
+                patch: env_str!("CARGO_PKG_VERSION_PATCH"),
+                pre_release: option_env_str!("CARGO_PKG_VERSION_PRE"),
+                cfg_info: None,
+            }
+        }
+    }
 }

@@ -3,10 +3,13 @@ extern crate cargotest;
 extern crate hamcrest;
 
 use std::env;
+use std::process::Command;
+use std::sync::{Once, ONCE_INIT};
+use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 
 use cargo::util::process;
 use cargotest::{is_nightly, rustc_host};
-use cargotest::support::{project, execs, basic_bin_manifest};
+use cargotest::support::{project, execs, main_file, basic_bin_manifest};
 use hamcrest::{assert_that, existing_file};
 
 fn disabled() -> bool {
@@ -19,9 +22,80 @@ fn disabled() -> bool {
     // Right now the windows bots cannot cross compile due to the mingw setup,
     // so we disable ourselves on all but macos/linux setups where the rustc
     // install script ensures we have both architectures
-    !(cfg!(target_os = "macos") ||
-      cfg!(target_os = "linux") ||
-      cfg!(target_env = "msvc"))
+    if !(cfg!(target_os = "macos") ||
+         cfg!(target_os = "linux") ||
+         cfg!(target_env = "msvc")) {
+        return true;
+    }
+
+    // It's not particularly common to have a cross-compilation setup, so
+    // try to detect that before we fail a bunch of tests through no fault
+    // of the user.
+    static CAN_RUN_CROSS_TESTS: AtomicBool = ATOMIC_BOOL_INIT;
+    static CHECK: Once = ONCE_INIT;
+
+    let cross_target = alternate();
+
+    CHECK.call_once(|| {
+        let p = project("cross_test")
+            .file("Cargo.toml", &basic_bin_manifest("cross_test"))
+            .file("src/cross_test.rs", &main_file(r#""testing!""#, &[]));
+
+        let result = p.cargo_process("build")
+            .arg("--target").arg(&cross_target)
+            .exec_with_output();
+
+        if result.is_ok() {
+            CAN_RUN_CROSS_TESTS.store(true, Ordering::SeqCst);
+        }
+    });
+
+    if CAN_RUN_CROSS_TESTS.load(Ordering::SeqCst) {
+        // We were able to compile a simple project, so the user has the
+        // necessary std:: bits installed.  Therefore, tests should not
+        // be disabled.
+        return false;
+    }
+
+    // We can't compile a simple cross project.  We want to warn the user
+    // by failing a single test and having the remainder of the cross tests
+    // pass.  We don't use std::sync::Once here because panicing inside its
+    // call_once method would poison the Once instance, which is not what
+    // we want.
+    static HAVE_WARNED: AtomicBool = ATOMIC_BOOL_INIT;
+
+    if HAVE_WARNED.swap(true, Ordering::SeqCst) {
+        // We are some other test and somebody else is handling the warning.
+        // Just disable the current test.
+        return true;
+    }
+
+    // We are responsible for warning the user, which we do by panicing.
+    let rustup_available = Command::new("rustup").output().is_ok();
+
+    let linux_help = if cfg!(target_os = "linux") {
+        "
+
+You may need to install runtime libraries for your Linux distribution as well.".to_string()
+    } else {
+        "".to_string()
+    };
+
+    let rustup_help = if rustup_available {
+        format!("
+
+Alternatively, you can install the necessary libraries for cross-compilation with
+
+    rustup target add {}{}", cross_target, linux_help)
+    } else {
+        "".to_string()
+    };
+
+    panic!("Cannot cross compile to {}.
+
+This failure can be safely ignored. If you would prefer to not see this
+failure, you can set the environment variable CFG_DISABLE_CROSS_TESTS to \"1\".{}
+", cross_target, rustup_help);
 }
 
 fn alternate() -> String {
@@ -357,13 +431,14 @@ fn linker_and_ar() {
                 execs().with_status(101)
                        .with_stderr_contains(&format!("\
 [COMPILING] foo v0.5.0 ({url})
-[RUNNING] `rustc src[/]foo.rs --crate-name foo --crate-type bin -g \
+[RUNNING] `rustc --crate-name foo src[/]foo.rs --crate-type bin \
+    --emit=dep-info,link -C debuginfo=2 \
     -C metadata=[..] \
     --out-dir {dir}[/]target[/]{target}[/]debug[/]deps \
-    --emit=dep-info,link \
     --target {target} \
     -C ar=my-ar-tool -C linker=my-linker-tool \
-    -L dependency={dir}[/]target[/]{target}[/]debug[/]deps`
+    -L dependency={dir}[/]target[/]{target}[/]debug[/]deps \
+    -L dependency={dir}[/]target[/]debug[/]deps`
 ",
                             dir = p.root().display(),
                             url = p.url(),
@@ -472,7 +547,7 @@ fn cross_tests() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.0 ({foo})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]{triple}[/]debug[/]deps[/]bar-[..][EXE]
 [RUNNING] target[/]{triple}[/]debug[/]deps[/]foo-[..][EXE]", foo = p.url(), triple = target))
                        .with_stdout("
@@ -510,7 +585,7 @@ fn no_cross_doctests() {
 
     let host_output = format!("\
 [COMPILING] foo v0.0.0 ({foo})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]
 [DOCTEST] foo
 ", foo = p.url());
@@ -526,7 +601,7 @@ fn no_cross_doctests() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.0 ({foo})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]{triple}[/]debug[/]deps[/]foo-[..][EXE]
 [DOCTEST] foo
 ", foo = p.url(), triple = target)));
@@ -537,7 +612,7 @@ fn no_cross_doctests() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.0 ({foo})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]{triple}[/]debug[/]deps[/]foo-[..][EXE]
 ", foo = p.url(), triple = target)));
 }
@@ -604,10 +679,10 @@ fn cross_with_a_build_script() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.0 (file://[..])
-[RUNNING] `rustc build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]foo-[..]`
+[RUNNING] `rustc [..] build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]foo-[..]`
 [RUNNING] `{dir}[/]target[/]debug[/]build[/]foo-[..][/]build-script-build`
-[RUNNING] `rustc src[/]main.rs [..] --target {target} [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] `rustc [..] src[/]main.rs [..] --target {target} [..]`
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ", target = target,
    dir = p.root().display())));
 }
@@ -676,25 +751,25 @@ fn build_script_needed_for_host_and_target() {
                        .with_stderr_contains(&format!("\
 [COMPILING] d1 v0.0.0 ({url}/d1)", url = p.url()))
                        .with_stderr_contains(&format!("\
-[RUNNING] `rustc d1[/]build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]d1-[..]`",
+[RUNNING] `rustc [..] d1[/]build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]d1-[..]`",
     dir = p.root().display()))
                        .with_stderr_contains(&format!("\
 [RUNNING] `{dir}[/]target[/]debug[/]build[/]d1-[..][/]build-script-build`",
     dir = p.root().display()))
                        .with_stderr_contains("\
-[RUNNING] `rustc d1[/]src[/]lib.rs [..]`")
+[RUNNING] `rustc [..] d1[/]src[/]lib.rs [..]`")
                        .with_stderr_contains(&format!("\
 [COMPILING] d2 v0.0.0 ({url}/d2)", url = p.url()))
                        .with_stderr_contains(&format!("\
-[RUNNING] `rustc d2[/]src[/]lib.rs [..] \
+[RUNNING] `rustc [..] d2[/]src[/]lib.rs [..] \
            -L /path/to/{host}`", host = host))
                        .with_stderr_contains(&format!("\
 [COMPILING] foo v0.0.0 ({url})", url = p.url()))
                        .with_stderr_contains(&format!("\
-[RUNNING] `rustc build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]foo-[..] \
+[RUNNING] `rustc [..] build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]foo-[..] \
            -L /path/to/{host}`", dir = p.root().display(), host = host))
                        .with_stderr_contains(&format!("\
-[RUNNING] `rustc src[/]main.rs [..] --target {target} [..] \
+[RUNNING] `rustc [..] src[/]main.rs [..] --target {target} [..] \
            -L /path/to/{target}`", target = target)));
 }
 
@@ -804,10 +879,10 @@ fn plugin_build_script_right_arch() {
                 execs().with_status(0)
                        .with_stderr("\
 [COMPILING] foo v0.0.1 ([..])
-[RUNNING] `rustc build.rs [..]`
+[RUNNING] `rustc [..] build.rs [..]`
 [RUNNING] `[..][/]build-script-build`
-[RUNNING] `rustc src[/]lib.rs [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] `rustc [..] src[/]lib.rs [..]`
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 }
 
@@ -852,14 +927,14 @@ fn build_script_with_platform_specific_dependencies() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] d2 v0.0.0 ([..])
-[RUNNING] `rustc d2[/]src[/]lib.rs [..]`
+[RUNNING] `rustc [..] d2[/]src[/]lib.rs [..]`
 [COMPILING] d1 v0.0.0 ([..])
-[RUNNING] `rustc d1[/]src[/]lib.rs [..]`
+[RUNNING] `rustc [..] d1[/]src[/]lib.rs [..]`
 [COMPILING] foo v0.0.1 ([..])
-[RUNNING] `rustc build.rs [..]`
+[RUNNING] `rustc [..] build.rs [..]`
 [RUNNING] `{dir}[/]target[/]debug[/]build[/]foo-[..][/]build-script-build`
-[RUNNING] `rustc src[/]lib.rs [..] --target {target} [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] `rustc [..] src[/]lib.rs [..] --target {target} [..]`
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ", dir = p.root().display(), target = target)));
 }
 

@@ -31,15 +31,15 @@ Options:
                         control at all (none) overriding a global configuration.
     --bin               Use a binary (application) template
     --lib               Use a library template
-    --name NAME         Set the resulting package name
-    -v, --verbose ...   Use verbose output
+    --name NAME         Set the resulting package name, defaults to the value of <path>
+    -v, --verbose ...   Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet         No output printed to stdout
     --color WHEN        Coloring: auto, always, never
     --frozen            Require Cargo.lock and cache are up to date
     --locked            Require Cargo.lock is up to date
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     debug!("executing; cmd=cargo-new; args={:?}", env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,
                      options.flag_quiet,
@@ -63,6 +63,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
                                              else {"binary (application)"},
                                              arg_path))?;
 
-    Ok(None)
+    Ok(())
 }
 

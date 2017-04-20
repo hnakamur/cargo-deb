@@ -171,10 +171,10 @@ fn build_script() {
     assert_that(p.cargo("build").arg("-v"),
                 execs().with_status(0).with_stderr("\
 [COMPILING] foo v0.0.1 ([..])
-[RUNNING] `rustc build.rs [..]`
+[RUNNING] `rustc [..] build.rs [..]`
 [RUNNING] `[..]build-script-build`
-[RUNNING] `rustc src[/]main.rs [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] `rustc [..] src[/]main.rs [..]`
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 }
 

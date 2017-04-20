@@ -1,5 +1,5 @@
 use cargo::core::Workspace;
-use cargo::ops::{self, MessageFormat};
+use cargo::ops::{self, MessageFormat, Packages};
 use cargo::util::{CliResult, CliError, Config, Human};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 
@@ -40,7 +40,7 @@ Options:
     --no-default-features   Do not build the `default` feature
     --target TRIPLE         Build for the target triple
     --manifest-path PATH    Path to the manifest to execute
-    -v, --verbose ...       Use verbose output
+    -v, --verbose ...       Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet             No output printed to stdout
     --color WHEN            Coloring: auto, always, never
     --message-format FMT    Error format: human, json [default: human]
@@ -57,7 +57,7 @@ arguments to both Cargo and the binary, the ones after `--` go to the binary,
 the ones before go to Cargo.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -81,7 +81,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         features: &options.flag_features,
         all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
-        spec: &[],
+        spec: Packages::Packages(&[]),
         release: options.flag_release,
         mode: ops::CompileMode::Build,
         filter: if examples.is_empty() && bins.is_empty() {
@@ -99,7 +99,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
 
     let ws = Workspace::new(&root, config)?;
     match ops::run(&ws, &compile_opts, &options.arg_args)? {
-        None => Ok(None),
+        None => Ok(()),
         Some(err) => {
             // If we never actually spawned the process then that sounds pretty
             // bad and we always want to forward that up.
