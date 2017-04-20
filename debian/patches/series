@@ -1,3 +1,2 @@
 clean-cargo-deps.patch
-deps-adjust.patch
 local-jquery.patch

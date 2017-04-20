@@ -51,6 +51,7 @@ cargo vendor --explicit-version --verbose deps
 # Unpack artifacts and clean embedded libs
 ${WORKDIR}/debian/cargo-vendor-unpack.py
 grep -v '^#' ${DEPS_FILTER} | xargs  -I% sh -c 'rm -rf deps/%'
+for i in deps/*; do ${WORKDIR}/debian/cargo-checksums-prune.py "$i"; done
 
 # Report any suspicious files
 cp -R deps deps-scan

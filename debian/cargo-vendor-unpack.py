@@ -1,10 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright: 2015 The Debian Project
 # License: MIT-License or Apache-2.0
 #
 # Helper to unpack a local crate registry to original sources
-# TODO: rewrite to perl, maybe?
+# TODO: rewrite to perl and add to dh-cargo, maybe?
 
 import os
 import tarfile

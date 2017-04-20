@@ -11,7 +11,7 @@ DEB_HOST_RUST_TYPE := $(call rust_cpu,$(DEB_HOST_GNU_CPU))-unknown-$(DEB_HOST_GN
 DEB_TARGET_RUST_TYPE := $(call rust_cpu,$(DEB_TARGET_GNU_CPU))-unknown-$(DEB_TARGET_GNU_SYSTEM)
 
 # Cargo looks for config in and writes cache to $CARGO_HOME/
-export CARGO_HOME = $(CURDIR)/.cargohome
+export CARGO_HOME = $(CURDIR)/debian/cargohome
 # Ask cargo to be verbose when building
 export VERBOSE = 1
 
@@ -25,8 +25,6 @@ DEPSDIR := $(CURDIR)/deps
 
 override_dh_auto_configure:
 	cp -a $(CURDIR)/Cargo.lock $(CURDIR)/.Cargo.lock.orig
-	# Prepare a fake registry by packing all deps
-	./debian/cargo-vendor-pack.py
 
 override_dh_auto_build:
 ifneq ($(filter stage0,$(DEB_BUILD_PROFILES)),)
@@ -42,12 +40,9 @@ ifneq ($(filter stage0,$(DEB_BUILD_PROFILES)),)
 		--host=$(DEB_HOST_RUST_TYPE) \
 		--target=$(DEB_TARGET_RUST_TYPE)
 	# Workaround for https://github.com/rust-lang/cargo/issues/1423
-	mv $(DEPSDIR) $(CURDIR)/.deps
-	ln -s `find $(CURDIR)/.deps -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
+	ln -s `find $(DEPSDIR) -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
 else
 	ln -s `which cargo` $(CURDIR)/cargo-stage0
-	# Workaround for https://github.com/rust-lang/cargo/issues/1423
-	mv $(DEPSDIR) $(CURDIR)/.deps
 endif
 	# Configure to build cargo using the just-built stage0
 	./configure \
@@ -63,24 +58,19 @@ ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
 endif
 
-	# Restore from workarounds
-	mv $(CURDIR)/.deps $(DEPSDIR)
-
 override_dh_auto_clean:
 	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock
-	-mv $(CURDIR)/.deps $(DEPSDIR)
 	dh_auto_clean
 	-$(RM) -r $(CURDIR)/deps/*.rlib \
 			$(CURDIR)/deps/build_script* \
 			$(CURDIR)/deps/cargo* \
 			$(CURDIR)/deps/*.o \
 			$(CURDIR)/target/ \
-			$(CURDIR)/.cargo/ \
+			$(CURDIR)/.cargo \
 			$(CURDIR)/config.mk \
 			$(CURDIR)/config.stamp \
 			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0 \
-			$(CARGO_HOME) \
 			$(VENDORDIR)
 
 override_dh_auto_install:
