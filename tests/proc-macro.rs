@@ -49,8 +49,8 @@ fn noop() {
             use proc_macro::TokenStream;
 
             #[proc_macro_derive(Noop)]
-            pub fn noop(input: TokenStream) -> TokenStream {
-                input
+            pub fn noop(_input: TokenStream) -> TokenStream {
+                "".parse().unwrap()
             }
         "#);
     noop.build();
@@ -87,8 +87,8 @@ fn impl_and_derive() {
                 fn impl_by_transmogrify(&self) -> bool;
             }
 
-            #[derive(Transmogrify)]
-            struct X;
+            #[derive(Transmogrify, Debug)]
+            struct X { success: bool }
 
             fn main() {
                 let x = X::new();
@@ -115,8 +115,6 @@ fn impl_and_derive() {
             #[proc_macro_derive(Transmogrify)]
             #[doc(hidden)]
             pub fn transmogrify(input: TokenStream) -> TokenStream {
-                assert_eq!(input.to_string(), "struct X;\n");
-
                 "
                     impl X {
                         fn new() -> Self {
@@ -128,11 +126,6 @@ fn impl_and_derive() {
                         fn impl_by_transmogrify(&self) -> bool {
                             true
                         }
-                    }
-
-                    #[derive(Debug)]
-                    struct X {
-                        success: bool,
                     }
                 ".parse().unwrap()
             }
@@ -184,4 +177,58 @@ fn plugin_and_proc_macro() {
     let msg = "  lib.plugin and lib.proc-macro cannot both be true";
     assert_that(questionable.cargo_process("build"),
                 execs().with_status(101).with_stderr_contains(msg));
+}
+
+#[test]
+fn proc_macro_doctest() {
+    if !is_nightly() {
+        return
+    }
+    let foo = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+            [lib]
+            proc-macro = true
+        "#)
+        .file("src/lib.rs", r#"
+#![feature(proc_macro, proc_macro_lib)]
+#![crate_type = "proc-macro"]
+
+extern crate proc_macro;
+
+use proc_macro::TokenStream;
+
+/// ```
+/// assert!(true);
+/// ```
+#[proc_macro_derive(Bar)]
+pub fn derive(_input: TokenStream) -> TokenStream {
+    "".parse().unwrap()
+}
+
+#[test]
+fn a() {
+  assert!(true);
+}
+"#);
+    foo.build();
+
+    assert_that(foo.cargo_process("test"),
+                execs().with_status(0)
+                       .with_stdout_contains("\
+running 1 test
+test a ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+").with_stdout_contains("\
+running 1 test
+test [..] ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+"));
 }

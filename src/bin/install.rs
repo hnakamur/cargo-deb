@@ -57,7 +57,7 @@ Build and install options:
     --bin NAME                Only install the binary NAME
     --example EXAMPLE         Install the example EXAMPLE instead of binaries
     --root DIR                Directory to install packages into
-    -v, --verbose ...         Use verbose output
+    -v, --verbose ...         Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet               Less output printed to stdout
     --color WHEN              Coloring: auto, always, never
     --frozen                  Require Cargo.lock and cache are up to date
@@ -94,7 +94,7 @@ the more explicit `install --path .`.
 The `--list` option will list all installed packages (and their versions).
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -108,7 +108,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
         features: &options.flag_features,
         all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
-        spec: &[],
+        spec: ops::Packages::Packages(&[]),
         mode: ops::CompileMode::Build,
         release: !options.flag_debug,
         filter: ops::CompileFilter::new(false, &options.flag_bin, &[],
@@ -147,5 +147,5 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     } else {
         ops::install(root, krate, &source, vers, &compile_opts, options.flag_force)?;
     }
-    Ok(None)
+    Ok(())
 }

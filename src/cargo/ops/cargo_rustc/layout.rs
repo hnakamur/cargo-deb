@@ -40,6 +40,10 @@
 //!         $pkg2/
 //!         $pkg3/
 //!
+//!     # Directory used to store incremental data for the compiler (when
+//!     # incremental is enabled.
+//!     incremental/
+//!
 //!     # Hidden directory that holds all of the fingerprint files for all
 //!     # packages
 //!     .fingerprint/
@@ -49,24 +53,18 @@ use std::fs;
 use std::io;
 use std::path::{PathBuf, Path};
 
-use core::{Package, Workspace};
+use core::Workspace;
 use util::{Config, FileLock, CargoResult, Filesystem, human};
-use util::hex::short_hash;
-use super::Unit;
 
 pub struct Layout {
     root: PathBuf,
     deps: PathBuf,
     native: PathBuf,
     build: PathBuf,
+    incremental: PathBuf,
     fingerprint: PathBuf,
     examples: PathBuf,
     _lock: FileLock,
-}
-
-pub struct LayoutProxy<'a> {
-    root: &'a Layout,
-    primary: bool,
 }
 
 impl Layout {
@@ -95,6 +93,7 @@ impl Layout {
             deps: root.join("deps"),
             native: root.join("native"),
             build: root.join("build"),
+            incremental: root.join("incremental"),
             fingerprint: root.join(".fingerprint"),
             examples: root.join("examples"),
             root: root,
@@ -109,6 +108,7 @@ impl Layout {
 
         mkdir(&self.deps)?;
         mkdir(&self.native)?;
+        mkdir(&self.incremental)?;
         mkdir(&self.fingerprint)?;
         mkdir(&self.examples)?;
         mkdir(&self.build)?;
@@ -127,58 +127,7 @@ impl Layout {
     pub fn deps(&self) -> &Path { &self.deps }
     pub fn examples(&self) -> &Path { &self.examples }
     pub fn root(&self) -> &Path { &self.root }
-
-    pub fn fingerprint(&self, package: &Package) -> PathBuf {
-        self.fingerprint.join(&self.pkg_dir(package))
-    }
-
-    pub fn build(&self, package: &Package) -> PathBuf {
-        self.build.join(&self.pkg_dir(package))
-    }
-
-    pub fn build_out(&self, package: &Package) -> PathBuf {
-        self.build(package).join("out")
-    }
-
-    fn pkg_dir(&self, pkg: &Package) -> String {
-        format!("{}-{}", pkg.name(), short_hash(pkg))
-    }
-}
-
-impl<'a> LayoutProxy<'a> {
-    pub fn new(root: &'a Layout, primary: bool) -> LayoutProxy<'a> {
-        LayoutProxy {
-            root: root,
-            primary: primary,
-        }
-    }
-
-    pub fn root(&self) -> &'a Path {
-        if self.primary {self.root.dest()} else {self.root.deps()}
-    }
-    pub fn deps(&self) -> &'a Path { self.root.deps() }
-
-    pub fn examples(&self) -> &'a Path { self.root.examples() }
-
-    pub fn build(&self, pkg: &Package) -> PathBuf { self.root.build(pkg) }
-
-    pub fn build_out(&self, pkg: &Package) -> PathBuf { self.root.build_out(pkg) }
-
-    pub fn proxy(&self) -> &'a Layout { self.root }
-
-    pub fn out_dir(&self, unit: &Unit) -> PathBuf {
-        if unit.target.is_custom_build() {
-            self.build(unit.pkg)
-        } else if unit.target.is_example() {
-            self.examples().to_path_buf()
-        } else {
-            self.deps().to_path_buf()
-        }
-    }
-
-    pub fn doc_root(&self) -> PathBuf {
-        // the "root" directory ends in 'debug' or 'release', and we want it to
-        // end in 'doc' instead
-        self.root.root().parent().unwrap().join("doc")
-    }
+    pub fn incremental(&self) -> &Path { &self.incremental }
+    pub fn fingerprint(&self) -> &Path { &self.fingerprint }
+    pub fn build(&self) -> &Path { &self.build }
 }

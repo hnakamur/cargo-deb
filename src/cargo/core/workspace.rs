@@ -40,6 +40,10 @@ pub struct Workspace<'cfg> {
     // paths. The packages themselves can be looked up through the `packages`
     // set above.
     members: Vec<PathBuf>,
+
+    // True, if this is a temporary workspace created for the purposes of
+    // cargo install or cargo package.
+    is_ephemeral: bool,
 }
 
 // Separate structure for tracking loaded packages (to avoid loading anything
@@ -94,6 +98,7 @@ impl<'cfg> Workspace<'cfg> {
             root_manifest: None,
             target_dir: target_dir,
             members: Vec::new(),
+            is_ephemeral: false,
         };
         ws.root_manifest = ws.find_root(manifest_path)?;
         ws.find_members()?;
@@ -110,8 +115,8 @@ impl<'cfg> Workspace<'cfg> {
     ///
     /// This is currently only used in niche situations like `cargo install` or
     /// `cargo package`.
-    pub fn one(package: Package, config: &'cfg Config, target_dir: Option<Filesystem>)
-               -> CargoResult<Workspace<'cfg>> {
+    pub fn ephemeral(package: Package, config: &'cfg Config, target_dir: Option<Filesystem>)
+                     -> CargoResult<Workspace<'cfg>> {
         let mut ws = Workspace {
             config: config,
             current_manifest: package.manifest_path().to_path_buf(),
@@ -122,6 +127,7 @@ impl<'cfg> Workspace<'cfg> {
             root_manifest: None,
             target_dir: None,
             members: Vec::new(),
+            is_ephemeral: true,
         };
         {
             let key = ws.current_manifest.parent().unwrap();
@@ -209,6 +215,10 @@ impl<'cfg> Workspace<'cfg> {
         }
     }
 
+    pub fn is_ephemeral(&self) -> bool {
+        self.is_ephemeral
+    }
+
     /// Finds the root of a workspace for the crate whose manifest is located
     /// at `manifest_path`.
     ///
@@ -242,8 +252,8 @@ impl<'cfg> Workspace<'cfg> {
         while let Some(path) = cur {
             let manifest = path.join("Cargo.toml");
             debug!("find_root - trying {}", manifest.display());
-            if let Ok(pkg) = self.packages.load(&manifest) {
-                match *pkg.workspace_config() {
+            if manifest.exists() {
+                match *self.packages.load(&manifest)?.workspace_config() {
                     WorkspaceConfig::Root { .. } => {
                         debug!("find_root - found");
                         return Ok(Some(manifest))
@@ -283,26 +293,34 @@ impl<'cfg> Workspace<'cfg> {
         };
 
         if let Some(list) = members {
-            let root = root_manifest.parent().unwrap();
             for path in list {
+                let root = root_manifest.parent().unwrap();
                 let manifest_path = root.join(path).join("Cargo.toml");
-                self.find_path_deps(&manifest_path)?;
+                self.find_path_deps(&manifest_path, false)?;
             }
         }
 
-        self.find_path_deps(&root_manifest)
+        self.find_path_deps(&root_manifest, false)
     }
 
-    fn find_path_deps(&mut self, manifest_path: &Path) -> CargoResult<()> {
-        if self.members.iter().any(|p| p == manifest_path) {
+    fn find_path_deps(&mut self, manifest_path: &Path, is_path_dep: bool) -> CargoResult<()> {
+        let manifest_path = paths::normalize_path(manifest_path);
+        if self.members.iter().any(|p| p == &manifest_path) {
+            return Ok(())
+        }
+        if is_path_dep
+            && !manifest_path.parent().unwrap().starts_with(self.root())
+            && self.find_root(&manifest_path)? != self.root_manifest {
+            // If `manifest_path` is a path dependency outside of the workspace,
+            // don't add it, or any of its dependencies, as a members.
             return Ok(())
         }
 
         debug!("find_members - {}", manifest_path.display());
-        self.members.push(manifest_path.to_path_buf());
+        self.members.push(manifest_path.clone());
 
         let candidates = {
-            let pkg = match *self.packages.load(manifest_path)? {
+            let pkg = match *self.packages.load(&manifest_path)? {
                 MaybePackage::Package(ref p) => p,
                 MaybePackage::Virtual(_) => return Ok(()),
             };
@@ -315,7 +333,7 @@ impl<'cfg> Workspace<'cfg> {
                .collect::<Vec<_>>()
         };
         for candidate in candidates {
-            self.find_path_deps(&candidate)?;
+            self.find_path_deps(&candidate, true)?;
         }
         Ok(())
     }
@@ -450,6 +468,8 @@ impl<'cfg> Workspace<'cfg> {
                 bench_deps: Profile::default_release(),
                 doc: Profile::default_doc(),
                 custom_build: Profile::default_custom_build(),
+                check: Profile::default_check(),
+                doctest: Profile::default_doctest(),
             };
 
             for pkg in self.members().filter(|p| p.manifest_path() != root_manifest) {

@@ -11,22 +11,6 @@ Learn more at http://doc.crates.io/
 Cargo is distributed by default with Rust, so if you've got `rustc` installed
 locally you probably also have `cargo` installed locally.
 
-If, however, you would like to install Cargo from the nightly binaries that are
-generated, you may also do so! Note that these nightlies are not official
-binaries, so they are only provided in one format with one installation method.
-Each tarball below contains a top-level `install.sh` script to install Cargo.
-
-* [`x86_64-unknown-linux-gnu`](https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknown-linux-gnu.tar.gz)
-* [`i686-unknown-linux-gnu`](https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-unknown-linux-gnu.tar.gz)
-* [`x86_64-apple-darwin`](https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-apple-darwin.tar.gz)
-* [`i686-apple-darwin`](https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-apple-darwin.tar.gz)
-* [`x86_64-pc-windows-gnu`](https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-pc-windows-gnu.tar.gz)
-* [`i686-pc-windows-gnu`](https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-pc-windows-gnu.tar.gz)
-* [`x86_64-pc-windows-msvc`](https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-pc-windows-msvc.tar.gz)
-
-Note that if you're on Windows you will have to run the `install.sh` script from
-inside an MSYS shell, likely from a MinGW-64 installation.
-
 ## Compiling from Source
 
 Cargo requires the following tools and packages to build:
@@ -35,6 +19,7 @@ Cargo requires the following tools and packages to build:
 * `curl` (on Unix)
 * `cmake`
 * OpenSSL headers (only for Unix, this is the `libssl-dev` package on ubuntu)
+* `cargo` and `rustc`
 
 First, you'll want to check out this repository
 
@@ -43,30 +28,19 @@ git clone --recursive https://github.com/rust-lang/cargo
 cd cargo
 ```
 
-If you already have `rustc` and `cargo` installed elsewhere, you can simply run
+With `cargo` already installed, you can simply run:
 
 ```
 cargo build --release
 ```
 
-Otherwise, if you have `rustc` installed and not Cargo, you can simply run:
+Otherwise, you can also use a more traditional approach:
 
 ```sh
 ./configure
 make
 make install
 ```
-
-If, however, you have neither `rustc` nor `cargo` previously installed you can
-run:
-
-```sh
-python -B src/etc/install-deps.py
-./configure --local-rust-root="$PWD"/rustc
-make
-make install
-```
-Note: if building for 32 bit systems run `BITS=32 python -B ..`
 
 More options can be discovered through `./configure`, such as compiling cargo
 for more than one target. For example, if you'd like to compile both 32 and 64

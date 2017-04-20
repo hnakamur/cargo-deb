@@ -105,7 +105,7 @@ fn cargo_bench_verbose() {
     assert_that(p.cargo_process("bench").arg("-v").arg("hello"),
                 execs().with_stderr(&format!("\
 [COMPILING] foo v0.5.0 ({url})
-[RUNNING] `rustc src[/]foo.rs [..]`
+[RUNNING] `rustc [..] src[/]foo.rs [..]`
 [FINISHED] release [optimized] target(s) in [..]
 [RUNNING] `[..]target[/]release[/]deps[/]foo-[..][EXE] hello --bench`", url = p.url()))
                        .with_stdout("
@@ -919,7 +919,7 @@ fn test_a_bench() {
                 execs().with_status(0)
                        .with_stderr("\
 [COMPILING] foo v0.1.0 ([..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]debug[/]deps[/]b-[..][EXE]")
                        .with_stdout("
 running 1 test

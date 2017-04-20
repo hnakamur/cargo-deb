@@ -25,7 +25,7 @@ Options:
     -h, --help               Print this message
     -p SPEC, --package SPEC  Argument to get the package id specifier for
     --manifest-path PATH     Path to the manifest to the package to clean
-    -v, --verbose ...        Use verbose output
+    -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
     --frozen                 Require Cargo.lock and cache are up to date
@@ -53,7 +53,7 @@ Example Package IDs
 ";
 
 pub fn execute(options: Options,
-               config: &Config) -> CliResult<Option<()>> {
+               config: &Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -72,6 +72,6 @@ pub fn execute(options: Options,
     let spec = spec.as_ref().map(|s| &s[..]);
     let spec = ops::pkgid(&ws, spec)?;
     println!("{}", spec);
-    Ok(None)
+    Ok(())
 }
 

@@ -12,6 +12,7 @@ use term::color::BLACK;
 
 use url::percent_encoding::{percent_encode, QUERY_ENCODE_SET};
 
+use version;
 use core::source::Source;
 use core::{Package, SourceId, Workspace};
 use core::dependency::Kind;
@@ -80,9 +81,11 @@ fn verify_dependencies(pkg: &Package, registry_src: &SourceId)
                        a version", dep.name())
             }
         } else if dep.source_id() != registry_src {
-            bail!("all dependencies must come from the same source.\n\
-                   dependency `{}` comes from {} instead",
-                  dep.name(), dep.source_id())
+            bail!("crates cannot be published to crates.io with dependencies sourced from \
+                   a repository\neither publish `{}` as its own crate on crates.io and \
+                   specify a crates.io version as a dependency or pull it into this \
+                   repository and specify it with a path and version\n(crate `{}` has \
+                   repository path `{}`)", dep.name(), dep.name(),  dep.source_id());
         }
     }
     Ok(())
@@ -112,6 +115,7 @@ fn transmit(config: &Config,
     let ManifestMetadata {
         ref authors, ref description, ref homepage, ref documentation,
         ref keywords, ref readme, ref repository, ref license, ref license_file,
+        ref categories, ref badges,
     } = *manifest.metadata();
     let readme = match *readme {
         Some(ref readme) => Some(paths::read(&pkg.root().join(readme))?),
@@ -132,7 +136,7 @@ fn transmit(config: &Config,
         return Ok(());
     }
 
-    registry.publish(&NewCrate {
+    let publish = registry.publish(&NewCrate {
         name: pkg.name().to_string(),
         vers: pkg.version().to_string(),
         deps: deps,
@@ -142,13 +146,40 @@ fn transmit(config: &Config,
         homepage: homepage.clone(),
         documentation: documentation.clone(),
         keywords: keywords.clone(),
+        categories: categories.clone(),
         readme: readme,
         repository: repository.clone(),
         license: license.clone(),
         license_file: license_file.clone(),
-    }, tarball).map_err(|e| {
-        human(e.to_string())
-    })
+        badges: badges.clone(),
+    }, tarball);
+
+    match publish {
+        Ok(warnings) => {
+            if !warnings.invalid_categories.is_empty() {
+                let msg = format!("\
+                    the following are not valid category slugs and were \
+                    ignored: {}. Please see https://crates.io/category_slugs \
+                    for the list of all category slugs. \
+                    ", warnings.invalid_categories.join(", "));
+                config.shell().warn(&msg)?;
+            }
+
+            if !warnings.invalid_badges.is_empty() {
+                let msg = format!("\
+                    the following are not valid badges and were ignored: {}. \
+                    Either the badge type specified is unknown or a required \
+                    attribute is missing. Please see \
+                    http://doc.crates.io/manifest.html#package-metadata \
+                    for valid badge types and their required attributes.",
+                    warnings.invalid_badges.join(", "));
+                config.shell().warn(&msg)?;
+            }
+
+            Ok(())
+        },
+        Err(e) => Err(human(e.to_string())),
+    }
 }
 
 pub fn registry_configuration(config: &Config) -> CargoResult<RegistryConfig> {
@@ -196,6 +227,7 @@ pub fn http_handle(config: &Config) -> CargoResult<Easy> {
     handle.connect_timeout(Duration::new(30, 0))?;
     handle.low_speed_limit(10 /* bytes per second */)?;
     handle.low_speed_time(Duration::new(30, 0))?;
+    handle.useragent(&version().to_string())?;
     if let Some(proxy) = http_proxy(config)? {
         handle.proxy(&proxy)?;
     }

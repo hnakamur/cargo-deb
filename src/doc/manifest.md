@@ -109,7 +109,9 @@ There are a number of optional metadata fields also accepted under the
 # uploaded to crates.io (aka this is not markdown).
 description = "..."
 
-# These URLs point to more information about the repository.
+# These URLs point to more information about the repository. These are
+# intended to be webviews of the relevant data, not necessarily compatible
+# with VCS tools and the like.
 documentation = "..."
 homepage = "..."
 repository = "..."
@@ -118,9 +120,15 @@ repository = "..."
 # contents of this file are stored and indexed in the registry.
 readme = "..."
 
-# This is a small list of keywords used to categorize and search for this
-# package.
+# This is a list of up to five keywords that describe this crate. Keywords
+# are searchable on crates.io, and you may choose any words that would
+# help someone find this crate.
 keywords = ["...", "..."]
+
+# This is a list of up to five categories where this crate would fit.
+# Categories are a fixed list available at crates.io/category_slugs, and
+# they must match exactly.
+categories = ["...", "..."]
 
 # This is a string description of the license for this package. Currently
 # crates.io will validate the license provided against a whitelist of known
@@ -132,6 +140,17 @@ license = "..."
 # lieu of the above key and must point to a file relative to this manifest
 # (similar to the readme key).
 license-file = "..."
+
+# Optional specification of badges to be displayed on crates.io. The badges
+# currently available are Travis CI and Appveyor latest build status, specified
+# using the following parameters:
+[badges]
+# Travis CI: `repository` is required. `branch` is optional; default is `master`
+travis-ci = { repository = "...", branch = "master" }
+# Appveyor: `repository` is required. `branch` is optional; default is `master`
+# `service` is optional; valid values are `github` (default), `bitbucket`, and
+# `gitlab`.
+appveyor = { repository = "...", branch = "master", service = "github" }
 ```
 
 The [crates.io](https://crates.io) registry will render the description, display
@@ -181,7 +200,8 @@ along with the defaults for each profile.
 # The development profile, used for `cargo build`.
 [profile.dev]
 opt-level = 0      # controls the `--opt-level` the compiler builds with
-debug = true       # controls whether the compiler passes `-g`
+debug = true       # controls whether the compiler passes `-C debuginfo`
+                   # a value of `true` is equivalent to `2`
 rpath = false      # controls whether the compiler passes `-C rpath`
 lto = false        # controls `-C lto` for binaries and staticlibs
 debug-assertions = true # controls whether debug assertions are enabled
@@ -202,7 +222,7 @@ panic = 'unwind'
 # The testing profile, used for `cargo test`.
 [profile.test]
 opt-level = 0
-debug = true
+debug = 2
 rpath = false
 lto = false
 debug-assertions = true
@@ -222,7 +242,7 @@ panic = 'unwind'
 # The documentation profile, used for `cargo doc`.
 [profile.doc]
 opt-level = 0
-debug = true
+debug = 2
 rpath = false
 lto = false
 debug-assertions = true
@@ -383,11 +403,11 @@ properties:
 
 [RFC 1525]: https://github.com/rust-lang/rfcs/blob/master/text/1525-cargo-workspace.md
 
-The root crate of a workspace, indicated by the presence of `[workspace]` in
-its manifest, is responsible for defining the entire workspace (listing all
-members). This can be done through the `members` key, and if it is omitted then
-members are implicitly included through all `path` dependencies. Note that
-members of the workspaces listed explicitly will also have their path
+The root crate of a workspace, indicated by the presence of `[workspace]` in its
+manifest, is responsible for defining the entire workspace. All `path`
+dependencies residing in the workspace directory become members. You can add
+additional packages to the workspace by listing them in the `members` key. Note
+that members of the workspaces listed explicitly will also have their path
 dependencies included in the workspace.
 
 The `package.workspace` manifest key (described above) is used in member crates
@@ -410,7 +430,7 @@ is a library, name the main source file `src/lib.rs`.
 Cargo will also treat any files located in `src/bin/*.rs` as executables.
 
 Your project can optionally contain folders named `examples`, `tests`, and
-`benches`, which Cargo will treat as containing example executable files,
+`benches`, which Cargo will treat as containing examples,
 integration tests, and benchmarks respectively.
 
 ```notrust
@@ -434,12 +454,21 @@ To structure your code after you've created the files and folders for your proje
 Files located under `examples` are example uses of the functionality provided by
 the library. When compiled, they are placed in the `target/examples` directory.
 
-They must compile as executables (with a `main()` function) and load in the
-library by using `extern crate <library-name>`. They are compiled when you run
+They can compile either as executables (with a `main()` function) or libraries and pull in the library by using `extern crate <library-name>`. They are compiled when you run
 your tests to protect them from bitrotting.
 
-You can run individual examples with the command `cargo run --example
+You can run individual executable examples with the command `cargo run --example
 <example-name>`.
+
+Specify `crate-type` to make an example be compiled as a library:
+
+```toml
+[[example]]
+name = "foo"
+crate-type = ["staticlib"]
+```
+
+You can build individual library examples with the command `cargo build --example <example-name>`.
 
 # Tests
 

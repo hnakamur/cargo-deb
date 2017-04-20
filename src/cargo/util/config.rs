@@ -225,6 +225,36 @@ impl Config {
         }
     }
 
+    pub fn get_list_or_split_string(&self, key: &str)
+                    -> CargoResult<Option<Value<Vec<String>>>> {
+        match self.get_env::<String>(key) {
+            Ok(Some(value)) =>
+                return Ok(Some(Value {
+                    val: value.val.split(' ').map(str::to_string).collect(),
+                    definition: value.definition
+                })),
+            Err(err) => return Err(err),
+            Ok(None) => (),
+        }
+
+        match self.get(key)? {
+            Some(CV::List(i, path)) => {
+                Ok(Some(Value {
+                    val: i.into_iter().map(|(s, _)| s).collect(),
+                    definition: Definition::Path(path),
+                }))
+            }
+            Some(CV::String(i, path)) => {
+                Ok(Some(Value {
+                    val: i.split(' ').map(str::to_string).collect(),
+                    definition: Definition::Path(path),
+                }))
+            }
+            Some(val) => self.expected("list or string", key, val),
+            None => Ok(None),
+        }
+    }
+
     pub fn get_table(&self, key: &str)
                     -> CargoResult<Option<Value<HashMap<String, CV>>>> {
         match self.get(key)? {
@@ -605,7 +635,7 @@ impl fmt::Display for Definition {
     }
 }
 
-fn homedir(cwd: &Path) -> Option<PathBuf> {
+pub fn homedir(cwd: &Path) -> Option<PathBuf> {
     let cargo_home = env::var_os("CARGO_HOME").map(|home| {
         cwd.join(home)
     });

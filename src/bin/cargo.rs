@@ -12,8 +12,7 @@ use std::env;
 use std::fs;
 use std::path::{Path,PathBuf};
 
-use cargo::core::shell::Verbosity;
-use cargo::execute_main_without_stdin;
+use cargo::core::shell::{Verbosity, ColorConfig};
 use cargo::util::{self, CliResult, lev_distance, Config, human, CargoResult};
 use cargo::util::CliError;
 
@@ -43,7 +42,7 @@ Options:
     -V, --version       Print version info and exit
     --list              List installed commands
     --explain CODE      Run `rustc --explain CODE`
-    -v, --verbose ...   Use verbose output
+    -v, --verbose ...   Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet         No output printed to stdout
     --color WHEN        Coloring: auto, always, never
     --frozen            Require Cargo.lock and cache are up to date
@@ -51,6 +50,7 @@ Options:
 
 Some common cargo commands are (see all commands with --list):
     build       Compile the current project
+    check       Analyze the current project and report errors, but don't build object files
     clean       Remove the target directory
     doc         Build this project's and its dependencies' documentation
     new         Create a new cargo project
@@ -68,13 +68,36 @@ See 'cargo help <command>' for more information on a specific command.
 
 fn main() {
     env_logger::init().unwrap();
-    execute_main_without_stdin(execute, true, USAGE)
+
+    let config = match Config::default() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            let mut shell = cargo::shell(Verbosity::Verbose, ColorConfig::Auto);
+            cargo::handle_cli_error(e.into(), &mut shell)
+        }
+    };
+
+    let result = (|| {
+        let args: Vec<_> = try!(env::args_os().map(|s| {
+            s.into_string().map_err(|s| {
+                human(format!("invalid unicode in argument: {:?}", s))
+            })
+        }).collect());
+        let rest = &args;
+        cargo::call_main_without_stdin(execute, &config, USAGE, rest, true)
+    })();
+
+    match result {
+        Err(e) => cargo::handle_cli_error(e, &mut *config.shell()),
+        Ok(()) => {},
+    }
 }
 
 macro_rules! each_subcommand{
     ($mac:ident) => {
         $mac!(bench);
         $mac!(build);
+        $mac!(check);
         $mac!(clean);
         $mac!(doc);
         $mac!(fetch);
@@ -115,7 +138,7 @@ each_subcommand!(declare_mod);
   because they are fundamental (and intertwined). Other commands can rely
   on this top-level information.
 */
-fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
+fn execute(flags: Flags, config: &Config) -> CliResult {
     config.configure(flags.flag_verbose,
                      flags.flag_quiet,
                      &flags.flag_color,
@@ -126,8 +149,19 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
     let _token = cargo::util::job::setup();
 
     if flags.flag_version {
-        println!("{}", cargo::version());
-        return Ok(None)
+        let version = cargo::version();
+        println!("{}", version);
+        if flags.flag_verbose > 0{
+            println!("release: {}.{}.{}",
+                     version.major, version.minor, version.patch);
+            if let Some(ref cfg) = version.cfg_info {
+                if let Some(ref ci) = cfg.commit_info {
+                    println!("commit-hash: {}", ci.commit_hash);
+                    println!("commit-date: {}", ci.commit_date);
+                }
+            }
+        }
+        return Ok(())
     }
 
     if flags.flag_list {
@@ -135,13 +169,13 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
         for command in list_commands(config) {
             println!("    {}", command);
         };
-        return Ok(None)
+        return Ok(())
     }
 
     if let Some(ref code) = flags.flag_explain {
         let mut procss = config.rustc()?.process();
         procss.arg("--explain").arg(code).exec().map_err(human)?;
-        return Ok(None)
+        return Ok(())
     }
 
     let args = match &flags.arg_command[..] {
@@ -154,7 +188,7 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
             let r = cargo::call_main_without_stdin(execute, config, USAGE, args,
                                                    false);
             cargo::process_executed(r, &mut config.shell());
-            return Ok(None)
+            return Ok(())
         }
 
         // For `cargo help -h` and `cargo help --help`, print out the help
@@ -186,7 +220,7 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
     };
 
     if try_execute(&config, &args) {
-        return Ok(None)
+        return Ok(())
     }
 
     let alias_list = aliased_command(&config, &args[1])?;
@@ -198,7 +232,7 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>();
             if try_execute(&config, &chain) {
-                return Ok(None)
+                return Ok(())
             } else {
                 chain
             }
@@ -206,7 +240,7 @@ fn execute(flags: Flags, config: &Config) -> CliResult<Option<()>> {
         None => args,
     };
     execute_subcommand(config, &args[1], &args)?;
-    Ok(None)
+    Ok(())
 }
 
 fn try_execute(config: &Config, args: &[String]) -> bool {
@@ -263,7 +297,7 @@ fn find_closest(config: &Config, cmd: &str) -> Option<String> {
 
 fn execute_subcommand(config: &Config,
                       cmd: &str,
-                      args: &[String]) -> CliResult<()> {
+                      args: &[String]) -> CliResult {
     let command_exe = format!("cargo-{}{}", cmd, env::consts::EXE_SUFFIX);
     let path = search_directories(config)
                     .iter()
@@ -291,8 +325,7 @@ fn execute_subcommand(config: &Config,
     }
 }
 
-/// List all runnable commands. find_command should always succeed
-/// if given one of returned command.
+/// List all runnable commands
 fn list_commands(config: &Config) -> BTreeSet<String> {
     let prefix = "cargo-";
     let suffix = env::consts::EXE_SUFFIX;

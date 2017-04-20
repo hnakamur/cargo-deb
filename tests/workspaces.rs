@@ -504,7 +504,7 @@ fn share_dependencies() {
 [DOWNLOADING] dep1 v0.1.3 ([..])
 [COMPILING] dep1 v0.1.3
 [COMPILING] foo v0.1.0 ([..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 }
 
@@ -589,7 +589,7 @@ fn lock_works_for_everyone() {
 [DOWNLOADING] dep2 v0.1.0 ([..])
 [COMPILING] dep2 v0.1.0
 [COMPILING] foo v0.1.0 ([..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 
     assert_that(p.cargo("build").cwd(p.root().join("bar")),
@@ -598,7 +598,7 @@ fn lock_works_for_everyone() {
 [DOWNLOADING] dep1 v0.1.0 ([..])
 [COMPILING] dep1 v0.1.0
 [COMPILING] bar v0.1.0 ([..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 }
 
@@ -618,6 +618,28 @@ fn virtual_works() {
         .file("bar/src/main.rs", "fn main() {}");
     p.build();
     assert_that(p.cargo("build").cwd(p.root().join("bar")),
+                execs().with_status(0));
+    assert_that(&p.root().join("Cargo.lock"), existing_file());
+    assert_that(&p.bin("bar"), existing_file());
+    assert_that(&p.root().join("bar/Cargo.lock"), is_not(existing_file()));
+}
+
+#[test]
+fn explicit_package_argument_works_with_virtual_manifest() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["bar"]
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/main.rs", "fn main() {}");
+    p.build();
+    assert_that(p.cargo("build").cwd(p.root()).args(&["--package", "bar"]),
                 execs().with_status(0));
     assert_that(&p.root().join("Cargo.lock"), existing_file());
     assert_that(&p.bin("bar"), existing_file());
@@ -652,6 +674,29 @@ manifest located at: [..]
 
 #[test]
 fn virtual_build() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["bar"]
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/main.rs", "fn main() {}");
+    p.build();
+    assert_that(p.cargo("build"),
+                execs().with_status(101)
+                       .with_stderr("\
+error: manifest path `[..]` is a virtual manifest, but this command \
+requires running against an actual package in this workspace
+"));
+}
+
+#[test]
+fn virtual_build_no_members() {
     let p = project("foo")
         .file("Cargo.toml", r#"
             [workspace]
@@ -1009,4 +1054,181 @@ fn workspace_with_transitive_dev_deps() {
 
     assert_that(p.cargo("test").args(&["-p", "bar"]),
                 execs().with_status(0));
+}
+
+#[test]
+fn error_if_parent_cargo_toml_is_invalid() {
+    let p = project("foo")
+        .file("Cargo.toml", "Totally not a TOML file")
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(p.cargo("build").cwd(p.root().join("bar")),
+                execs().with_status(101)
+                       .with_stderr_contains("\
+[ERROR] failed to parse manifest at `[..]`"));
+}
+
+#[test]
+fn relative_path_for_member_works() {
+    let p = project("foo")
+        .file("foo/Cargo.toml", r#"
+        [project]
+        name = "foo"
+        version = "0.1.0"
+        authors = []
+
+        [workspace]
+        members = ["../bar"]
+    "#)
+        .file("foo/src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", r#"
+        [project]
+        name = "bar"
+        version = "0.1.0"
+        authors = []
+        workspace = "../foo"
+    "#)
+        .file("bar/src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(p.cargo("build").cwd(p.root().join("foo")), execs().with_status(0));
+    assert_that(p.cargo("build").cwd(p.root().join("bar")), execs().with_status(0));
+}
+
+#[test]
+fn path_dep_outside_workspace_is_not_member() {
+    let p = project("foo")
+        .file("ws/Cargo.toml", r#"
+            [project]
+            name = "ws"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = { path = "../foo" }
+
+            [workspace]
+        "#)
+        .file("ws/src/lib.rs", r"extern crate foo;")
+        .file("foo/Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("foo/src/lib.rs", "");
+    p.build();
+
+    assert_that(p.cargo("build").cwd(p.root().join("ws")),
+                execs().with_status(0));
+}
+
+#[test]
+fn test_in_and_out_of_workspace() {
+    let p = project("foo")
+        .file("ws/Cargo.toml", r#"
+            [project]
+            name = "ws"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = { path = "../foo" }
+
+            [workspace]
+            members = [ "../bar" ]
+        "#)
+        .file("ws/src/lib.rs", r"extern crate foo; pub fn f() { foo::f() }")
+        .file("foo/Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            bar = { path = "../bar" }
+        "#)
+        .file("foo/src/lib.rs", "extern crate bar; pub fn f() { bar::f() }")
+        .file("bar/Cargo.toml", r#"
+            [project]
+            workspace = "../ws"
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", "pub fn f() { }");
+    p.build();
+
+    assert_that(p.cargo("build").cwd(p.root().join("ws")),
+                execs().with_status(0));
+
+    assert_that(&p.root().join("ws/Cargo.lock"), existing_file());
+    assert_that(&p.root().join("ws/target"), existing_dir());
+    assert_that(&p.root().join("foo/Cargo.lock"), is_not(existing_file()));
+    assert_that(&p.root().join("foo/target"), is_not(existing_dir()));
+    assert_that(&p.root().join("bar/Cargo.lock"), is_not(existing_file()));
+    assert_that(&p.root().join("bar/target"), is_not(existing_dir()));
+
+    assert_that(p.cargo("build").cwd(p.root().join("foo")),
+                execs().with_status(0));
+    assert_that(&p.root().join("foo/Cargo.lock"), existing_file());
+    assert_that(&p.root().join("foo/target"), existing_dir());
+    assert_that(&p.root().join("bar/Cargo.lock"), is_not(existing_file()));
+    assert_that(&p.root().join("bar/target"), is_not(existing_dir()));
+}
+
+#[test]
+fn test_path_dependency_under_member() {
+    let p = project("foo")
+        .file("ws/Cargo.toml", r#"
+            [project]
+            name = "ws"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = { path = "../foo" }
+
+            [workspace]
+        "#)
+        .file("ws/src/lib.rs", r"extern crate foo; pub fn f() { foo::f() }")
+        .file("foo/Cargo.toml", r#"
+            [project]
+            workspace = "../ws"
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            bar = { path = "./bar" }
+        "#)
+        .file("foo/src/lib.rs", "extern crate bar; pub fn f() { bar::f() }")
+        .file("foo/bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("foo/bar/src/lib.rs", "pub fn f() { }");
+    p.build();
+
+    assert_that(p.cargo("build").cwd(p.root().join("ws")),
+                execs().with_status(0));
+
+    assert_that(&p.root().join("foo/bar/Cargo.lock"), is_not(existing_file()));
+    assert_that(&p.root().join("foo/bar/target"), is_not(existing_dir()));
+
+    assert_that(p.cargo("build").cwd(p.root().join("foo/bar")),
+                execs().with_status(0));
+    // Ideally, `foo/bar` should be a member of the workspace,
+    // because it is hierarchically under the workspace member.
+    assert_that(&p.root().join("foo/bar/Cargo.lock"), existing_file());
+    assert_that(&p.root().join("foo/bar/target"), existing_dir());
 }

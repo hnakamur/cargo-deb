@@ -553,7 +553,53 @@ fn duplicate_deps() {
 [ERROR] failed to parse manifest at `[..]`
 
 Caused by:
-  found duplicate dependency name bar, but all dependencies must have a unique name
+  Dependency 'bar' has different source paths depending on the build target. Each dependency must \
+have a single canonical source path irrespective of build target.
+"));
+}
+
+#[test]
+fn duplicate_deps_diff_sources() {
+    let foo = project("foo")
+    .file("shim-bar/Cargo.toml", r#"
+       [package]
+       name = "bar"
+       version = "0.0.1"
+       authors = []
+    "#)
+    .file("shim-bar/src/lib.rs", r#"
+            pub fn a() {}
+    "#)
+    .file("linux-bar/Cargo.toml", r#"
+       [package]
+       name = "bar"
+       version = "0.0.1"
+       authors = []
+    "#)
+    .file("linux-bar/src/lib.rs", r#"
+            pub fn a() {}
+    "#)
+    .file("Cargo.toml", r#"
+       [package]
+       name = "qqq"
+       version = "0.0.1"
+       authors = []
+
+       [target.i686-unknown-linux-gnu.dependencies]
+       bar = { path = "shim-bar" }
+
+       [target.x86_64-unknown-linux-gnu.dependencies]
+       bar = { path = "linux-bar" }
+    "#)
+    .file("src/main.rs", r#"fn main () {}"#);
+
+    assert_that(foo.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Dependency 'bar' has different source paths depending on the build target. Each dependency must \
+have a single canonical source path irrespective of build target.
 "));
 }
 
@@ -575,7 +621,7 @@ fn unused_keys() {
                 execs().with_status(0).with_stderr("\
 warning: unused manifest key: target.foo.bar
 [COMPILING] foo v0.1.0 (file:///[..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 }
 
@@ -626,7 +672,7 @@ invalid), but this file has a table header which does not have a newline after
 it. A newline needs to be added and this warning will soon become a hard error
 in the future.
 [COMPILING] empty_deps v0.0.0 ([..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 }
 

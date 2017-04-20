@@ -1,10 +1,11 @@
 pub use self::cargo_clean::{clean, CleanOptions};
-pub use self::cargo_compile::{compile, compile_ws, resolve_dependencies, CompileOptions};
-pub use self::cargo_compile::{CompileFilter, CompileMode, MessageFormat};
+pub use self::cargo_compile::{compile, compile_with_exec, compile_ws, CompileOptions};
+pub use self::cargo_compile::{CompileFilter, CompileMode, MessageFormat, Packages};
 pub use self::cargo_read_manifest::{read_manifest,read_package,read_packages};
-pub use self::cargo_rustc::{compile_targets, Compilation, Layout, Kind, Unit};
-pub use self::cargo_rustc::{Context, LayoutProxy};
+pub use self::cargo_rustc::{compile_targets, Compilation, Kind, Unit};
+pub use self::cargo_rustc::Context;
 pub use self::cargo_rustc::{BuildOutput, BuildConfig, TargetConfig};
+pub use self::cargo_rustc::{Executor, DefaultExecutor};
 pub use self::cargo_run::run;
 pub use self::cargo_install::{install, install_list, uninstall};
 pub use self::cargo_new::{new, init, NewOptions, VersionControl};
@@ -18,9 +19,9 @@ pub use self::cargo_package::{package, PackageOpts};
 pub use self::registry::{publish, registry_configuration, RegistryConfig};
 pub use self::registry::{registry_login, search, http_proxy_exists, http_handle};
 pub use self::registry::{modify_owners, yank, OwnersOptions, PublishOpts};
-pub use self::cargo_fetch::{fetch, get_resolved_packages};
+pub use self::cargo_fetch::fetch;
 pub use self::cargo_pkgid::pkgid;
-pub use self::resolve::{resolve_ws, resolve_with_previous};
+pub use self::resolve::{resolve_ws, resolve_ws_precisely, resolve_with_previous};
 pub use self::cargo_output_metadata::{output_metadata, OutputMetadataOptions, ExportInfo};
 
 mod cargo_clean;

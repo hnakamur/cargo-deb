@@ -48,7 +48,7 @@ Options:
     --no-default-features        Do not build the `default` feature
     --target TRIPLE              Build for the target triple
     --manifest-path PATH         Path to the manifest to build benchmarks for
-    -v, --verbose ...            Use verbose output
+    -v, --verbose ...            Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet                  No output printed to stdout
     --color WHEN                 Coloring: auto, always, never
     --message-format FMT         Error format: human, json [default: human]
@@ -70,7 +70,7 @@ not affect how many jobs are used when running the benchmarks.
 Compilation can be customized with the `bench` profile in the manifest.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
     config.configure(options.flag_verbose,
                      options.flag_quiet,
@@ -88,7 +88,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
             features: &options.flag_features,
             all_features: options.flag_all_features,
             no_default_features: options.flag_no_default_features,
-            spec: &options.flag_package,
+            spec: ops::Packages::Packages(&options.flag_package),
             release: true,
             mode: ops::CompileMode::Bench,
             filter: ops::CompileFilter::new(options.flag_lib,
@@ -105,7 +105,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     let ws = Workspace::new(&root, config)?;
     let err = ops::run_benches(&ws, &ops, &options.arg_args)?;
     match err {
-        None => Ok(None),
+        None => Ok(()),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {
                 Some(i) => CliError::new(human("bench failed"), i),

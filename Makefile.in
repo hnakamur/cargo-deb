@@ -1,28 +1,34 @@
-CFG_RELEASE_NUM=0.15.0
+CFG_RELEASE_NUM=0.17.0
 CFG_RELEASE_LABEL=
 
-OPENSSL_VERS=1.0.2j
-OPENSSL_SHA256=e7aff292be21c259c6af26469c7a9b3ba26e9abaaffd325e3dccc9785256c431
+OPENSSL_VERS=1.0.2k
+OPENSSL_SHA256=6b3977c61f2aedf0f96367dcfb5c6e578cf37e7b8d913b4ecb6643c3cb88d8c0
 
 include config.mk
 
 export PATH := $(dir $(CFG_RUSTC)):$(PATH)
 
-ifdef CFG_ENABLE_NIGHTLY
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)-nightly
-CFG_PACKAGE_VERS = nightly
-else
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)
-CFG_PACKAGE_VERS=$(CFG_RELEASE)
+ifeq ($(CFG_RELEASE_CHANNEL),stable)
+CFG_RELEASE=$(CFG_RELEASE_NUM)
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)
+else ifeq ($(CFG_RELEASE_CHANNEL),beta)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-beta
+CFG_PACKAGE_VERS=beta
+else ifeq ($(CFG_RELEASE_CHANNEL),nightly)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-nightly
+CFG_PACKAGE_VERS=nightly
+else ifeq ($(CFG_RELEASE_CHANNEL),dev)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-dev
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)-dev
 endif
-CFG_BUILD_DATE = $(shell date +%F)
 
-ifeq ($(wildcard .git),)
-CFG_VERSION = $(CFG_RELEASE) (built $(CFG_BUILD_DATE))
-else
-CFG_VER_DATE = $(shell git log -1 --date=short --pretty=format:'%cd')
-CFG_VER_HASH = $(shell git rev-parse --short HEAD)
-CFG_VERSION = $(CFG_RELEASE) ($(CFG_VER_HASH) $(CFG_VER_DATE))
+# allow build systems to use a constant date instead of the current one
+CFG_BUILD_DATE = $(shell SOURCE_DATE_EPOCH="$${SOURCE_DATE_EPOCH:-$$(date +%s)}" ; date -u -d "@$$SOURCE_DATE_EPOCH" +%F 2>/dev/null || date -u -r "$$SOURCE_DATE_EPOCH" +%F 2>/dev/null || date -u +%F)
+
+ifneq ($(wildcard $(CFG_SRC_DIR)/.git),)
+CFG_COMMIT_DATE = $(shell git --git-dir='$(CFG_SRC_DIR).git' log -1 --date=short --pretty=format:'%cd')
+CFG_SHORT_COMMIT_HASH = $(shell git --git-dir='$(CFG_SRC_DIR).git' rev-parse --short HEAD)
+CFG_COMMIT_HASH = $(shell git --git-dir='$(CFG_SRC_DIR).git' rev-parse HEAD)
 endif
 PKG_NAME = cargo-$(CFG_PACKAGE_VERS)
 
@@ -50,7 +56,27 @@ endif
 
 S := $(CFG_SRC_DIR)/
 
-export CFG_VERSION
+CFG_RELEASE_PARTS := $(subst ., ,$(CFG_RELEASE_NUM))
+CFG_VERSION_MAJOR := $(word 1,$(CFG_RELEASE_PARTS))
+CFG_VERSION_MINOR := $(word 2,$(CFG_RELEASE_PARTS))
+CFG_VERSION_PATCH := $(word 3,$(CFG_RELEASE_PARTS))
+
+# This is output to the 'version' file during packaging
+CFG_VERSION=$(CFG_RELEASE)
+ifneq ($(CFG_COMMIT_HASH),)
+CFG_VERSION=$(CFG_RELEASE) ($(CFG_SHORT_COMMIT_HASH) $(CFG_COMMIT_DATE))
+endif
+
+export CFG_VERSION_MAJOR
+export CFG_VERSION_MINOR
+export CFG_VERSION_PATCH
+ifneq ($(CFG_COMMIT_HASH),)
+export CFG_COMMIT_HASH
+export CFG_COMMIT_DATE
+export CFG_SHORT_COMMIT_HASH
+endif
+export CFG_BUILD_DATE
+export CFG_RELEASE_CHANNEL
 export CFG_DISABLE_CROSS_TESTS
 
 ifeq ($(OS),Windows_NT)
@@ -96,7 +122,8 @@ test-unit-$(1): target/openssl/$(1).stamp cargo-$(1)
 	@mkdir -p $$(CFG_BUILD_DIR)/target/$(1)/cit
 	$$(CARGO) test --target $(1) \
 		--manifest-path $(S)Cargo.toml \
-		$$(OPT_FLAG) $$(CARGOFLAGS) $$(VERBOSE_FLAG) $$(only)
+		$$(OPT_FLAG) $$(CARGOFLAGS) $$(VERBOSE_FLAG) $$(only) -- \
+		--quiet
 endef
 $(foreach target,$(CFG_TARGET),$(eval $(call CARGO_TARGET,$(target))))
 
@@ -172,17 +199,19 @@ OPENSSL_OS_aarch64-unknown-linux-gnu := linux-aarch64
 OPENSSL_OS_arm-unknown-linux-gnueabi := linux-armv4
 OPENSSL_OS_arm-unknown-linux-gnueabihf := linux-armv4
 OPENSSL_OS_armv7-unknown-linux-gnueabihf := linux-armv4
+OPENSSL_OS_i686-apple-darwin := darwin-i386-cc
 OPENSSL_OS_i686-unknown-freebsd := BSD-x86-elf
 OPENSSL_OS_i686-unknown-linux-gnu := linux-elf
 OPENSSL_OS_i686-unknown-linux-musl := linux-elf
 OPENSSL_OS_mips-unknown-linux-gnu := linux-mips32
-OPENSSL_OS_mipsel-unknown-linux-gnu := linux-mips32
 OPENSSL_OS_mips64-unknown-linux-gnuabi64 := linux64-mips64
 OPENSSL_OS_mips64el-unknown-linux-gnuabi64 := linux64-mips64
+OPENSSL_OS_mipsel-unknown-linux-gnu := linux-mips32
 OPENSSL_OS_powerpc-unknown-linux-gnu := linux-ppc
 OPENSSL_OS_powerpc64-unknown-linux-gnu := linux-ppc64
 OPENSSL_OS_powerpc64le-unknown-linux-gnu := linux-ppc64le
 OPENSSL_OS_s390x-unknown-linux-gnu := linux64-s390x
+OPENSSL_OS_x86_64-apple-darwin := darwin64-x86_64-cc
 OPENSSL_OS_x86_64-unknown-freebsd := BSD-x86_64
 OPENSSL_OS_x86_64-unknown-linux-gnu := linux-x86_64
 OPENSSL_OS_x86_64-unknown-linux-musl := linux-x86_64
@@ -192,6 +221,7 @@ OPENSSL_AR_aarch64-unknown-linux-gnu := aarch64-linux-gnu-ar
 OPENSSL_AR_arm-unknown-linux-gnueabi := arm-linux-gnueabi-ar
 OPENSSL_AR_arm-unknown-linux-gnueabihf := arm-linux-gnueabihf-ar
 OPENSSL_AR_armv7-unknown-linux-gnueabihf := armv7-linux-gnueabihf-ar
+OPENSSL_AR_i686-apple-darwin := ar
 OPENSSL_AR_i686-unknown-freebsd := i686-unknown-freebsd10-ar
 OPENSSL_AR_i686-unknown-linux-gnu := ar
 OPENSSL_AR_i686-unknown-linux-musl := ar
@@ -203,6 +233,7 @@ OPENSSL_AR_powerpc-unknown-linux-gnu := powerpc-linux-gnu-ar
 OPENSSL_AR_powerpc64-unknown-linux-gnu := powerpc64-linux-gnu-ar
 OPENSSL_AR_powerpc64le-unknown-linux-gnu := powerpc64le-linux-gnu-ar
 OPENSSL_AR_s390x-unknown-linux-gnu := s390x-linux-gnu-ar
+OPENSSL_AR_x86_64-apple-darwin := ar
 OPENSSL_AR_x86_64-unknown-freebsd := x86_64-unknown-freebsd10-ar
 OPENSSL_AR_x86_64-unknown-linux-gnu := ar
 OPENSSL_AR_x86_64-unknown-linux-musl := ar
@@ -211,6 +242,7 @@ OPENSSL_CC_aarch64-unknown-linux-gnu := aarch64-linux-gnu-gcc
 OPENSSL_CC_arm-unknown-linux-gnueabi := arm-linux-gnueabi-gcc
 OPENSSL_CC_arm-unknown-linux-gnueabihf := arm-linux-gnueabihf-gcc
 OPENSSL_CC_armv7-unknown-linux-gnueabihf := armv7-linux-gnueabihf-gcc
+OPENSSL_CC_i686-apple-darwin := clang
 OPENSSL_CC_i686-unknown-freebsd := i686-unknown-freebsd10-gcc
 OPENSSL_CC_i686-unknown-linux-gnu := gcc
 OPENSSL_CC_i686-unknown-linux-musl := musl-gcc
@@ -219,25 +251,34 @@ OPENSSL_CC_mips64-unknown-linux-gnuabi64 := mips64-linux-gnuabi64-gcc
 OPENSSL_CC_mips64el-unknown-linux-gnuabi64 := mips64el-linux-gnuabi64-gcc
 OPENSSL_CC_mipsel-unknown-linux-gnu := mipsel-linux-gnu-gcc
 OPENSSL_CC_powerpc-unknown-linux-gnu := powerpc-linux-gnu-gcc
-OPENSSL_CC_powerpc64-unknown-linux-gnu := powerpc64-linux-gnu-gcc-5
+OPENSSL_CC_powerpc64-unknown-linux-gnu := powerpc64-linux-gnu-gcc
 OPENSSL_CC_powerpc64le-unknown-linux-gnu := powerpc64le-linux-gnu-gcc
 OPENSSL_CC_s390x-unknown-linux-gnu := s390x-linux-gnu-gcc
+OPENSSL_CC_x86_64-apple-darwin := clang
 OPENSSL_CC_x86_64-unknown-freebsd := x86_64-unknown-freebsd10-gcc
 OPENSSL_CC_x86_64-unknown-linux-gnu := gcc
 OPENSSL_CC_x86_64-unknown-linux-musl := musl-gcc
 OPENSSL_CC_x86_64-unknown-netbsd := x86_64-unknown-netbsd-gcc
 
 SETARCH_i686-unknown-linux-gnu := setarch i386
+OPENSSL_CFLAGS_i686-apple-darwin := -m32
 OPENSSL_CFLAGS_i686-unknown-linux-gnu := -m32
 OPENSSL_CFLAGS_i686-unknown-linux-musl := -m32
 
 define BUILD_OPENSSL
-ifdef OPENSSL_OS_$(1)
-ifdef CFG_ENABLE_NIGHTLY
+
+ifdef CFG_ENABLE_BUILD_OPENSSL
+
+cargo-$(1): export OPENSSL_STATIC := 1
+test-unit-$(1): export OPENSSL_STATIC := 1
+
 OPENSSL_INSTALL_$(1) := $$(CFG_BUILD_DIR)/target/openssl/$(1)-install
+
+ifdef OPENSSL_OS_$(1)
 
 target/openssl/$(1).stamp: target/openssl/openssl-$$(OPENSSL_VERS).tar.gz \
 		| target/openssl/
+	rm -rf target/openssl/$(1)
 	mkdir -p target/openssl/$(1)
 	tar xf $$< -C target/openssl/$(1) --strip-components 1
 	(cd target/openssl/$(1) && \
@@ -245,32 +286,41 @@ target/openssl/$(1).stamp: target/openssl/openssl-$$(OPENSSL_VERS).tar.gz \
 	 AR=$$(OPENSSL_AR_$(1)) \
 	 $$(SETARCH_$(1)) ./Configure --prefix=$$(OPENSSL_INSTALL_$(1)) \
 	   no-dso $$(OPENSSL_OS_$(1)) -fPIC $$(OPENSSL_CFLAGS_$(1))&& \
-	 $(MAKE) -j10 && \
+	 $(MAKE) -j1 && \
 	 $(MAKE) install)
 	touch $$@
 
 # variables read by various build scripts to find openssl
-cargo-$(1): export OPENSSL_STATIC := 1
 cargo-$(1): export OPENSSL_DIR := $$(OPENSSL_INSTALL_$(1))
-test-unit-$(1): export OPENSSL_STATIC := 1
 test-unit-$(1): export OPENSSL_DIR := $$(OPENSSL_INSTALL_$(1))
 
 # build libz statically into the cargo we're producing
 cargo-$(1): export LIBZ_SYS_STATIC := 1
-else
+
+else # !OPENSSL_OS_$(1)
+target/openssl/$(1).stamp:
+
+endif
+
+else # !CFG_ENABLE_BUILD_OPENSSL
 target/openssl/$(1).stamp:
 endif
-else
-target/openssl/$(1).stamp:
-endif
+
 endef
 
 $(foreach target,$(CFG_TARGET),$(eval $(call BUILD_OPENSSL,$(target))))
 
+ifeq ($(shell uname),Darwin)
+SHASUM := shasum -a 256
+else
+SHASUM := sha256sum
+endif
+
 target/openssl/openssl-$(OPENSSL_VERS).tar.gz: | target/openssl/
-	curl -o $(@) https://www.openssl.org/source/openssl-$(OPENSSL_VERS).tar.gz
-	sha256sum $(@) > $(@).sha256
+	curl -o $(@).tmp https://www.openssl.org/source/openssl-$(OPENSSL_VERS).tar.gz
+	$(SHASUM) $(@).tmp > $(@).sha256
 	test $(OPENSSL_SHA256) = `cut -d ' ' -f 1 $(@).sha256`
+	mv $(@).tmp $(@)
 
 target/openssl/:
 	mkdir -p $(@)

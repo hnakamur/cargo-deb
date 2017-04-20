@@ -3,12 +3,11 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process;
 
+use cargo;
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 use cargo::util::{CliResult, Config};
 use rustc_serialize::json;
 use toml;
-
-pub type Error = HashMap<String, String>;
 
 #[derive(RustcDecodable)]
 pub struct Flags {
@@ -30,14 +29,14 @@ Usage:
 Options:
     -h, --help              Print this message
     --manifest-path PATH    Path to the manifest to verify
-    -v, --verbose ...       Use verbose output
+    -v, --verbose ...       Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet             No output printed to stdout
     --color WHEN            Coloring: auto, always, never
     --frozen                Require Cargo.lock and cache are up to date
     --locked                Require Cargo.lock is up to date
 ";
 
-pub fn execute(args: Flags, config: &Config) -> CliResult<Option<Error>> {
+pub fn execute(args: Flags, config: &Config) -> CliResult {
     config.configure(args.flag_verbose,
                      args.flag_quiet,
                      &args.flag_color,
@@ -63,7 +62,8 @@ pub fn execute(args: Flags, config: &Config) -> CliResult<Option<Error>> {
 
     let mut h = HashMap::new();
     h.insert("success".to_string(), "true".to_string());
-    Ok(Some(h))
+    cargo::print_json(&h);
+    Ok(())
 }
 
 fn fail(reason: &str, value: &str) -> ! {

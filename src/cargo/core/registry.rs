@@ -149,19 +149,19 @@ impl<'cfg> PackageRegistry<'cfg> {
         Ok(())
     }
 
-    pub fn add_preloaded(&mut self, id: &SourceId, source: Box<Source + 'cfg>) {
-        self.add_source(id, source, Kind::Locked);
+    pub fn add_preloaded(&mut self, source: Box<Source + 'cfg>) {
+        self.add_source(source, Kind::Locked);
     }
 
-    fn add_source(&mut self, id: &SourceId, source: Box<Source + 'cfg>,
-                  kind: Kind) {
-        self.sources.insert(id, source);
-        self.source_ids.insert(id.clone(), (id.clone(), kind));
+    fn add_source(&mut self, source: Box<Source + 'cfg>, kind: Kind) {
+        let id = source.source_id().clone();
+        self.sources.insert(source);
+        self.source_ids.insert(id.clone(), (id, kind));
     }
 
-    pub fn add_override(&mut self, id: &SourceId, source: Box<Source + 'cfg>) {
-        self.add_source(id, source, Kind::Override);
-        self.overrides.push(id.clone());
+    pub fn add_override(&mut self, source: Box<Source + 'cfg>) {
+        self.overrides.push(source.source_id().clone());
+        self.add_source(source, Kind::Override);
     }
 
     pub fn register_lock(&mut self, id: PackageId, deps: Vec<PackageId>) {
@@ -179,11 +179,12 @@ impl<'cfg> PackageRegistry<'cfg> {
     fn load(&mut self, source_id: &SourceId, kind: Kind) -> CargoResult<()> {
         (|| {
             let source = self.source_config.load(source_id)?;
+            assert_eq!(source.source_id(), source_id);
 
             if kind == Kind::Override {
                 self.overrides.push(source_id.clone());
             }
-            self.add_source(source_id, source, kind);
+            self.add_source(source, kind);
 
             // Ensure the source has fetched all necessary remote data.
             let _p = profile::start(format!("updating: {}", source_id));
@@ -290,19 +291,7 @@ impl<'cfg> PackageRegistry<'cfg> {
     fn warn_bad_override(&self,
                          override_summary: &Summary,
                          real_summary: &Summary) -> CargoResult<()> {
-        let real = real_summary.package_id();
-        let map = self.locked.get(real.source_id()).chain_error(|| {
-            human(format!("failed to find lock source of {}", real))
-        })?;
-        let list = map.get(real.name()).chain_error(|| {
-            human(format!("failed to find lock name of {}", real))
-        })?;
-        let &(_, ref real_deps) = list.iter().find(|&&(ref id, _)| {
-            real == id
-        }).chain_error(|| {
-            human(format!("failed to find lock version of {}", real))
-        })?;
-        let mut real_deps = real_deps.clone();
+        let mut real_deps = real_summary.dependencies().iter().collect::<Vec<_>>();
 
         let boilerplate = "\
 This is currently allowed but is known to produce buggy behavior with spurious
@@ -318,7 +307,7 @@ http://doc.crates.io/specifying-dependencies.html#overriding-dependencies
 ";
 
         for dep in override_summary.dependencies() {
-            if let Some(i) = real_deps.iter().position(|id| dep.matches_id(id)) {
+            if let Some(i) = real_deps.iter().position(|d| dep == *d) {
                 real_deps.remove(i);
                 continue
             }

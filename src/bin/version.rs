@@ -14,14 +14,14 @@ Usage:
 
 Options:
     -h, --help               Print this message
-    -v, --verbose            Use verbose output
+    -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
     --color WHEN             Coloring: auto, always, never
 ";
 
-pub fn execute(_: Options, _: &Config) -> CliResult<Option<()>> {
+pub fn execute(_: Options, _: &Config) -> CliResult {
     debug!("executing; cmd=cargo-version; args={:?}", env::args().collect::<Vec<_>>());
 
     println!("{}", cargo::version());
 
-    Ok(None)
+    Ok(())
 }

@@ -115,8 +115,11 @@ fn git_deps() {
                  .arg("--host").arg(registry().to_string()),
                 execs().with_status(101).with_stderr("\
 [UPDATING] registry [..]
-[ERROR] all dependencies must come from the same source.
-dependency `foo` comes from git://path/to/nowhere instead
+[ERROR] crates cannot be published to crates.io with dependencies sourced from \
+a repository\neither publish `foo` as its own crate on crates.io and \
+specify a crates.io version as a dependency or pull it into this \
+repository and specify it with a path and version\n\
+(crate `foo` has repository path `git://path/to/nowhere`)\
 "));
 }
 
@@ -362,7 +365,7 @@ See [..]
 [PACKAGING] foo v0.0.1 ({dir})
 [VERIFYING] foo v0.0.1 ({dir})
 [COMPILING] foo v0.0.1 [..]
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [UPLOADING] foo v0.0.1 ({dir})
 [WARNING] aborting upload due to dry run
 ",

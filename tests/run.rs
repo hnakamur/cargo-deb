@@ -23,7 +23,7 @@ fn simple() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.1 ({dir})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[/]debug[/]foo[EXE]`", dir = path2url(p.root())))
                        .with_stdout("\
 hello
@@ -126,7 +126,7 @@ fn exit_code() {
 
     let mut output = String::from("\
 [COMPILING] foo v0.0.1 (file[..])
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[..]`
 ");
     if !cfg!(unix) {
@@ -154,7 +154,7 @@ fn exit_code_verbose() {
     let mut output = String::from("\
 [COMPILING] foo v0.0.1 (file[..])
 [RUNNING] `rustc [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[..]`
 ");
     if !cfg!(unix) {
@@ -227,9 +227,9 @@ fn specify_name() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.1 ({dir})
-[RUNNING] `rustc src[/]lib.rs [..]`
-[RUNNING] `rustc src[/]bin[/]a.rs [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] `rustc [..] src[/]lib.rs [..]`
+[RUNNING] `rustc [..] src[/]bin[/]a.rs [..]`
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[/]debug[/]a[EXE]`", dir = path2url(p.root())))
                        .with_stdout("\
 hello a.rs
@@ -239,8 +239,8 @@ hello a.rs
                 execs().with_status(0)
                        .with_stderr("\
 [COMPILING] foo v0.0.1 ([..])
-[RUNNING] `rustc src[/]bin[/]b.rs [..]`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] `rustc [..] src[/]bin[/]b.rs [..]`
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[/]debug[/]b[EXE]`")
                        .with_stdout("\
 hello b.rs
@@ -268,7 +268,7 @@ fn run_example() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.1 ({dir})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[/]debug[/]examples[/]a[EXE]`", dir = path2url(p.root())))
                        .with_stdout("\
 example
@@ -361,7 +361,7 @@ fn one_bin_multiple_examples() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] foo v0.0.1 ({dir})
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[/]debug[/]main[EXE]`", dir = path2url(p.root())))
                        .with_stdout("\
 hello main.rs
@@ -416,18 +416,18 @@ fn example_with_release_flag() {
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] bar v0.0.1 ({url}/bar)
-[RUNNING] `rustc bar[/]src[/]bar.rs --crate-name bar --crate-type lib \
+[RUNNING] `rustc --crate-name bar bar[/]src[/]bar.rs --crate-type lib \
+        --emit=dep-info,link \
         -C opt-level=3 \
         -C metadata=[..] \
         --out-dir {dir}[/]target[/]release[/]deps \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]release[/]deps`
 [COMPILING] foo v0.0.1 ({url})
-[RUNNING] `rustc examples[/]a.rs --crate-name a --crate-type bin \
+[RUNNING] `rustc --crate-name a examples[/]a.rs --crate-type bin \
+        --emit=dep-info,link \
         -C opt-level=3 \
         -C metadata=[..] \
         --out-dir {dir}[/]target[/]release[/]examples \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]release[/]deps \
          --extern bar={dir}[/]target[/]release[/]deps[/]libbar-[..].rlib`
 [FINISHED] release [optimized] target(s) in [..]
@@ -444,21 +444,21 @@ fast2"));
                 execs().with_status(0)
                        .with_stderr(&format!("\
 [COMPILING] bar v0.0.1 ({url}/bar)
-[RUNNING] `rustc bar[/]src[/]bar.rs --crate-name bar --crate-type lib \
-        -g \
+[RUNNING] `rustc --crate-name bar bar[/]src[/]bar.rs --crate-type lib \
+        --emit=dep-info,link \
+        -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir {dir}[/]target[/]debug[/]deps \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]debug[/]deps`
 [COMPILING] foo v0.0.1 ({url})
-[RUNNING] `rustc examples[/]a.rs --crate-name a --crate-type bin \
-        -g \
+[RUNNING] `rustc --crate-name a examples[/]a.rs --crate-type bin \
+        --emit=dep-info,link \
+        -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir {dir}[/]target[/]debug[/]examples \
-        --emit=dep-info,link \
         -L dependency={dir}[/]target[/]debug[/]deps \
          --extern bar={dir}[/]target[/]debug[/]deps[/]libbar-[..].rlib`
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `target[/]debug[/]examples[/]a[EXE]`
 ",
         dir = p.root().display(),
@@ -588,7 +588,7 @@ fn run_from_executable_folder() {
     assert_that(p.cargo("run").cwd(cwd),
                 execs().with_status(0)
                        .with_stderr("\
-[FINISHED] debug [unoptimized + debuginfo] target(s) in [..]\n\
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]\n\
 [RUNNING] `.[/]foo[EXE]`")
                        .with_stdout("\
 hello

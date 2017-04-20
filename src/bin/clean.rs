@@ -30,7 +30,7 @@ Options:
     --manifest-path PATH         Path to the manifest to the package to clean
     --target TRIPLE              Target triple to clean output for (default all)
     --release                    Whether or not to clean release artifacts
-    -v, --verbose ...            Use verbose output
+    -v, --verbose ...            Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet                  No output printed to stdout
     --color WHEN                 Coloring: auto, always, never
     --frozen                     Require Cargo.lock and cache are up to date
@@ -42,7 +42,7 @@ given, then all packages' artifacts are removed. For more information on SPEC
 and its format, see the `cargo help pkgid` command.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
+pub fn execute(options: Options, config: &Config) -> CliResult {
     debug!("executing; cmd=cargo-clean; args={:?}", env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,
                      options.flag_quiet,
@@ -59,5 +59,5 @@ pub fn execute(options: Options, config: &Config) -> CliResult<Option<()>> {
     };
     let ws = Workspace::new(&root, config)?;
     ops::clean(&ws, &opts)?;
-    Ok(None)
+    Ok(())
 }

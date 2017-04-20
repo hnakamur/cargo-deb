@@ -37,6 +37,7 @@ fn simple() {
                 execs().with_status(0).with_stderr(&format!("\
 [UPDATING] registry `[..]`
 [DOWNLOADING] foo v0.0.1 (registry [..])
+[INSTALLING] foo v0.0.1
 [COMPILING] foo v0.0.1
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] {home}[..]bin[..]foo[..]
@@ -62,6 +63,7 @@ fn pick_max_version() {
                 execs().with_status(0).with_stderr(&format!("\
 [UPDATING] registry `[..]`
 [DOWNLOADING] foo v0.0.2 (registry [..])
+[INSTALLING] foo v0.0.2
 [COMPILING] foo v0.0.2
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] {home}[..]bin[..]foo[..]
@@ -87,7 +89,7 @@ fn bad_version() {
     assert_that(cargo_process("install").arg("foo").arg("--vers=0.2.0"),
                 execs().with_status(101).with_stderr("\
 [UPDATING] registry [..]
-[ERROR] could not find `foo` in `registry [..]` with version `0.2.0`
+[ERROR] could not find `foo` in `registry [..]` with version `=0.2.0`
 "));
 }
 
@@ -171,6 +173,7 @@ fn install_path() {
     assert_that(cargo_home(), has_installed_exe("foo"));
     assert_that(cargo_process("install").arg("--path").arg(".").cwd(p.root()),
                 execs().with_status(101).with_stderr("\
+[INSTALLING] foo v0.1.0 [..]
 [ERROR] binary `foo[..]` already exists in destination as part of `foo v0.1.0 [..]`
 Add --force to overwrite
 "));
@@ -336,6 +339,7 @@ fn no_binaries() {
 
     assert_that(cargo_process("install").arg("--path").arg(p.root()).arg("foo"),
                 execs().with_status(101).with_stderr("\
+[INSTALLING] foo [..]
 [ERROR] specified package has no binaries
 "));
 }
@@ -376,6 +380,7 @@ fn install_twice() {
                 execs().with_status(0));
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
                 execs().with_status(101).with_stderr("\
+[INSTALLING] foo v0.1.0 [..]
 [ERROR] binary `foo-bin1[..]` already exists in destination as part of `foo v0.1.0 ([..])`
 binary `foo-bin2[..]` already exists in destination as part of `foo v0.1.0 ([..])`
 Add --force to overwrite
@@ -409,6 +414,7 @@ fn install_force() {
 
     assert_that(cargo_process("install").arg("--force").arg("--path").arg(p.root()),
                 execs().with_status(0).with_stderr(&format!("\
+[INSTALLING] foo v0.2.0 ([..])
 [COMPILING] foo v0.2.0 ([..])
 [FINISHED] release [optimized] target(s) in [..]
 [REPLACING] {home}[..]bin[..]foo[..]
@@ -452,6 +458,7 @@ fn install_force_partial_overlap() {
 
     assert_that(cargo_process("install").arg("--force").arg("--path").arg(p.root()),
                 execs().with_status(0).with_stderr(&format!("\
+[INSTALLING] foo v0.2.0 ([..])
 [COMPILING] foo v0.2.0 ([..])
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] {home}[..]bin[..]foo-bin3[..]
@@ -503,6 +510,7 @@ fn install_force_bin() {
                     .arg("--path")
                     .arg(p.root()),
                 execs().with_status(0).with_stderr(&format!("\
+[INSTALLING] foo v0.2.0 ([..])
 [COMPILING] foo v0.2.0 ([..])
 [FINISHED] release [optimized] target(s) in [..]
 [REPLACING] {home}[..]bin[..]foo-bin2[..]
@@ -559,6 +567,7 @@ fn git_repo() {
     assert_that(cargo_process("install").arg("--locked").arg("--git").arg(p.url().to_string()),
                 execs().with_status(0).with_stderr(&format!("\
 [UPDATING] git repository `[..]`
+[INSTALLING] foo v0.1.0 ([..])
 [COMPILING] foo v0.1.0 ([..])
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] {home}[..]bin[..]foo[..]
@@ -697,7 +706,8 @@ fn do_not_rebuilds_on_local_install() {
     assert_that(p.cargo_process("build").arg("--release"),
                 execs().with_status(0));
     assert_that(cargo_process("install").arg("--path").arg(p.root()),
-                execs().with_status(0).with_stderr("[FINISHED] release [optimized] target(s) in [..]
+                execs().with_status(0).with_stderr("[INSTALLING] [..]
+[FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] [..]
 warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 "));
@@ -825,4 +835,28 @@ fn use_path_workspace() {
     assert_that(p.cargo("install"), execs().with_status(0));
     let lock2 = p.read_lockfile();
     assert!(lock == lock2, "different lockfiles");
+}
+
+#[test]
+fn vers_precise() {
+    pkg("foo", "0.1.1");
+    pkg("foo", "0.1.2");
+
+    assert_that(cargo_process("install").arg("foo").arg("--vers").arg("0.1.1"),
+                execs().with_status(0).with_stderr_contains("\
+[DOWNLOADING] foo v0.1.1 (registry [..])
+"));
+}
+
+#[test]
+fn legacy_version_requirement() {
+    pkg("foo", "0.1.1");
+
+    assert_that(cargo_process("install").arg("foo").arg("--vers").arg("0.1"),
+                execs().with_status(0).with_stderr_contains("\
+warning: the `--vers` provided, `0.1`, is not a valid semver version
+
+historically Cargo treated this as a semver version requirement accidentally
+and will continue to do so, but this behavior will be removed eventually
+"));
 }
