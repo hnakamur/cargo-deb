@@ -24,16 +24,3 @@ Forwarded: not-needed
 +#psapi-sys = "0.1"
 +#winapi = "0.2"
  
-@@ -54,7 +54,7 @@
- 
--[dev-dependencies]
--hamcrest = "0.1"
--bufstream = "0.1"
--filetime = "0.1"
--cargotest = { path = "tests/cargotest" }
-+#[dev-dependencies]
-+#hamcrest = "0.1"
-+#bufstream = "0.1"
-+#filetime = "0.1"
-+#cargotest = { path = "tests/cargotest" }
- 

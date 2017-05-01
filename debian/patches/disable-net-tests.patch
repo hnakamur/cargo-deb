@@ -1,0 +1,56 @@
+Description: Disable network tests
+Author: Ximin Luo <infinity0@debian.org>
+Forwarded: TODO
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/tests/build-auth.rs
++++ b/tests/build-auth.rs
+@@ -14,7 +14,7 @@
+ use hamcrest::assert_that;
+ 
+ // Test that HTTP auth is offered from `credential.helper`
+-#[test]
++//#[test]
+ fn http_auth_offered() {
+     let server = TcpListener::bind("127.0.0.1:0").unwrap();
+     let addr = server.local_addr().unwrap();
+@@ -127,7 +127,7 @@
+ }
+ 
+ // Boy, sure would be nice to have a TLS implementation in rust!
+-#[test]
++//#[test]
+ fn https_something_happens() {
+     let server = TcpListener::bind("127.0.0.1:0").unwrap();
+     let addr = server.local_addr().unwrap();
+--- a/tests/net-config.rs
++++ b/tests/net-config.rs
+@@ -4,7 +4,7 @@
+ use cargotest::support::{project, execs};
+ use hamcrest::assert_that;
+ 
+-#[test]
++//#[test]
+ fn net_retry_loads_from_config() {
+     let p = project("foo")
+         .file("Cargo.toml", r#"
+@@ -29,7 +29,7 @@
+ (1 tries remaining): [..]"));
+ }
+ 
+-#[test]
++//#[test]
+ fn net_retry_git_outputs_warning() {
+     let p = project("foo")
+         .file("Cargo.toml", r#"
+--- a/tests/test.rs
++++ b/tests/test.rs
+@@ -2265,7 +2265,7 @@
+                 execs().with_status(0));
+ }
+ 
+-#[test]
++//#[test]
+ fn pass_correct_cfgs_flags_to_rustdoc() {
+     let p = project("foo")
+         .file("Cargo.toml", r#"

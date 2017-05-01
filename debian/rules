@@ -55,13 +55,11 @@ ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
 endif
 
+override_dh_auto_test:
+	RUST_BACKTRACE=1 CFG_DISABLE_CROSS_TESTS=1 dh_auto_test
+
 override_dh_auto_install:
 	# We pick stuff directly from target/
-
-override_dh_auto_test:
-	# We don't run tests at the moment, it can't find "cargotest" crate
-	# which seems to be part of the *rustc* source code :/
-	# https://github.com/rust-lang/rust/tree/master/src/tools/cargotest
 
 override_dh_auto_clean:
 	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock

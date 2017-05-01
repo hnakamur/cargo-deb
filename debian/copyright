@@ -2,30 +2,48 @@ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: cargo
 Source: https://github.com/rust-lang/cargo
 
-Files: *
+Files: src/*
+       tests/*
+       .*
+       Cargo.*
+       LICENSE-*
+       Makefile.*
+       README.*
+       appveyor.yml
+       configure
 Copyright: 2014 The Rust Project Developers
 License: MIT-License or Apache-2.0
-Comment:
- Licensed under the Apache License, Version 2.0 <LICENSE-APACHE
- or http://www.apache.org/licenses/LICENSE-2.0> or the MIT
- license <LICENSE-MIT or http://opensource.org/licenses/MIT>,
- at your option. All files in the project carrying such
- notice may not be copied, modified, or distributed except
- according to those terms.
+Comment: please do not add * to the above paragraph, so we can use lintian to
+         help us update this file properly
 
-Files: vendor/*
-       vendor/time-*
-       vendor/libc-*
-       vendor/bitflags-*
-       vendor/semver-*
-       vendor/log-*
-       vendor/glob-*
+Files: vendor/bitflags-*
+       vendor/bufstream-*
+       vendor/cmake-*
+       vendor/crossbeam-*
        vendor/env_logger-*
-       vendor/rustc-*
-       vendor/term-*
+       vendor/flate2-*
+       vendor/fs2-0*
+       vendor/gcc-0*
+       vendor/glob-0*
+       vendor/libc-0*
+       vendor/log-0*
+       vendor/net2-0*
+       vendor/num-0*
+       vendor/num-bigint-*
+       vendor/num-complex-*
+       vendor/num-integer-*
+       vendor/num-iter-*
+       vendor/num-rational-*
+       vendor/num-traits-*
+       vendor/rand-0*
+       vendor/regex-0*
+       vendor/regex-syntax-*
        vendor/rustc-serialize-*
-       vendor/regex-*
-Copyright: 2014-2015 The Rust Project Developers
+       vendor/semver-*
+       vendor/shell-escape-*
+       vendor/tempdir-0*
+       vendor/term-0*
+Copyright: 2014-2016 The Rust Project Developers
 License: MIT-License or Apache-2.0
 Comment:
  This is a collection of external crates embedded here to bootstrap cargo.
@@ -33,103 +51,200 @@ Comment:
  same MIT/Apache-2.0 dual-license. See https://github.com/rust-lang.
  Exceptions are noted below.
 
+Files: vendor/cfg-if-0*
+       vendor/filetime-*
+       vendor/git2-0*
+       vendor/git2-curl-*
+       vendor/libz-sys-*
+       vendor/libgit2-sys-*
+       vendor/libssh2-sys-*
+       vendor/miow-*
+       vendor/miniz-sys-*
+       vendor/openssl-probe-*
+       vendor/pkg-config-*
+       vendor/tar-0*
+       vendor/toml-0*
+Copyright: 2014-2016 Alex Crichton <alex@alexcrichton.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/alexcrichton/
+
+Files: vendor/aho-corasick-*
+       vendor/docopt-*
+       vendor/memchr-*
+       vendor/utf8-ranges-*
+Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
+License: MIT-License or Unlicense
+Comment: see upstream projects,
+ * https://github.com/docopt/docopt.rs
+ * https://github.com/BurntSushi/aho-corasick
+ * https://github.com/BurntSushi/rust-memchr
+ * https://github.com/BurntSushi/utf8-ranges
+
 Files: vendor/advapi32-sys-*
+       vendor/gdi32-sys-*
        vendor/kernel32-*
+       vendor/psapi-sys-*
+       vendor/user32-sys-*
        vendor/winapi-*
-Copyright: 2015 Peter Atashian <retep998@gmail.com>
+       vendor/ws2_32-sys-*
+Copyright: 2015-2016 Peter Atashian <retep998@gmail.com>
+           2015-2016 winapi-rs developers
 License: MIT-License
 Comment: see https://github.com/retep998/winapi-rs
 
-Files: vendor/url-*
-Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
+Files: vendor/curl-0*
+       vendor/curl-sys-0*
+Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
+           2014-2016 Alex Crichton <alex@alexcrichton.com>
+License: MIT-License
+Comment: see https://github.com/sfackler/rust-openssl
+
+Files: vendor/error-chain-0*
+Copyright: 2016 Brian Anderson <banderson@mozilla.com>,
+           2016 Paul Colomiets <paul@colomiets.name>,
+           2016 Colin Kiegel <kiegel@gmx.de>,
+           2016 Yamakaky <yamakaky@yamaworld.fr>
 License: MIT-License or Apache-2.0
-Comment: see https://github.com/servo/rust-url
+Comment: see https://github.com/brson/error-chain
+
+Files: vendor/hamcrest-0*
+Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
+           2014-2016 Alex Crichton <alex@alexcrichton.com>
+           2014-2016 Ben Longbons <b.r.longbons@gmail.com>
+           2014-2016 Graham Dennis <graham.dennis@gmail.com>
+           2014-2016 Michael Gehring <mg@ebfe.org>
+           2014-2016 Oliver Mader <b52@reaktor42.de>
+           2014-2016 Robin Gloster <robin@loc-com.de>
+           2014-2016 Steve Klabnik <steve@steveklabnik.com>
+           2014-2016 Tamir Duberstein <tamird@gmail.com>
+           2014-2016 Thiago Pontes <thiagopnts@gmail.com>
+           2014-2016 Urban Hafner <contact@urbanhafner.com>
+           2014-2016 Valerii Hiora <valerii.hiora@gmail.com>
+           2014-2016 Yehuda Katz <wycats@gmail.com>
+License: MIT-License or Apache-2.0
+
+Files: vendor/idna-0*
+Copyright: 2013 Simon Sapin <simon.sapin@exyr.org>
+           2013-2014 Valentin Gosu
+           1991-2015 Unicode, Inc
+License: MIT-License or Apache-2.0
+
+Files: vendor/idna-0.1.0/src/IdnaMappingTable.txt
+       vendor/idna-0.1.0/tests/IdnaTest.txt
+       vendor/unicode-bidi-0.2.3/src/BidiCharacterTest.txt
+       vendor/unicode-bidi-0.2.3/src/BidiTest.txt
+       vendor/unicode-normalization-0.1.2/src/DerivedNormalizationProps.txt
+       vendor/unicode-normalization-0.1.2/src/ReadMe.txt
+Copyright: 1991-2017 Unicode, Inc
+License: Unicode-terms
+ Distributed under the Terms of Use in http://www.unicode.org/copyright.html.
+ .
+ Permission is hereby granted, free of charge, to any person obtaining
+ a copy of the Unicode data files and any associated documentation
+ (the "Data Files") or Unicode software and any associated documentation
+ (the "Software") to deal in the Data Files or Software
+ without restriction, including without limitation the rights to use,
+ copy, modify, merge, publish, distribute, and/or sell copies of
+ the Data Files or Software, and to permit persons to whom the Data Files
+ or Software are furnished to do so, provided that either
+ (a) this copyright and permission notice appear with all copies
+ of the Data Files or Software, or
+ (b) this copyright and permission notice appear in associated
+ Documentation.
+ .
+ THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ NONINFRINGEMENT OF THIRD PARTY RIGHTS.
+ IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
+ NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
+ DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+ DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+ PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+ .
+ Except as contained in this notice, the name of a copyright holder
+ shall not be used in advertising or otherwise to promote the sale,
+ use or other dealings in these Data Files or Software without prior
+ written authorization of the copyright holder.
+Comment: see http://www.unicode.org/copyright.html
+
+Files: vendor/lazy_static-0*
+Copyright: 2014-2016 Marvin Löbel <loebel.marvin@gmail.com>
+License: MIT-License
+Comment: see https://github.com/rust-lang-nursery/lazy-static.rs
 
 Files: vendor/matches-*
 Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
 License: MIT-License
 Comment: see https://github.com/SimonSapin/rust-std-candidates
 
+Files: vendor/metadeps-1.*
+Copyright: 2016 Josh Triplett <josh@joshtriplett.org>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/joshtriplett/metadeps
+
+Files: vendor/miniz-sys-*/miniz.c
+Copyright: Rich Geldreich <richgel99@gmail.com>
+License: Unlicense
+
 Files: vendor/num_cpus-*
 Copyright: 2015 Sean McArthur <sean.monstar@gmail.com>
 License: MIT-License
 Comment: see https://github.com/seanmonstar/num_cpus
+
+Files: vendor/openssl-*
+Copyright: 2013-2015 Steven Fackler <sfackler@gmail.com>
+           2013 Jack Lloyd
+           2011 Google Inc.
+License: Apache-2.0
+
+Files: vendor/openssl-sys-*
+Copyright: 2015 Steven Fackler <sfackler@gmail.com>
+           2015 Alex Crichton <alex@alexcrichton.com>
+License: MIT-License
+Comment: see https://github.com/sfackler/rust-openssl
 
 Files: vendor/strsim-*
 Copyright: 2015 Danny Guo <dannyguo91@gmail.com>
 License: MIT-License
 Comment: see https://github.com/dguo/strsim-rs
 
-Files: vendor/memchr-*
-       vendor/aho-corasick-*
-       vendor/docopt-*
-Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
-License: MIT-License or Unlicense
-Comment: see upstream projects,
- * https://github.com/BurntSushi/rust-memchr
- * https://github.com/BurntSushi/aho-corasick
- * https://github.com/docopt/docopt.rs
+Files: vendor/thread-id-2.*
+Copyright: 2016 Ruud van Asseldonk <dev@veniogames.com>
+License: Apache-2.0
+Comment: see https://github.com/ruud-v-a/thread-id
 
-Files: vendor/openssl-sys-*
-Copyright: 2015 Alex Crichton <alex@alexcrichton.com>
-           2015 Steven Fackler <sfackler@gmail.com>
-License: MIT-License
-Comment: see https://github.com/sfackler/rust-openssl
-
-Files: vendor/libz-sys-*
-       vendor/libgit2-sys-*
-       vendor/libssh2-sys-*
-       vendor/miniz-sys-*
-       vendor/gcc-*
-       vendor/git2-*
-       vendor/git2-curl-*
-       vendor/filetime-*
-       vendor/flate2-*
-       vendor/pkg-config-*
-       vendor/toml-*
-       vendor/tar-*
-Copyright: 2014-2015 Alex Crichton <alex@alexcrichton.com>
+Files: vendor/thread_local-0*
+Copyright: 2016 Amanieu d'Antras <amanieu@gmail.com>
 License: MIT-License or Apache-2.0
-Comment: see https://github.com/alexcrichton/
+Comment: see https://github.com/Amanieu/thread_local-rs
 
-Files: vendor/miniz-sys-*/miniz.c
-Copyright: Rich Geldreich <richgel99@gmail.com>
-License: Unlicense
+Files: vendor/unicode-bidi-*
+Copyright: 2015 The Servo Project Developers
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/servo/unicode-bidi
 
-Files: vendor/libgit2-sys-*/libgit2/*
-Copyright: 2009-2012, the libgit2 contributors
-License: GPL-2 with linking exception
+Files: vendor/unicode-normalization-*
+Copyright: 2016 kwantam <kwantam@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/unicode-rs/unicode-normalization
 
-Files: vendor/libgit2-sys-*/libgit2/cmake/Modules/FindGSSAPI.cmake
-Copyright: 2013, Andreas Schneider <asn@cryptomilk.org>
-License: BSD-2-clause
-
-Files: vendor/libgit2-sys-*/libgit2/include/git2/inttypes.h
-       vendor/libgit2-sys-*/libgit2/include/git2/stdint.h
-Copyright: 2006, Alexander Chemeris
-License: BSD-3-clause
-
-Files: vendor/libgit2-sys-*/libgit2/src/khash.h
-Copyright: 2008, 2009, 2011, Attractive Chaos <attractor@live.co.uk>
-License: MIT-License
-
-Files: vendor/libgit2-sys-*/libgit2/src/xdiff/*
-Copyright: 2003-2006, Davide Libenzi
-           2003-2006, Johannes E. Schindelin
-License: LGPL-2.1+
-
-Files: vendor/libgit2-sys-*/libgit2/src/xdiff/xhistogram.c
-Copyright: 2010, Google Inc and others from JGit's IP log.
-License: EDL-1.0
-
-Files: vendor/libgit2-sys-*/libgit2/src/date.c
-Copyright: 2005, Linus Torvalds
-License: GPL-2 with linking exception
+Files: vendor/url-1.*
+Copyright: 2015-2016 Simon Sapin <simon.sapin@exyr.org>
+           2013-2016 The rust-url developers
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/servo/rust-url
 
 Files: src/doc/javascripts/prism.js
        debian/missing-sources/prism.js
 Copyright: 2015 Lea Verou
 License: MIT-License
+
+Files: debian/*
+Copyright: 2017 Ximin Luo <infinity0@debian.org>
+           2015-2016 Luca Bruno <lucab@debian.org>
+License: MIT-License or Apache-2.0
 
 Files: debian/bootstrap.py
 Copyright: 2015 David Huseby
@@ -204,103 +319,3 @@ License: Unlicense
  OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
-
-License: EDL-1.0
- This program and the accompanying materials are made available
- under the terms of the Eclipse Distribution License v1.0 which
- accompanies this distribution, is reproduced below, and is
- available at http://www.eclipse.org/org/documents/edl-v10.php
- .
- All rights reserved.
- .
- Redistribution and use in source and binary forms, with or
- without modification, are permitted provided that the following
- conditions are met:
- .
- - Redistributions of source code must retain the above copyright
-   notice, this list of conditions and the following disclaimer.
- .
- - Redistributions in binary form must reproduce the above
-   copyright notice, this list of conditions and the following
-   disclaimer in the documentation and/or other materials provided
-   with the distribution.
- .
- - Neither the name of the Eclipse Foundation, Inc. nor the
-   names of its contributors may be used to endorse or promote
-   products derived from this software without specific prior
-   written permission.
- .
- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
- CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
- INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-License: LGPL-2.1+
- This library is free software; you can redistribute it and/or
- modify it under the terms of the GNU Lesser General Public
- License as published by the Free Software Foundation; either
- version 2.1 of the License, or (at your option) any later version.
- .
- This library is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- Lesser General Public License for more details.
- .
- You should have received a copy of the GNU Lesser General Public
- License along with this library; if not, write to the Free Software
- Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- 02110-1301 USA.
-
-License: BSD-3-clause
- All rights reserved.
- Redistribution and use in source and binary forms, with or without
- modification, are permitted provided that the following conditions
- are met:
- 1. Redistributions of source code must retain the above copyright
- notice, this list of conditions and the following disclaimer.
- 2. Redistributions in binary form must reproduce the above copyright
- notice, this list of conditions and the following disclaimer in the
- documentation and/or other materials provided with the distribution.
- 3. Neither the name of the University nor the names of its contributors
- may be used to endorse or promote products derived from this software
- without specific prior written permission.
- .
- THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
- ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
- FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- SUCH DAMAGE.
-
-License: GPL-2 with linking exception
- Note that the only valid version of the GPL as far as this project
- is concerned is _this_ particular version of the license (ie v2, not
- v2.2 or v3.x or whatever), unless explicitly otherwise stated.
- .
-            LINKING EXCEPTION
- .
- In addition to the permissions in the GNU General Public License,
- the authors give you unlimited permission to link the compiled
- version of this library into combinations with other programs,
- and to distribute those combinations without any restriction
- coming from the use of this file.  (The General Public License
- restrictions do apply in other respects; for example, they cover
- modification of the file, and distribution when not linked into
- a combined executable.)
- .
- On Debian systems, the complete text of the GNU General
- Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
