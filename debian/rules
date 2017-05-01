@@ -5,6 +5,12 @@ include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/buildflags.mk
 include /usr/share/rustc/architecture.mk
 
+# For cross-compiling; perhaps we should add this to dh-cargo or debcargo
+export PKG_CONFIG = $(DEB_HOST_GNU_TYPE)-pkg-config
+export PKG_CONFIG_ALLOW_CROSS = 1
+RUSTFLAGS += -C linker=$(DEB_HOST_GNU_TYPE)-gcc
+
+# Pass on dpkg-buildflags stuff
 RUSTFLAGS += $(foreach flag,$(LDFLAGS),-C link-arg=$(flag))
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 
@@ -21,7 +27,7 @@ override_dh_auto_configure:
 ifneq ($(filter pkg.cargo.mkstage0,$(DEB_BUILD_PROFILES)),)
 	# NOTE: this very likely doesn't work any more, see bootstrap.py for details
 	# Instead, you can try to bootstrap by setting PATH to a binary cargo
-	# downloaded from upstream, or by (TODO) cross-compiling.
+	# downloaded from upstream; or by cross-compiling, see "build-cross" below
 	# Preserved in case someone wants to resurrect it later:
 	# Bootstrap cargo stage0
 	./debian/bootstrap.py \
@@ -45,11 +51,16 @@ endif
 		--disable-debug \
 		--enable-optimize \
 		--local-rust-root=/usr \
-		--cargo=$(CURDIR)/cargo-stage0
+		--release-channel=stable \
+		--cargo=$(CURDIR)/cargo-stage0 \
+		--build=$(DEB_BUILD_RUST_TYPE) \
+		--host=$(DEB_HOST_RUST_TYPE) \
+		--target=$(DEB_TARGET_RUST_TYPE)
 
-override_dh_auto_build:
-	# Build final cargo binary and docs
-	$(MAKE)
+override_dh_auto_build-arch:
+	RUST_BACKTRACE=1 $(MAKE)
+
+override_dh_auto_build-indep:
 ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 	$(MAKE) doc
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
@@ -70,3 +81,11 @@ override_dh_auto_clean:
 			$(CURDIR)/config.stamp \
 			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0
+
+build-cross:
+	DEB_BUILD_OPTIONS=nocheck sbuild --profiles=nocheck \
+	  --build-failed-commands '%SBUILD_SHELL' \
+	  --add-depends=libc-dev:$(DEB_HOST_ARCH) \
+	  $(EXTRA_SBUILD_FLAGS) \
+	  --host=$(DEB_HOST_ARCH) \
+	  --no-arch-all .
