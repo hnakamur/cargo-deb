@@ -2,7 +2,7 @@ Updating the package
 ====================
 
 1. Run d/make_orig_multi.sh <version>.
-2. Verify the -deps component tarball to make sure it looks good.
+2. Verify the -vendor component tarball to make sure it looks good.
    If not, edit d/make_orig_multi.sh and the surrounding files (such as patches
    and exclude files) and repeat the above until it looks good.
 3. $ git fetch upstream
@@ -10,8 +10,8 @@ Updating the package
    $ git remote add upstream https://github.com/rust-lang/cargo
 4. $ gbp import-orig ../cargo_<version>.orig.tar.gz
    If you get errors, check the extra default flags in d/gbp.conf
-5. Check that no old versions remain in deps/. If there are, then your git repo
-   was messed up when you ran (4). Rewind the debian/sid, upstream, and
+5. Check that no old versions remain in vendor/. If there are, then your git
+   repo was messed up when you ran (4). Rewind the debian/sid, upstream, and
    pristine-tar branches, delete the upstream/<version> tag; this reverts step
    (4). Clean up your git repo, and then try (4) again.
 6. Update d/patches and the rest of the packaging, as normal.
@@ -38,7 +38,7 @@ This package currently resort to several workarounds to build cargo:
 
 As such, the original source is composed by two tarballs:
  * cargo source
- * dependencies crates (under deps/), stripped of unused embedded
+ * dependencies crates (under vendor/), stripped of unused embedded
    C libraries
 
  -- Luca Bruno <lucab@debian.org>  Sat, 13 Feb 2016 17:50:59 +0100

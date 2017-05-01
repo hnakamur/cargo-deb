@@ -1,9 +1,7 @@
 # This is a list of files and dirs that should be filtered from
 # deps tarball for copyright/duplication reasons
 curl-sys-*/curl/
-libgit2-sys-*/libgit2/deps/
-libgit2-sys-*/libgit2/examples/
-libgit2-sys-*/libgit2/tests/
+libgit2-sys-*/libgit2*/
 libssh2-sys-*/libssh2*/
 libz-sys-*/src/zlib-*/
 strsim-*/docs/

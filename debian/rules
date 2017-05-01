@@ -3,22 +3,15 @@
 include /usr/share/dpkg/pkg-info.mk
 include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/buildflags.mk
+include /usr/share/rustc/architecture.mk
+
 RUSTFLAGS += $(foreach flag,$(LDFLAGS),-C link-arg=$(flag))
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
-
-rust_cpu = $(subst i586,i686,$(1))
-DEB_HOST_RUST_TYPE := $(call rust_cpu,$(DEB_HOST_GNU_CPU))-unknown-$(DEB_HOST_GNU_SYSTEM)
-DEB_TARGET_RUST_TYPE := $(call rust_cpu,$(DEB_TARGET_GNU_CPU))-unknown-$(DEB_TARGET_GNU_SYSTEM)
 
 # Cargo looks for config in and writes cache to $CARGO_HOME/
 export CARGO_HOME = $(CURDIR)/debian/cargohome
 # Ask cargo to be verbose when building
 export VERBOSE = 1
-
-DEB_DESTDIR := $(CURDIR)/debian/tmp
-VENDORDIR := $(CURDIR)/vendor
-INDEXDIR := $(CURDIR)/vendor/index
-DEPSDIR := $(CURDIR)/deps
 
 %:
 	dh $@ --with bash-completion
@@ -26,19 +19,23 @@ DEPSDIR := $(CURDIR)/deps
 override_dh_auto_configure:
 	cp -a $(CURDIR)/Cargo.lock $(CURDIR)/.Cargo.lock.orig
 ifneq ($(filter pkg.cargo.mkstage0,$(DEB_BUILD_PROFILES)),)
+	# NOTE: this very likely doesn't work any more, see bootstrap.py for details
+	# Instead, you can try to bootstrap by setting PATH to a binary cargo
+	# downloaded from upstream, or by (TODO) cross-compiling.
+	# Preserved in case someone wants to resurrect it later:
 	# Bootstrap cargo stage0
 	./debian/bootstrap.py \
 		--no-clean \
 		--no-clone \
 		--no-git \
 		--no-download \
-		--crate-index $(INDEXDIR)/ \
+		--crate-index $(CURDIR)/vendor/index / \
 		--cargo-root $(CURDIR)/ \
-		--target-dir $(DEPSDIR)/ \
+		--target-dir $(CURDIR)/deps \
 		--host=$(DEB_HOST_RUST_TYPE) \
 		--target=$(DEB_TARGET_RUST_TYPE)
 	# Workaround for https://github.com/rust-lang/cargo/issues/1423
-	ln -s `find $(DEPSDIR) -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
+	ln -s `find $(CURDIR)/deps -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
 else
 	ln -s `which cargo` $(CURDIR)/cargo-stage0
 endif
@@ -69,14 +66,9 @@ override_dh_auto_test:
 override_dh_auto_clean:
 	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock
 	dh_auto_clean
-	-$(RM) -r $(CURDIR)/deps/*.rlib \
-			$(CURDIR)/deps/build_script* \
-			$(CURDIR)/deps/cargo* \
-			$(CURDIR)/deps/*.o \
-			$(CURDIR)/target/ \
+	-$(RM) -r $(CURDIR)/target/ \
 			$(CURDIR)/.cargo \
 			$(CURDIR)/config.mk \
 			$(CURDIR)/config.stamp \
 			$(CURDIR)/Makefile \
-			$(CURDIR)/cargo-stage0 \
-			$(VENDORDIR)
+			$(CURDIR)/cargo-stage0

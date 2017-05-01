@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 """
+NOTE: This script has not been used for a very long time and very likely won't
+work. Please read the code before attempting to run it and hoping that "just
+fixing the errors" will work. -- infinity0
+
 About
 =====
 

@@ -13,18 +13,18 @@ Comment:
  notice may not be copied, modified, or distributed except
  according to those terms.
 
-Files: deps/*
-       deps/time-*
-       deps/libc-*
-       deps/bitflags-*
-       deps/semver-*
-       deps/log-*
-       deps/glob-*
-       deps/env_logger-*
-       deps/rustc-*
-       deps/term-*
-       deps/rustc-serialize-*
-       deps/regex-*
+Files: vendor/*
+       vendor/time-*
+       vendor/libc-*
+       vendor/bitflags-*
+       vendor/semver-*
+       vendor/log-*
+       vendor/glob-*
+       vendor/env_logger-*
+       vendor/rustc-*
+       vendor/term-*
+       vendor/rustc-serialize-*
+       vendor/regex-*
 Copyright: 2014-2015 The Rust Project Developers
 License: MIT-License or Apache-2.0
 Comment:
@@ -33,36 +33,36 @@ Comment:
  same MIT/Apache-2.0 dual-license. See https://github.com/rust-lang.
  Exceptions are noted below.
 
-Files: deps/advapi32-sys-*
-       deps/kernel32-*
-       deps/winapi-*
+Files: vendor/advapi32-sys-*
+       vendor/kernel32-*
+       vendor/winapi-*
 Copyright: 2015 Peter Atashian <retep998@gmail.com>
 License: MIT-License
 Comment: see https://github.com/retep998/winapi-rs
 
-Files: deps/url-*
+Files: vendor/url-*
 Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
 License: MIT-License or Apache-2.0
 Comment: see https://github.com/servo/rust-url
 
-Files: deps/matches-*
+Files: vendor/matches-*
 Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
 License: MIT-License
 Comment: see https://github.com/SimonSapin/rust-std-candidates
 
-Files: deps/num_cpus-*
+Files: vendor/num_cpus-*
 Copyright: 2015 Sean McArthur <sean.monstar@gmail.com>
 License: MIT-License
 Comment: see https://github.com/seanmonstar/num_cpus
 
-Files: deps/strsim-*
+Files: vendor/strsim-*
 Copyright: 2015 Danny Guo <dannyguo91@gmail.com>
 License: MIT-License
 Comment: see https://github.com/dguo/strsim-rs
 
-Files: deps/memchr-*
-       deps/aho-corasick-*
-       deps/docopt-*
+Files: vendor/memchr-*
+       vendor/aho-corasick-*
+       vendor/docopt-*
 Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
 License: MIT-License or Unlicense
 Comment: see upstream projects,
@@ -70,59 +70,59 @@ Comment: see upstream projects,
  * https://github.com/BurntSushi/aho-corasick
  * https://github.com/docopt/docopt.rs
 
-Files: deps/openssl-sys-*
+Files: vendor/openssl-sys-*
 Copyright: 2015 Alex Crichton <alex@alexcrichton.com>
            2015 Steven Fackler <sfackler@gmail.com>
 License: MIT-License
 Comment: see https://github.com/sfackler/rust-openssl
 
-Files: deps/libz-sys-*
-       deps/libgit2-sys-*
-       deps/libssh2-sys-*
-       deps/miniz-sys-*
-       deps/gcc-*
-       deps/git2-*
-       deps/git2-curl-*
-       deps/filetime-*
-       deps/flate2-*
-       deps/pkg-config-*
-       deps/toml-*
-       deps/tar-*
+Files: vendor/libz-sys-*
+       vendor/libgit2-sys-*
+       vendor/libssh2-sys-*
+       vendor/miniz-sys-*
+       vendor/gcc-*
+       vendor/git2-*
+       vendor/git2-curl-*
+       vendor/filetime-*
+       vendor/flate2-*
+       vendor/pkg-config-*
+       vendor/toml-*
+       vendor/tar-*
 Copyright: 2014-2015 Alex Crichton <alex@alexcrichton.com>
 License: MIT-License or Apache-2.0
 Comment: see https://github.com/alexcrichton/
 
-Files: deps/miniz-sys-*/miniz.c
+Files: vendor/miniz-sys-*/miniz.c
 Copyright: Rich Geldreich <richgel99@gmail.com>
 License: Unlicense
 
-Files: deps/libgit2-sys-*/libgit2/*
+Files: vendor/libgit2-sys-*/libgit2/*
 Copyright: 2009-2012, the libgit2 contributors
 License: GPL-2 with linking exception
 
-Files: deps/libgit2-sys-*/libgit2/cmake/Modules/FindGSSAPI.cmake
+Files: vendor/libgit2-sys-*/libgit2/cmake/Modules/FindGSSAPI.cmake
 Copyright: 2013, Andreas Schneider <asn@cryptomilk.org>
 License: BSD-2-clause
 
-Files: deps/libgit2-sys-*/libgit2/include/git2/inttypes.h
-       deps/libgit2-sys-*/libgit2/include/git2/stdint.h
+Files: vendor/libgit2-sys-*/libgit2/include/git2/inttypes.h
+       vendor/libgit2-sys-*/libgit2/include/git2/stdint.h
 Copyright: 2006, Alexander Chemeris
 License: BSD-3-clause
 
-Files: deps/libgit2-sys-*/libgit2/src/khash.h
+Files: vendor/libgit2-sys-*/libgit2/src/khash.h
 Copyright: 2008, 2009, 2011, Attractive Chaos <attractor@live.co.uk>
 License: MIT-License
 
-Files: deps/libgit2-sys-*/libgit2/src/xdiff/*
+Files: vendor/libgit2-sys-*/libgit2/src/xdiff/*
 Copyright: 2003-2006, Davide Libenzi
            2003-2006, Johannes E. Schindelin
 License: LGPL-2.1+
 
-Files: deps/libgit2-sys-*/libgit2/src/xdiff/xhistogram.c
+Files: vendor/libgit2-sys-*/libgit2/src/xdiff/xhistogram.c
 Copyright: 2010, Google Inc and others from JGit's IP log.
 License: EDL-1.0
 
-Files: deps/libgit2-sys-*/libgit2/src/date.c
+Files: vendor/libgit2-sys-*/libgit2/src/date.c
 Copyright: 2005, Linus Torvalds
 License: GPL-2 with linking exception
 

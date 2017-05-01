@@ -1,3 +1,17 @@
+cargo (0.17.0-1~exp2) UNRELEASED; urgency=medium
+
+  * Bring in some changes from Ubuntu.
+    - Rename deps/ to vendor/ as that's what upstream uses, and update
+      other files with the new paths too.
+    - Remove cargo-vendor-unpack since we no longer need to postprocess
+      cargo-vendor output in that way.
+  * Document that bootstrap.py probably doesn't work now.
+  * Include /usr/share/rustc/architecture.mk in d/rules instead of duplicating
+    awkward arch-dependent Makefile snippets.
+  * Don't embed libgit2, add a versioned B-D to libgit2-dev.
+
+ -- Ximin Luo <infinity0@debian.org>  Mon, 01 May 2017 16:38:43 +0200
+
 cargo (0.17.0-1~exp1) experimental; urgency=medium
 
   * New upstream release. (Closes: #851089, #859312)
