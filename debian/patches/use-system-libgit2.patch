@@ -1,0 +1,26 @@
+Description: Always use system libgit2
+Author: Ximin Luo <infinity0@debian.org>
+Forwarded: not-needed
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/vendor/libgit2-sys-0.6.6/build.rs
++++ b/vendor/libgit2-sys-0.6.6/build.rs
+@@ -31,10 +31,8 @@
+     }
+     let has_pkgconfig = Command::new("pkg-config").output().is_ok();
+ 
+-    if env::var("LIBGIT2_SYS_USE_PKG_CONFIG").is_ok() {
+-        if pkg_config::find_library("libgit2").is_ok() {
+-            return
+-        }
++    if pkg_config::find_library("libgit2").is_ok() {
++        return
+     }
+ 
+     if !Path::new("libgit2/.git").exists() {
+--- a/vendor/libgit2-sys-0.6.6/.cargo-checksum.json
++++ b/vendor/libgit2-sys-0.6.6/.cargo-checksum.json
+@@ -1 +1 @@
+-{"files":{".cargo-ok":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","Cargo.toml":"1716bfaf32d1c020e8f4a9220f28d8158feac531408dfc1f66eefae21f3744f4","build.rs":"32f1614473508047c68a95977074c32a41fafb7f08b26f9d5dd937576ecc594f","lib.rs":"427ae51eeab835af5bd1fc26f9b2eaad1f9fd58671ec080eb9def921dcfe2420"},"package":"c7a4e33e9f8b8883c1a5898e72cdc63c00c4f2265283651533b00373094e901c"}
+\ No newline at end of file
++{"files":{".cargo-ok":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","Cargo.toml":"1716bfaf32d1c020e8f4a9220f28d8158feac531408dfc1f66eefae21f3744f4","build.rs":"7006deca0e11974227326174088500df8f7d1708839378edfd242a11ed7f18c9","lib.rs":"427ae51eeab835af5bd1fc26f9b2eaad1f9fd58671ec080eb9def921dcfe2420"},"package":"c7a4e33e9f8b8883c1a5898e72cdc63c00c4f2265283651533b00373094e901c"}
