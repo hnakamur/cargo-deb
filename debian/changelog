@@ -1,9 +1,9 @@
-cargo (0.17.0-1~exp3) UNRELEASED; urgency=medium
+cargo (0.17.0-1~exp3) experimental; urgency=medium
 
   * Add git to Build-Depends to fix FTBFS.
   * Mention cross-compiling in the previous changelog entry.
 
- -- Ximin Luo <infinity0@debian.org>  Tue, 02 May 2017 13:03:06 +0200
+ -- Ximin Luo <infinity0@debian.org>  Tue, 02 May 2017 13:18:53 +0200
 
 cargo (0.17.0-1~exp2) experimental; urgency=medium
 
