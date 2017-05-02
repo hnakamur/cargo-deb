@@ -82,10 +82,18 @@ override_dh_auto_clean:
 			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0
 
-build-cross:
-	DEB_BUILD_OPTIONS=nocheck sbuild --profiles=nocheck \
+CROSS_SBUILD = DEB_BUILD_OPTIONS=nocheck sbuild --profiles=nocheck \
 	  --build-failed-commands '%SBUILD_SHELL' \
 	  --add-depends=libc-dev:$(DEB_HOST_ARCH) \
 	  $(EXTRA_SBUILD_FLAGS) \
 	  --host=$(DEB_HOST_ARCH) \
-	  --no-arch-all .
+	  --no-arch-all
+
+crossbuild:
+	$(CROSS_SBUILD) .
+
+crossbuild-experimental:
+	$(CROSS_SBUILD) \
+	  --extra-repository='deb http://httpredir.debian.org/debian experimental main' \
+	  --build-dep-resolver=aspcud \
+	  .

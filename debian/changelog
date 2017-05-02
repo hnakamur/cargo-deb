@@ -1,3 +1,10 @@
+cargo (0.17.0-1~exp3) UNRELEASED; urgency=medium
+
+  * Add git to Build-Depends to fix FTBFS.
+  * Mention cross-compiling in the previous changelog entry.
+
+ -- Ximin Luo <infinity0@debian.org>  Tue, 02 May 2017 13:03:06 +0200
+
 cargo (0.17.0-1~exp2) experimental; urgency=medium
 
   * Bring in some changes from Ubuntu.
@@ -9,6 +16,7 @@ cargo (0.17.0-1~exp2) experimental; urgency=medium
   * Include /usr/share/rustc/architecture.mk in d/rules instead of duplicating
     awkward arch-dependent Makefile snippets.
   * Don't embed libgit2, add a versioned B-D to libgit2-dev.
+  * Add support for cross-compiling bootstrap.
 
  -- Ximin Luo <infinity0@debian.org>  Mon, 01 May 2017 20:49:45 +0200
 
