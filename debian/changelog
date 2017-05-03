@@ -1,3 +1,9 @@
+cargo (0.17.0-1) UNRELEASED; urgency=medium
+
+  * Upload to unstable so we have something to build rustc 1.17.0 with.
+
+ -- Ximin Luo <infinity0@debian.org>  Wed, 03 May 2017 11:20:37 +0200
+
 cargo (0.17.0-1~exp3) experimental; urgency=medium
 
   * Add git to Build-Depends to fix FTBFS.
