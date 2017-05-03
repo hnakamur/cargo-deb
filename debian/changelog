@@ -1,10 +1,10 @@
-cargo (0.17.0-2) UNRELEASED; urgency=medium
+cargo (0.17.0-2) unstable; urgency=medium
 
   * Re-embed libgit2 0.25.1 due to the Debian testing freeze. It will be
     removed again after the freeze is over, when libgit2 0.25.1 can again
     enter Debian unstable.
 
- -- Ximin Luo <infinity0@debian.org>  Wed, 03 May 2017 16:34:39 +0200
+ -- Ximin Luo <infinity0@debian.org>  Wed, 03 May 2017 16:56:03 +0200
 
 cargo (0.17.0-1) unstable; urgency=medium
 
