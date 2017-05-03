@@ -1,3 +1,10 @@
+Embedded libraries
+==================
+
+The source package embeds a copy of libgit2 0.25.1 because that is what this
+version of cargo needs, but the Debian libgit2 0.25.1 package cannot yet go
+into unstable due to the testing freeze. It will be removed after the freeze.
+
 Updating the package
 ====================
 

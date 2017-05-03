@@ -1,4 +1,5 @@
 clean-cargo-deps.patch
 local-jquery.patch
-use-system-libgit2.patch
+# TODO: re-enable after the freeze
+#use-system-libgit2.patch
 disable-net-tests.patch
