@@ -3,7 +3,8 @@ use std::fs;
 use std::path::Path;
 
 use core::{Profiles, Workspace};
-use util::{CargoResult, human, ChainError, Config};
+use util::Config;
+use util::errors::{CargoResult, CargoResultExt};
 use ops::{self, Context, BuildConfig, Kind, Unit};
 
 pub struct CleanOptions<'a> {
@@ -36,6 +37,7 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
                                        host_triple: host_triple,
                                        requested_target: opts.target.map(|s| s.to_owned()),
                                        release: opts.release,
+                                       jobs: 1,
                                        ..BuildConfig::default()
                                    },
                                    profiles)?;
@@ -81,10 +83,10 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
             continue
         }
 
-        for (src, link_dst, _) in cx.target_filenames(unit)? {
-            rm_rf(&src)?;
-            if let Some(dst) = link_dst {
-                rm_rf(&dst)?;
+        for &(ref src, ref link_dst, _) in cx.target_filenames(unit)?.iter() {
+            rm_rf(src)?;
+            if let Some(ref dst) = *link_dst {
+                rm_rf(dst)?;
             }
         }
     }
@@ -95,12 +97,12 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
 fn rm_rf(path: &Path) -> CargoResult<()> {
     let m = fs::metadata(path);
     if m.as_ref().map(|s| s.is_dir()).unwrap_or(false) {
-        fs::remove_dir_all(path).chain_error(|| {
-            human("could not remove build directory")
+        fs::remove_dir_all(path).chain_err(|| {
+            "could not remove build directory"
         })?;
     } else if m.is_ok() {
-        fs::remove_file(path).chain_error(|| {
-            human("failed to remove build artifact")
+        fs::remove_file(path).chain_err(|| {
+            "failed to remove build artifact"
         })?;
     }
     Ok(())

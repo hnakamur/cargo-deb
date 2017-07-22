@@ -3,15 +3,29 @@ use std::fmt;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
-use rustc_serialize::{Encodable, Encoder};
-use url::Url;
 use git2::{self, ObjectType};
+use serde::ser::{self, Serialize};
+use url::Url;
 
 use core::GitReference;
-use util::{CargoResult, ChainError, human, ToUrl, internal, Config, network};
+use util::{ToUrl, internal, Config, network};
+use util::errors::{CargoResult, CargoResultExt, CargoError};
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct GitRevision(git2::Oid);
+
+impl ser::Serialize for GitRevision {
+    fn serialize<S: ser::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serialize_str(self, s)
+    }
+}
+
+fn serialize_str<T, S>(t: &T, s: S) -> Result<S::Ok, S::Error>
+    where T: fmt::Display,
+          S: ser::Serializer,
+{
+    t.to_string().serialize(s)
+}
 
 impl fmt::Display for GitRevision {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -29,75 +43,32 @@ impl GitShortID {
 
 /// GitRemote represents a remote repository. It gets cloned into a local
 /// GitDatabase.
-#[derive(PartialEq,Clone,Debug)]
+#[derive(PartialEq, Clone, Debug, Serialize)]
 pub struct GitRemote {
+    #[serde(serialize_with = "serialize_str")]
     url: Url,
-}
-
-#[derive(PartialEq,Clone,RustcEncodable)]
-struct EncodableGitRemote {
-    url: String,
-}
-
-impl Encodable for GitRemote {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        EncodableGitRemote {
-            url: self.url.to_string()
-        }.encode(s)
-    }
 }
 
 /// GitDatabase is a local clone of a remote repository's database. Multiple
 /// GitCheckouts can be cloned from this GitDatabase.
+#[derive(Serialize)]
 pub struct GitDatabase {
     remote: GitRemote,
     path: PathBuf,
+    #[serde(skip_serializing)]
     repo: git2::Repository,
-}
-
-#[derive(RustcEncodable)]
-pub struct EncodableGitDatabase {
-    remote: GitRemote,
-    path: String,
-}
-
-impl Encodable for GitDatabase {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        EncodableGitDatabase {
-            remote: self.remote.clone(),
-            path: self.path.display().to_string()
-        }.encode(s)
-    }
 }
 
 /// GitCheckout is a local checkout of a particular revision. Calling
 /// `clone_into` with a reference will resolve the reference into a revision,
 /// and return a CargoError if no revision for that reference was found.
+#[derive(Serialize)]
 pub struct GitCheckout<'a> {
     database: &'a GitDatabase,
     location: PathBuf,
     revision: GitRevision,
+    #[serde(skip_serializing)]
     repo: git2::Repository,
-}
-
-#[derive(RustcEncodable)]
-pub struct EncodableGitCheckout {
-    database: EncodableGitDatabase,
-    location: String,
-    revision: String,
-}
-
-impl<'a> Encodable for GitCheckout<'a> {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        EncodableGitCheckout {
-            location: self.location.display().to_string(),
-            revision: self.revision.to_string(),
-            database: EncodableGitDatabase {
-                remote: self.database.remote.clone(),
-                path: self.database.path.display().to_string(),
-            },
-        }.encode(s)
-    }
 }
 
 // Implementations
@@ -120,14 +91,14 @@ impl GitRemote {
     pub fn checkout(&self, into: &Path, cargo_config: &Config) -> CargoResult<GitDatabase> {
         let repo = match git2::Repository::open(into) {
             Ok(repo) => {
-                self.fetch_into(&repo, &cargo_config).chain_error(|| {
-                    human(format!("failed to fetch into {}", into.display()))
+                self.fetch_into(&repo, cargo_config).chain_err(|| {
+                    format!("failed to fetch into {}", into.display())
                 })?;
                 repo
             }
             Err(..) => {
-                self.clone_into(into, &cargo_config).chain_error(|| {
-                    human(format!("failed to clone into: {}", into.display()))
+                self.clone_into(into, cargo_config).chain_err(|| {
+                    format!("failed to clone into: {}", into.display())
                 })?
             }
         };
@@ -152,7 +123,7 @@ impl GitRemote {
         // Create a local anonymous remote in the repository to fetch the url
         let url = self.url.to_string();
         let refspec = "refs/heads/*:refs/heads/*";
-        fetch(dst, &url, refspec, &cargo_config)
+        fetch(dst, &url, refspec, cargo_config)
     }
 
     fn clone_into(&self, dst: &Path, cargo_config: &Config) -> CargoResult<git2::Repository> {
@@ -162,7 +133,7 @@ impl GitRemote {
         }
         fs::create_dir_all(dst)?;
         let repo = git2::Repository::init_bare(dst)?;
-        fetch(&repo, &url, "refs/heads/*:refs/heads/*", &cargo_config)?;
+        fetch(&repo, &url, "refs/heads/*:refs/heads/*", cargo_config)?;
         Ok(repo)
     }
 }
@@ -178,7 +149,7 @@ impl GitDatabase {
             Ok(repo) => {
                 let checkout = GitCheckout::new(dest, self, rev, repo);
                 if !checkout.is_fresh() {
-                    checkout.fetch(&cargo_config)?;
+                    checkout.fetch(cargo_config)?;
                     checkout.reset()?;
                     assert!(checkout.is_fresh());
                 }
@@ -186,38 +157,39 @@ impl GitDatabase {
             }
             Err(..) => GitCheckout::clone_into(dest, self, rev)?,
         };
-        checkout.update_submodules(&cargo_config).chain_error(|| {
-            internal("failed to update submodules")
-        })?;
+        checkout.update_submodules(cargo_config)?;
         Ok(checkout)
     }
 
     pub fn rev_for(&self, reference: &GitReference) -> CargoResult<GitRevision> {
         let id = match *reference {
             GitReference::Tag(ref s) => {
-                (|| {
+                (|| -> CargoResult<git2::Oid> {
                     let refname = format!("refs/tags/{}", s);
                     let id = self.repo.refname_to_id(&refname)?;
                     let obj = self.repo.find_object(id, None)?;
                     let obj = obj.peel(ObjectType::Commit)?;
                     Ok(obj.id())
-                }).chain_error(|| {
-                    human(format!("failed to find tag `{}`", s))
+                })().chain_err(|| {
+                    format!("failed to find tag `{}`", s)
                 })?
             }
             GitReference::Branch(ref s) => {
                 (|| {
                     let b = self.repo.find_branch(s, git2::BranchType::Local)?;
-                    b.get().target().chain_error(|| {
-                        human(format!("branch `{}` did not have a target", s))
+                    b.get().target().ok_or_else(|| {
+                        CargoError::from(format!("branch `{}` did not have a target", s))
                     })
-                }).chain_error(|| {
-                    human(format!("failed to find branch `{}`", s))
+                })().chain_err(|| {
+                    format!("failed to find branch `{}`", s)
                 })?
             }
             GitReference::Rev(ref s) => {
                 let obj = self.repo.revparse_single(s)?;
-                obj.id()
+                match obj.as_tag() {
+                    Some(tag) => tag.target_id(),
+                    None => obj.id(),
+                }
             }
         };
         Ok(GitRevision(id))
@@ -260,20 +232,21 @@ impl<'a> GitCheckout<'a> {
     fn clone_repo(source: &Path, into: &Path) -> CargoResult<git2::Repository> {
         let dirname = into.parent().unwrap();
 
-        fs::create_dir_all(&dirname).chain_error(|| {
-            human(format!("Couldn't mkdir {}", dirname.display()))
+        fs::create_dir_all(&dirname).chain_err(|| {
+            format!("Couldn't mkdir {}", dirname.display())
         })?;
 
         if fs::metadata(&into).is_ok() {
-            fs::remove_dir_all(into).chain_error(|| {
-                human(format!("Couldn't rmdir {}", into.display()))
+            fs::remove_dir_all(into).chain_err(|| {
+                format!("Couldn't rmdir {}", into.display())
             })?;
         }
 
         let url = source.to_url()?;
         let url = url.to_string();
-        let repo = git2::Repository::clone(&url, into).chain_error(|| {
-            internal(format!("failed to clone {} into {}", source.display(),
+        let repo = git2::Repository::clone(&url, into)            
+            .chain_err(|| {
+                internal(format!("failed to clone {} into {}", source.display(),
                              into.display()))
         })?;
         Ok(repo)
@@ -294,7 +267,7 @@ impl<'a> GitCheckout<'a> {
         let url = self.database.path.to_url()?;
         let url = url.to_string();
         let refspec = "refs/heads/*:refs/heads/*";
-        fetch(&self.repo, &url, refspec, &cargo_config)?;
+        fetch(&self.repo, &url, refspec, cargo_config)?;
         Ok(())
     }
 
@@ -317,58 +290,69 @@ impl<'a> GitCheckout<'a> {
     }
 
     fn update_submodules(&self, cargo_config: &Config) -> CargoResult<()> {
-        return update_submodules(&self.repo, &cargo_config);
+        return update_submodules(&self.repo, cargo_config);
 
         fn update_submodules(repo: &git2::Repository, cargo_config: &Config) -> CargoResult<()> {
             info!("update submodules for: {:?}", repo.workdir().unwrap());
 
             for mut child in repo.submodules()?.into_iter() {
-                child.init(false)?;
-                let url = child.url().chain_error(|| {
-                    internal("non-utf8 url for submodule")
+                update_submodule(repo, &mut child, cargo_config)
+                    .map_err(CargoError::into_internal)
+                    .chain_err(|| {
+                        format!("failed to update submodule `{}`",
+                                child.name().unwrap_or(""))
                 })?;
-
-                // A submodule which is listed in .gitmodules but not actually
-                // checked out will not have a head id, so we should ignore it.
-                let head = match child.head_id() {
-                    Some(head) => head,
-                    None => continue,
-                };
-
-                // If the submodule hasn't been checked out yet, we need to
-                // clone it. If it has been checked out and the head is the same
-                // as the submodule's head, then we can bail out and go to the
-                // next submodule.
-                let head_and_repo = child.open().and_then(|repo| {
-                    let target = repo.head()?.target();
-                    Ok((target, repo))
-                });
-                let repo = match head_and_repo {
-                    Ok((head, repo)) => {
-                        if child.head_id() == head {
-                            continue
-                        }
-                        repo
-                    }
-                    Err(..) => {
-                        let path = repo.workdir().unwrap().join(child.path());
-                        let _ = fs::remove_dir_all(&path);
-                        git2::Repository::clone(url, &path)?
-                    }
-                };
-
-                // Fetch data from origin and reset to the head commit
-                let refspec = "refs/heads/*:refs/heads/*";
-                fetch(&repo, url, refspec, &cargo_config).chain_error(|| {
-                    internal(format!("failed to fetch submodule `{}` from {}",
-                                     child.name().unwrap_or(""), url))
-                })?;
-
-                let obj = repo.find_object(head, None)?;
-                repo.reset(&obj, git2::ResetType::Hard, None)?;
-                update_submodules(&repo, &cargo_config)?;
             }
             Ok(())
+        }
+
+        fn update_submodule(parent: &git2::Repository,
+                            child: &mut git2::Submodule,
+                            cargo_config: &Config) -> CargoResult<()> {
+            child.init(false)?;
+            let url = child.url().ok_or_else(|| {
+                internal("non-utf8 url for submodule")
+            })?;
+
+            // A submodule which is listed in .gitmodules but not actually
+            // checked out will not have a head id, so we should ignore it.
+            let head = match child.head_id() {
+                Some(head) => head,
+                None => return Ok(()),
+            };
+
+            // If the submodule hasn't been checked out yet, we need to
+            // clone it. If it has been checked out and the head is the same
+            // as the submodule's head, then we can bail out and go to the
+            // next submodule.
+            let head_and_repo = child.open().and_then(|repo| {
+                let target = repo.head()?.target();
+                Ok((target, repo))
+            });
+            let repo = match head_and_repo {
+                Ok((head, repo)) => {
+                    if child.head_id() == head {
+                        return Ok(())
+                    }
+                    repo
+                }
+                Err(..) => {
+                    let path = parent.workdir().unwrap().join(child.path());
+                    let _ = fs::remove_dir_all(&path);
+                    git2::Repository::clone(url, &path)?
+                }
+            };
+
+            // Fetch data from origin and reset to the head commit
+            let refspec = "refs/heads/*:refs/heads/*";
+            fetch(&repo, url, refspec, cargo_config).chain_err(|| {
+                internal(format!("failed to fetch submodule `{}` from {}",
+                                 child.name().unwrap_or(""), url))
+            })?;
+
+            repo.find_object(head, None)
+                .and_then(|obj| { repo.reset(&obj, git2::ResetType::Hard, None)})?;
+            update_submodules(&repo, cargo_config)
         }
     }
 }
@@ -456,7 +440,7 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
             let username = username.unwrap();
             debug_assert!(!ssh_username_requested);
             ssh_agent_attempts.push(username.to_string());
-            return git2::Cred::ssh_key_from_agent(&username)
+            return git2::Cred::ssh_key_from_agent(username)
         }
 
         // Sometimes libgit2 will ask for a username/password in plaintext. This
@@ -548,10 +532,10 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
     // In the case of an authentication failure (where we tried something) then
     // we try to give a more helpful error message about precisely what we
     // tried.
-    res.chain_error(|| {
+    res.map_err(CargoError::from).map_err(|e| e.into_internal()).chain_err(|| {
         let mut msg = "failed to authenticate when downloading \
                        repository".to_string();
-        if ssh_agent_attempts.len() > 0 {
+        if !ssh_agent_attempts.is_empty() {
             let names = ssh_agent_attempts.iter()
                                           .map(|s| format!("`{}`", s))
                                           .collect::<Vec<_>>()
@@ -569,7 +553,7 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
                               credentials were incorrect");
             }
         }
-        human(msg)
+        msg
     })
 }
 
@@ -587,13 +571,14 @@ pub fn fetch(repo: &git2::Repository,
         cb.credentials(f);
 
         // Create a local anonymous remote in the repository to fetch the url
-        let mut remote = repo.remote_anonymous(&url)?;
+        let mut remote = repo.remote_anonymous(url)?;
         let mut opts = git2::FetchOptions::new();
         opts.remote_callbacks(cb)
             .download_tags(git2::AutotagOption::All);
 
-        network::with_retry(config, ||{
+        network::with_retry(config, || {
             remote.fetch(&[refspec], Some(&mut opts), None)
+                .map_err(CargoError::from)
         })?;
         Ok(())
     })

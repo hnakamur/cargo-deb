@@ -1,4 +1,4 @@
-use rustc_serialize::{Encodable, Encoder};
+use serde::ser::{self, Serialize};
 
 use core::resolver::Resolve;
 use core::{Package, PackageId, Workspace};
@@ -37,6 +37,7 @@ fn metadata_no_deps(ws: &Workspace,
         packages: ws.members().cloned().collect(),
         workspace_members: ws.members().map(|pkg| pkg.package_id().clone()).collect(),
         resolve: None,
+        target_directory: ws.target_dir().display().to_string(),
         version: VERSION,
     })
 }
@@ -63,50 +64,43 @@ fn metadata_full(ws: &Workspace,
             resolve: resolve,
             root: ws.current_opt().map(|pkg| pkg.package_id().clone()),
         }),
+        target_directory: ws.target_dir().display().to_string(),
         version: VERSION,
     })
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 pub struct ExportInfo {
     packages: Vec<Package>,
     workspace_members: Vec<PackageId>,
     resolve: Option<MetadataResolve>,
+    target_directory: String,
     version: u32,
 }
 
-/// Newtype wrapper to provide a custom `Encodable` implementation.
+/// Newtype wrapper to provide a custom `Serialize` implementation.
 /// The one from lockfile does not fit because it uses a non-standard
 /// format for `PackageId`s
-struct MetadataResolve{
+#[derive(Serialize)]
+struct MetadataResolve {
+    #[serde(rename = "nodes", serialize_with = "serialize_resolve")]
     resolve: Resolve,
     root: Option<PackageId>,
 }
 
-impl Encodable for MetadataResolve {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        #[derive(RustcEncodable)]
-        struct EncodableResolve<'a> {
-            root: Option<&'a PackageId>,
-            nodes: Vec<Node<'a>>,
-        }
-
-        #[derive(RustcEncodable)]
-        struct Node<'a> {
-            id: &'a PackageId,
-            dependencies: Vec<&'a PackageId>,
-        }
-
-        let encodable = EncodableResolve {
-            root: self.root.as_ref(),
-            nodes: self.resolve.iter().map(|id| {
-                Node {
-                    id: id,
-                    dependencies: self.resolve.deps(id).collect(),
-                }
-            }).collect(),
-        };
-
-        encodable.encode(s)
+fn serialize_resolve<S>(resolve: &Resolve, s: S) -> Result<S::Ok, S::Error>
+    where S: ser::Serializer,
+{
+    #[derive(Serialize)]
+    struct Node<'a> {
+        id: &'a PackageId,
+        dependencies: Vec<&'a PackageId>,
     }
+
+    resolve.iter().map(|id| {
+        Node {
+            id: id,
+            dependencies: resolve.deps(id).collect(),
+        }
+    }).collect::<Vec<_>>().serialize(s)
 }

@@ -3,8 +3,8 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 use semver::Version;
 
-use core::{PackageId, Package, Target};
-use util::{self, CargoResult, Config, ProcessBuilder, process, join_paths};
+use core::{PackageId, Package, Target, TargetKind};
+use util::{self, CargoResult, Config, LazyCell, ProcessBuilder, process, join_paths};
 
 /// A structure returning the result of a compilation.
 pub struct Compilation<'cfg> {
@@ -13,12 +13,12 @@ pub struct Compilation<'cfg> {
     pub libraries: HashMap<PackageId, HashSet<(Target, PathBuf)>>,
 
     /// An array of all tests created during this compilation.
-    pub tests: Vec<(Package, String, PathBuf)>,
+    pub tests: Vec<(Package, TargetKind, String, PathBuf)>,
 
     /// An array of all binaries created.
     pub binaries: Vec<PathBuf>,
 
-    /// All directires for the output of native build commands.
+    /// All directories for the output of native build commands.
     ///
     /// This is currently used to drive some entries which are added to the
     /// LD_LIBRARY_PATH as appropriate.
@@ -35,6 +35,12 @@ pub struct Compilation<'cfg> {
     /// which have dynamic dependencies.
     pub plugins_dylib_path: PathBuf,
 
+    /// The path to rustc's own libstd
+    pub host_dylib_path: Option<PathBuf>,
+
+    /// The path to libstd for the target
+    pub target_dylib_path: Option<PathBuf>,
+
     /// Extra environment variables that were passed to compilations and should
     /// be passed to future invocations of programs.
     pub extra_env: HashMap<PackageId, Vec<(String, String)>>,
@@ -47,6 +53,8 @@ pub struct Compilation<'cfg> {
     pub target: String,
 
     config: &'cfg Config,
+
+    target_runner: LazyCell<Option<(PathBuf, Vec<String>)>>,
 }
 
 impl<'cfg> Compilation<'cfg> {
@@ -57,6 +65,8 @@ impl<'cfg> Compilation<'cfg> {
             root_output: PathBuf::from("/"),
             deps_output: PathBuf::from("/"),
             plugins_dylib_path: PathBuf::from("/"),
+            host_dylib_path: None,
+            target_dylib_path: None,
             tests: Vec::new(),
             binaries: Vec::new(),
             extra_env: HashMap::new(),
@@ -64,6 +74,7 @@ impl<'cfg> Compilation<'cfg> {
             cfgs: HashMap::new(),
             config: config,
             target: String::new(),
+            target_runner: LazyCell::new(),
         }
     }
 
@@ -83,10 +94,25 @@ impl<'cfg> Compilation<'cfg> {
         self.fill_env(process(cmd), pkg, true)
     }
 
+    fn target_runner(&self) -> CargoResult<&Option<(PathBuf, Vec<String>)>> {
+        self.target_runner.get_or_try_init(|| {
+            let key = format!("target.{}.runner", self.target);
+            Ok(self.config.get_path_and_args(&key)?.map(|v| v.val))
+        })
+    }
+
     /// See `process`.
     pub fn target_process<T: AsRef<OsStr>>(&self, cmd: T, pkg: &Package)
                                            -> CargoResult<ProcessBuilder> {
-        self.fill_env(process(cmd), pkg, false)
+        let builder = if let &Some((ref runner, ref args)) = self.target_runner()? {
+            let mut builder = process(runner);
+            builder.args(args);
+            builder.arg(cmd);
+            builder
+        } else {
+            process(cmd)
+        };
+        self.fill_env(builder, pkg, false)
     }
 
     /// Prepares a new process with an appropriate environment to run against
@@ -98,30 +124,16 @@ impl<'cfg> Compilation<'cfg> {
                 -> CargoResult<ProcessBuilder> {
 
         let mut search_path = if is_host {
-            vec![self.plugins_dylib_path.clone()]
+            let mut search_path = vec![self.plugins_dylib_path.clone()];
+            search_path.extend(self.host_dylib_path.clone());
+            search_path
         } else {
-            let mut search_path = vec![];
-
-            // Add -L arguments, after stripping off prefixes like "native=" or "framework=".
-            for dir in self.native_dirs.iter() {
-                let dir = match dir.to_str() {
-                    Some(s) => {
-                        let mut parts = s.splitn(2, '=');
-                        match (parts.next(), parts.next()) {
-                            (Some("native"), Some(path)) |
-                            (Some("crate"), Some(path)) |
-                            (Some("dependency"), Some(path)) |
-                            (Some("framework"), Some(path)) |
-                            (Some("all"), Some(path)) => path.into(),
-                            _ => dir.clone(),
-                        }
-                    }
-                    None => dir.clone(),
-                };
-                search_path.push(dir);
-            }
+            let mut search_path =
+                super::filter_dynamic_search_path(self.native_dirs.iter(),
+                                                  &self.root_output);
             search_path.push(self.root_output.clone());
             search_path.push(self.deps_output.clone());
+            search_path.extend(self.target_dylib_path.clone());
             search_path
         };
 
@@ -137,6 +149,13 @@ impl<'cfg> Compilation<'cfg> {
 
         let metadata = pkg.manifest().metadata();
 
+        let cargo_exe = self.config.cargo_exe()?;
+        cmd.env(::CARGO_ENV, cargo_exe);
+
+        // When adding new environment variables depending on
+        // crate properties which might require rebuild upon change
+        // consider adding the corresponding properties to the hash
+        // in Context::target_metadata()
         cmd.env("CARGO_MANIFEST_DIR", pkg.root())
            .env("CARGO_PKG_VERSION_MAJOR", &pkg.version().major.to_string())
            .env("CARGO_PKG_VERSION_MINOR", &pkg.version().minor.to_string())

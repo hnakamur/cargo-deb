@@ -16,16 +16,22 @@ use core::{SourceId, Source, Package, Dependency, PackageIdSpec};
 use core::{PackageId, Workspace};
 use ops::{self, CompileFilter, DefaultExecutor};
 use sources::{GitSource, PathSource, SourceConfigMap};
-use util::{CargoResult, ChainError, Config, human, internal};
+use util::{Config, internal};
 use util::{Filesystem, FileLock};
+use util::errors::{CargoError, CargoResult, CargoResultExt};
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
 enum CrateListing {
     V1(CrateListingV1),
-    Empty,
+    Empty(Empty),
 }
 
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Empty {}
+
+#[derive(Deserialize, Serialize)]
 struct CrateListingV1 {
     v1: BTreeMap<PackageId, BTreeSet<String>>,
 }
@@ -64,19 +70,19 @@ pub fn install(root: Option<&str>,
         let path = source_id.url().to_file_path().ok()
                             .expect("path sources must have a valid path");
         let mut src = PathSource::new(&path, source_id, config);
-        src.update().chain_error(|| {
-            human(format!("`{}` is not a crate root; specify a crate to \
-                           install from crates.io, or use --path or --git to \
-                           specify an alternate source", path.display()))
+        src.update().chain_err(|| {
+            format!("`{}` is not a crate root; specify a crate to \
+                     install from crates.io, or use --path or --git to \
+                     specify an alternate source", path.display())
         })?;
         select_pkg(PathSource::new(&path, source_id, config),
                    krate, vers, config, &mut |path| path.read_packages())?
     } else {
         select_pkg(map.load(source_id)?,
                    krate, vers, config,
-                   &mut |_| Err(human("must specify a crate to install from \
-                                       crates.io, or use --path or --git to \
-                                       specify alternate source")))?
+                   &mut |_| Err("must specify a crate to install from \
+                                 crates.io, or use --path or --git to \
+                                 specify alternate source".into()))?
     };
 
 
@@ -92,7 +98,7 @@ pub fn install(root: Option<&str>,
     };
 
     let ws = match overidden_target_dir {
-        Some(dir) => Workspace::ephemeral(pkg, config, Some(dir))?,
+        Some(dir) => Workspace::ephemeral(pkg, config, Some(dir), false)?,
         None => Workspace::new(pkg.manifest_path(), config)?,
     };
     let pkg = ws.current()?;
@@ -112,14 +118,14 @@ pub fn install(root: Option<&str>,
     let compile = ops::compile_ws(&ws,
                                   Some(source),
                                   opts,
-                                  Arc::new(DefaultExecutor)).chain_error(|| {
+                                  Arc::new(DefaultExecutor)).chain_err(|| {
         if let Some(td) = td_opt.take() {
             // preserve the temporary directory, so the user can inspect it
             td.into_path();
         }
 
-        human(format!("failed to compile `{}`, intermediate artifacts can be \
-                       found at `{}`", pkg, ws.target_dir().display()))
+        CargoError::from(format!("failed to compile `{}`, intermediate artifacts can be \
+                                  found at `{}`", pkg, ws.target_dir().display()))
     })?;
     let binaries: Vec<(&str, &Path)> = compile.binaries.iter().map(|bin| {
         let name = bin.file_name().unwrap();
@@ -129,6 +135,10 @@ pub fn install(root: Option<&str>,
             bail!("Binary `{:?}` name can't be serialized into string", name)
         }
     }).collect::<CargoResult<_>>()?;
+    if binaries.is_empty() {
+        bail!("no binaries are available for install using the selected \
+              features");
+    }
 
     let metadata = metadata(config, &root)?;
     let mut list = read_crate_list(metadata.file())?;
@@ -150,9 +160,9 @@ pub fn install(root: Option<&str>,
                 continue
             }
         }
-        fs::copy(src, &dst).chain_error(|| {
-            human(format!("failed to copy `{}` to `{}`", src.display(),
-                          dst.display()))
+        fs::copy(src, &dst).chain_err(|| {
+            format!("failed to copy `{}` to `{}`", src.display(),
+                    dst.display())
         })?;
     }
 
@@ -167,9 +177,9 @@ pub fn install(root: Option<&str>,
         let src = staging_dir.path().join(bin);
         let dst = dst.join(bin);
         config.shell().status("Installing", dst.display())?;
-        fs::rename(&src, &dst).chain_error(|| {
-            human(format!("failed to move `{}` to `{}`", src.display(),
-                          dst.display()))
+        fs::rename(&src, &dst).chain_err(|| {
+            format!("failed to move `{}` to `{}`", src.display(),
+                    dst.display())
         })?;
         installed.bins.push(dst);
     }
@@ -183,9 +193,9 @@ pub fn install(root: Option<&str>,
                 let src = staging_dir.path().join(bin);
                 let dst = dst.join(bin);
                 config.shell().status("Replacing", dst.display())?;
-                fs::rename(&src, &dst).chain_error(|| {
-                    human(format!("failed to move `{}` to `{}`", src.display(),
-                                  dst.display()))
+                fs::rename(&src, &dst).chain_err(|| {
+                    format!("failed to move `{}` to `{}`", src.display(),
+                            dst.display())
                 })?;
                 replaced_names.push(bin);
             }
@@ -225,7 +235,7 @@ pub fn install(root: Option<&str>,
     match write_result {
         // Replacement error (if any) isn't actually caused by write error
         // but this seems to be the only way to show both.
-        Err(err) => result.chain_error(|| err)?,
+        Err(err) => result.chain_err(|| err)?,
         Ok(_) => result?,
     }
 
@@ -285,7 +295,7 @@ fn select_pkg<'a, T>(mut source: T,
             };
             let vers = vers.as_ref().map(|s| &**s);
             let dep = Dependency::parse_no_deprecated(name, vers, source.source_id())?;
-            let deps = source.query(&dep)?;
+            let deps = source.query_vec(&dep)?;
             match deps.iter().map(|p| p.package_id()).max() {
                 Some(pkgid) => {
                     let pkg = source.download(pkgid)?;
@@ -294,8 +304,8 @@ fn select_pkg<'a, T>(mut source: T,
                 None => {
                     let vers_info = vers.map(|v| format!(" with version `{}`", v))
                                         .unwrap_or(String::new());
-                    Err(human(format!("could not find `{}` in `{}`{}", name,
-                                      source.source_id(), vers_info)))
+                    Err(format!("could not find `{}` in `{}`{}", name,
+                                source.source_id(), vers_info).into())
                 }
             }
         }
@@ -337,7 +347,7 @@ fn one<I, F>(mut i: I, f: F) -> CargoResult<Option<I::Item>>
         (Some(i1), Some(i2)) => {
             let mut v = vec![i1, i2];
             v.extend(i);
-            Err(human(f(v)))
+            Err(f(v).into())
         }
         (Some(i), None) => Ok(Some(i)),
         (None, _) => Ok(None)
@@ -349,7 +359,7 @@ fn check_overwrites(dst: &Path,
                     filter: &ops::CompileFilter,
                     prev: &CrateListingV1,
                     force: bool) -> CargoResult<BTreeMap<String, Option<PackageId>>> {
-    if let CompileFilter::Everything = *filter {
+    if !filter.is_specific() {
         // If explicit --bin or --example flags were passed then those'll
         // get checked during cargo_compile, we only care about the "build
         // everything" case here
@@ -372,14 +382,15 @@ fn check_overwrites(dst: &Path,
         }
     }
     msg.push_str("Add --force to overwrite");
-    Err(human(msg))
+    Err(msg.into())
 }
 
 fn find_duplicates(dst: &Path,
                    pkg: &Package,
                    filter: &ops::CompileFilter,
                    prev: &CrateListingV1) -> BTreeMap<String, Option<PackageId>> {
-    let check = |name| {
+    let check = |name: String| {
+        // Need to provide type, works around Rust Issue #93349
         let name = format!("{}{}", name, env::consts::EXE_SUFFIX);
         if fs::metadata(dst.join(&name)).is_err() {
             None
@@ -390,16 +401,27 @@ fn find_duplicates(dst: &Path,
         }
     };
     match *filter {
-        CompileFilter::Everything => {
+        CompileFilter::Everything { .. } => {
             pkg.targets().iter()
                          .filter(|t| t.is_bin())
-                         .filter_map(|t| check(t.name()))
+                         .filter_map(|t| check(t.name().to_string()))
                          .collect()
         }
         CompileFilter::Only { bins, examples, .. } => {
-            bins.iter().chain(examples)
-                       .filter_map(|t| check(t))
-                       .collect()
+            let all_bins: Vec<String> = bins.try_collect().unwrap_or_else(|| {
+                pkg.targets().iter().filter(|t| t.is_bin())
+                                    .map(|t| t.name().to_string())
+                                    .collect()
+            });
+            let all_examples: Vec<String> = examples.try_collect().unwrap_or_else(|| {
+                pkg.targets().iter().filter(|t| t.is_bin_example())
+                                    .map(|t| t.name().to_string())
+                                    .collect()
+            });
+
+            all_bins.iter().chain(all_examples.iter())
+                           .filter_map(|t| check(t.clone()))
+                           .collect::<BTreeMap<String, Option<PackageId>>>()
         }
     }
 }
@@ -408,17 +430,17 @@ fn read_crate_list(mut file: &File) -> CargoResult<CrateListingV1> {
     (|| -> CargoResult<_> {
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
-        let listing = toml::decode_str(&contents).chain_error(|| {
+        let listing = toml::from_str(&contents).chain_err(|| {
             internal("invalid TOML found for metadata")
         })?;
         match listing {
             CrateListing::V1(v1) => Ok(v1),
-            CrateListing::Empty => {
+            CrateListing::Empty(_) => {
                 Ok(CrateListingV1 { v1: BTreeMap::new() })
             }
         }
-    }).chain_error(|| {
-        human("failed to parse crate metadata")
+    })().chain_err(|| {
+        "failed to parse crate metadata"
     })
 }
 
@@ -426,11 +448,11 @@ fn write_crate_list(mut file: &File, listing: CrateListingV1) -> CargoResult<()>
     (|| -> CargoResult<_> {
         file.seek(SeekFrom::Start(0))?;
         file.set_len(0)?;
-        let data = toml::encode_str::<CrateListing>(&CrateListing::V1(listing));
+        let data = toml::to_string(&CrateListing::V1(listing))?;
         file.write_all(data.as_bytes())?;
         Ok(())
-    }).chain_error(|| {
-        human("failed to write crate metadata")
+    })().chain_err(|| {
+        "failed to write crate metadata"
     })
 }
 

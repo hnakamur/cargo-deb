@@ -31,10 +31,11 @@ fn simple() {
             bar = ">= 0.0.0"
         "#)
         .file("src/main.rs", "fn main() {}");
+    p.build();
 
     Package::new("bar", "0.0.1").publish();
 
-    assert_that(p.cargo_process("build"),
+    assert_that(p.cargo("build"),
                 execs().with_status(0).with_stderr(&format!("\
 [UPDATING] registry `{reg}`
 [DOWNLOADING] bar v0.0.1 (registry file://[..])
@@ -45,16 +46,16 @@ fn simple() {
         dir = p.url(),
         reg = registry::registry())));
 
+    assert_that(p.cargo("clean"), execs().with_status(0));
+
     // Don't download a second time
-    assert_that(p.cargo_process("build"),
+    assert_that(p.cargo("build"),
                 execs().with_status(0).with_stderr(&format!("\
-[UPDATING] registry `{reg}`
 [COMPILING] bar v0.0.1
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..] secs
 ",
-        dir = p.url(),
-        reg = registry::registry())));
+        dir = p.url())));
 }
 
 #[test]
@@ -126,26 +127,25 @@ fn wrong_version() {
             foo = ">= 1.0.0"
         "#)
         .file("src/main.rs", "fn main() {}");
+    p.build();
 
     Package::new("foo", "0.0.1").publish();
     Package::new("foo", "0.0.2").publish();
 
-    assert_that(p.cargo_process("build"),
+    assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr_contains("\
-[ERROR] no matching package named `foo` found (required by `foo`)
+[ERROR] no matching version `>= 1.0.0` found for package `foo` (required by `foo`)
 location searched: registry [..]
-version required: >= 1.0.0
 versions found: 0.0.2, 0.0.1
 "));
 
     Package::new("foo", "0.0.3").publish();
     Package::new("foo", "0.0.4").publish();
 
-    assert_that(p.cargo_process("build"),
+    assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr_contains("\
-[ERROR] no matching package named `foo` found (required by `foo`)
+[ERROR] no matching version `>= 1.0.0` found for package `foo` (required by `foo`)
 location searched: registry [..]
-version required: >= 1.0.0
 versions found: 0.0.4, 0.0.3, 0.0.2, ...
 "));
 }
@@ -397,9 +397,8 @@ fn relying_on_a_yank_is_bad() {
 
     assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr_contains("\
-[ERROR] no matching package named `baz` found (required by `bar`)
+[ERROR] no matching version `= 0.0.2` found for package `baz` (required by `bar`)
 location searched: registry [..]
-version required: = 0.0.2
 versions found: 0.0.1
 "));
 }
@@ -1315,17 +1314,17 @@ fn old_version_req_upstream() {
     p.build();
 
     Package::new("remote", "0.3.0")
-			.file("Cargo.toml", r#"
-				[project]
+            .file("Cargo.toml", r#"
+                [project]
                 name = "remote"
                 version = "0.3.0"
                 authors = []
 
                 [dependencies]
                 bar = "0.2*"
-			"#)
+            "#)
             .file("src/lib.rs", "")
-			.publish();
+            .publish();
     Package::new("bar", "0.2.0").publish();
 
     assert_that(p.cargo("build"),
@@ -1354,17 +1353,17 @@ fn toml_lies_but_index_is_truth() {
     Package::new("foo", "0.2.0").publish();
     Package::new("bar", "0.3.0")
             .dep("foo", "0.2.0")
-			.file("Cargo.toml", r#"
-				[project]
+            .file("Cargo.toml", r#"
+                [project]
                 name = "bar"
                 version = "0.3.0"
                 authors = []
 
                 [dependencies]
                 foo = "0.1.0"
-			"#)
+            "#)
             .file("src/lib.rs", "extern crate foo;")
-			.publish();
+            .publish();
 
     let p = project("foo")
         .file("Cargo.toml", r#"
@@ -1380,5 +1379,32 @@ fn toml_lies_but_index_is_truth() {
     p.build();
 
     assert_that(p.cargo("build").arg("-v"),
+                execs().with_status(0));
+}
+
+#[test]
+fn vv_prints_warnings() {
+    Package::new("foo", "0.2.0")
+            .file("src/lib.rs", r#"
+                #![deny(warnings)]
+
+                fn foo() {} // unused function
+            "#)
+            .publish();
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "fo"
+            version = "0.5.0"
+            authors = []
+
+            [dependencies]
+            foo = "0.2"
+        "#)
+        .file("src/main.rs", "fn main() {}");
+    p.build();
+
+    assert_that(p.cargo("build").arg("-vv"),
                 execs().with_status(0));
 }

@@ -3,10 +3,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::slice;
 
+use glob::glob;
+
 use core::{Package, VirtualManifest, EitherManifest, SourceId};
 use core::{PackageIdSpec, Dependency, Profile, Profiles};
 use ops;
-use util::{Config, CargoResult, Filesystem, human};
+use util::{Config, Filesystem};
+use util::errors::{CargoResult, CargoResultExt};
 use util::paths;
 
 /// The core abstraction in Cargo for working with a workspace of crates.
@@ -44,6 +47,11 @@ pub struct Workspace<'cfg> {
     // True, if this is a temporary workspace created for the purposes of
     // cargo install or cargo package.
     is_ephemeral: bool,
+
+    // True if this workspace should enforce optional dependencies even when
+    // not needed; false if this workspace should only enforce dependencies
+    // needed by the current configuration (such as in cargo install).
+    require_optional_deps: bool,
 }
 
 // Separate structure for tracking loaded packages (to avoid loading anything
@@ -63,7 +71,10 @@ enum MaybePackage {
 pub enum WorkspaceConfig {
     /// Indicates that `[workspace]` was present and the members were
     /// optionally specified as well.
-    Root { members: Option<Vec<String>> },
+    Root {
+        members: Option<Vec<String>>,
+        exclude: Vec<String>,
+    },
 
     /// Indicates that `[workspace]` was present and the `root` field is the
     /// optional value of `package.workspace`, if present.
@@ -99,6 +110,7 @@ impl<'cfg> Workspace<'cfg> {
             target_dir: target_dir,
             members: Vec::new(),
             is_ephemeral: false,
+            require_optional_deps: true,
         };
         ws.root_manifest = ws.find_root(manifest_path)?;
         ws.find_members()?;
@@ -115,8 +127,10 @@ impl<'cfg> Workspace<'cfg> {
     ///
     /// This is currently only used in niche situations like `cargo install` or
     /// `cargo package`.
-    pub fn ephemeral(package: Package, config: &'cfg Config, target_dir: Option<Filesystem>)
-                     -> CargoResult<Workspace<'cfg>> {
+    pub fn ephemeral(package: Package,
+                     config: &'cfg Config,
+                     target_dir: Option<Filesystem>,
+                     require_optional_deps: bool) -> CargoResult<Workspace<'cfg>> {
         let mut ws = Workspace {
             config: config,
             current_manifest: package.manifest_path().to_path_buf(),
@@ -128,6 +142,7 @@ impl<'cfg> Workspace<'cfg> {
             target_dir: None,
             members: Vec::new(),
             is_ephemeral: true,
+            require_optional_deps: require_optional_deps,
         };
         {
             let key = ws.current_manifest.parent().unwrap();
@@ -150,9 +165,9 @@ impl<'cfg> Workspace<'cfg> {
     /// indicating that something else should be passed.
     pub fn current(&self) -> CargoResult<&Package> {
         self.current_opt().ok_or_else(||
-            human(format!("manifest path `{}` is a virtual manifest, but this \
-                           command requires running against an actual package in \
-                           this workspace", self.current_manifest.display()))
+            format!("manifest path `{}` is a virtual manifest, but this \
+                     command requires running against an actual package in \
+                     this workspace", self.current_manifest.display()).into()
         )
     }
 
@@ -219,6 +234,10 @@ impl<'cfg> Workspace<'cfg> {
         self.is_ephemeral
     }
 
+    pub fn require_optional_deps(&self) -> bool {
+        self.require_optional_deps
+    }
+
     /// Finds the root of a workspace for the crate whose manifest is located
     /// at `manifest_path`.
     ///
@@ -230,6 +249,14 @@ impl<'cfg> Workspace<'cfg> {
     /// if some other transient error happens.
     fn find_root(&mut self, manifest_path: &Path)
                  -> CargoResult<Option<PathBuf>> {
+        fn read_root_pointer(member_manifest: &Path, root_link: &str) -> CargoResult<PathBuf> {
+            let path = member_manifest.parent().unwrap()
+                .join(root_link)
+                .join("Cargo.toml");
+            debug!("find_root - pointer {}", path.display());
+            return Ok(paths::normalize_path(&path))
+        };
+
         {
             let current = self.packages.load(&manifest_path)?;
             match *current.workspace_config() {
@@ -238,30 +265,31 @@ impl<'cfg> Workspace<'cfg> {
                     return Ok(Some(manifest_path.to_path_buf()))
                 }
                 WorkspaceConfig::Member { root: Some(ref path_to_root) } => {
-                    let path = manifest_path.parent().unwrap()
-                                            .join(path_to_root)
-                                            .join("Cargo.toml");
-                    debug!("find_root - pointer {}", path.display());
-                    return Ok(Some(paths::normalize_path(&path)))
+                    return Ok(Some(read_root_pointer(manifest_path, path_to_root)?))
                 }
                 WorkspaceConfig::Member { root: None } => {}
             }
         }
 
-        let mut cur = manifest_path.parent().and_then(|p| p.parent());
-        while let Some(path) = cur {
+        for path in paths::ancestors(manifest_path).skip(2) {
             let manifest = path.join("Cargo.toml");
             debug!("find_root - trying {}", manifest.display());
             if manifest.exists() {
                 match *self.packages.load(&manifest)?.workspace_config() {
-                    WorkspaceConfig::Root { .. } => {
-                        debug!("find_root - found");
-                        return Ok(Some(manifest))
+                    WorkspaceConfig::Root { ref exclude, ref members } => {
+                        debug!("find_root - found a root checking exclusion");
+                        if !is_excluded(members, exclude, path, manifest_path) {
+                            debug!("find_root - found!");
+                            return Ok(Some(manifest))
+                        }
+                    }
+                    WorkspaceConfig::Member { root: Some(ref path_to_root) } => {
+                        debug!("find_root - found pointer");
+                        return Ok(Some(read_root_pointer(&manifest, path_to_root)?))
                     }
                     WorkspaceConfig::Member { .. } => {}
                 }
             }
-            cur = path.parent();
         }
 
         Ok(None)
@@ -286,24 +314,42 @@ impl<'cfg> Workspace<'cfg> {
         let members = {
             let root = self.packages.load(&root_manifest)?;
             match *root.workspace_config() {
-                WorkspaceConfig::Root { ref members } => members.clone(),
+                WorkspaceConfig::Root { ref members, .. } => members.clone(),
                 _ => bail!("root of a workspace inferred but wasn't a root: {}",
                            root_manifest.display()),
             }
         };
 
         if let Some(list) = members {
+            let root = root_manifest.parent().unwrap();
+
+            let mut expanded_list = Vec::new();
             for path in list {
-                let root = root_manifest.parent().unwrap();
-                let manifest_path = root.join(path).join("Cargo.toml");
-                self.find_path_deps(&manifest_path, false)?;
+                let pathbuf = root.join(path);
+                let expanded_paths = expand_member_path(&pathbuf)?;
+
+                // If glob does not find any valid paths, then put the original
+                // path in the expanded list to maintain backwards compatibility.
+                if expanded_paths.is_empty() {
+                    expanded_list.push(pathbuf);
+                } else {
+                    expanded_list.extend(expanded_paths);
+                }
+            }
+
+            for path in expanded_list {
+                let manifest_path = path.join("Cargo.toml");
+                self.find_path_deps(&manifest_path, &root_manifest, false)?;
             }
         }
 
-        self.find_path_deps(&root_manifest, false)
+        self.find_path_deps(&root_manifest, &root_manifest, false)
     }
 
-    fn find_path_deps(&mut self, manifest_path: &Path, is_path_dep: bool) -> CargoResult<()> {
+    fn find_path_deps(&mut self,
+                      manifest_path: &Path,
+                      root_manifest: &Path,
+                      is_path_dep: bool) -> CargoResult<()> {
         let manifest_path = paths::normalize_path(manifest_path);
         if self.members.iter().any(|p| p == &manifest_path) {
             return Ok(())
@@ -314,6 +360,16 @@ impl<'cfg> Workspace<'cfg> {
             // If `manifest_path` is a path dependency outside of the workspace,
             // don't add it, or any of its dependencies, as a members.
             return Ok(())
+        }
+
+        let root = root_manifest.parent().unwrap();
+        match *self.packages.load(root_manifest)?.workspace_config() {
+            WorkspaceConfig::Root { ref members, ref exclude } => {
+                if is_excluded(members, exclude, root, &manifest_path) {
+                    return Ok(())
+                }
+            }
+            _ => {}
         }
 
         debug!("find_members - {}", manifest_path.display());
@@ -333,7 +389,7 @@ impl<'cfg> Workspace<'cfg> {
                .collect::<Vec<_>>()
         };
         for candidate in candidates {
-            self.find_path_deps(&candidate, true)?;
+            self.find_path_deps(&candidate, root_manifest, true)?;
         }
         Ok(())
     }
@@ -438,7 +494,7 @@ impl<'cfg> Workspace<'cfg> {
                 MaybePackage::Virtual(_) => members_msg,
                 MaybePackage::Package(ref p) => {
                     let members = match *p.manifest().workspace_config() {
-                        WorkspaceConfig::Root { ref members } => members,
+                        WorkspaceConfig::Root { ref members, .. } => members,
                         WorkspaceConfig::Member { .. } => unreachable!(),
                     };
                     if members.is_none() {
@@ -490,6 +546,42 @@ impl<'cfg> Workspace<'cfg> {
         Ok(())
     }
 }
+
+fn expand_member_path(path: &Path) -> CargoResult<Vec<PathBuf>> {
+    let path = match path.to_str() {
+        Some(p) => p,
+        None => return Ok(Vec::new()),
+    };
+    let res = glob(path).chain_err(|| {
+        format!("could not parse pattern `{}`", &path)
+    })?;
+    res.map(|p| {
+        p.chain_err(|| {
+            format!("unable to match path to pattern `{}`", &path)
+        })
+    }).collect()
+}
+
+fn is_excluded(members: &Option<Vec<String>>,
+               exclude: &[String],
+               root_path: &Path,
+               manifest_path: &Path) -> bool {
+    let excluded = exclude.iter().any(|ex| {
+        manifest_path.starts_with(root_path.join(ex))
+    });
+
+    let explicit_member = match *members {
+        Some(ref members) => {
+            members.iter().any(|mem| {
+                manifest_path.starts_with(root_path.join(mem))
+            })
+        }
+        None => false,
+    };
+
+    !explicit_member && excluded
+}
+
 
 impl<'cfg> Packages<'cfg> {
     fn get(&self, manifest_path: &Path) -> &MaybePackage {

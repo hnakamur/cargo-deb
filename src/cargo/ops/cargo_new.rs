@@ -10,13 +10,15 @@ use git2::Config as GitConfig;
 use term::color::BLACK;
 
 use core::Workspace;
-use util::{GitRepo, HgRepo, CargoResult, human, ChainError, internal};
+use ops::is_bad_artifact_name;
+use util::{GitRepo, HgRepo, PijulRepo, internal};
 use util::{Config, paths};
+use util::errors::{CargoError, CargoResult, CargoResultExt};
 
 use toml;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum VersionControl { Git, Hg, NoVcs }
+pub enum VersionControl { Git, Hg, Pijul, NoVcs }
 
 pub struct NewOptions<'a> {
     pub version_control: Option<VersionControl>,
@@ -45,6 +47,7 @@ impl Decodable for VersionControl {
         Ok(match &d.read_str()?[..] {
             "git" => VersionControl::Git,
             "hg" => VersionControl::Hg,
+            "pijul" => VersionControl::Pijul,
             "none" => VersionControl::NoVcs,
             n => {
                 let err = format!("could not decode '{}' as version control", n);
@@ -95,9 +98,9 @@ fn get_name<'a>(path: &'a Path, opts: &'a NewOptions, config: &Config) -> CargoR
                               path.as_os_str());
     }
 
-    let dir_name = path.file_name().and_then(|s| s.to_str()).chain_error(|| {
-        human(&format!("cannot create a project with a non-unicode name: {:?}",
-                       path.file_name().unwrap()))
+    let dir_name = path.file_name().and_then(|s| s.to_str()).ok_or_else(|| {
+        CargoError::from(format!("cannot create a project with a non-unicode name: {:?}",
+                                 path.file_name().unwrap()))
     })?;
 
     if opts.bin {
@@ -114,7 +117,7 @@ fn get_name<'a>(path: &'a Path, opts: &'a NewOptions, config: &Config) -> CargoR
     }
 }
 
-fn check_name(name: &str) -> CargoResult<()> {
+fn check_name(name: &str, is_bin: bool) -> CargoResult<()> {
 
     // Ban keywords + test list found at
     // https://doc.rust-lang.org/grammar.html#keywords
@@ -129,7 +132,7 @@ fn check_name(name: &str) -> CargoResult<()> {
         "super", "test", "trait", "true", "type", "typeof",
         "unsafe", "unsized", "use", "virtual", "where",
         "while", "yield"];
-    if blacklist.contains(&name) {
+    if blacklist.contains(&name) || (is_bin && is_bad_artifact_name(name)) {
         bail!("The name `{}` cannot be used as a crate name\n\
                use --name to override crate name",
                name)
@@ -233,10 +236,10 @@ cannot automatically generate Cargo.toml as the main target would be ambiguous",
             duplicates_checker.insert(i.target_name.as_ref(), i);
         } else {
             if let Some(plp) = previous_lib_relpath {
-                return Err(human(format!("cannot have a project with \
-                                         multiple libraries, \
-                                         found both `{}` and `{}`",
-                                         plp, i.relative_path)));
+                return Err(format!("cannot have a project with \
+                                    multiple libraries, \
+                                    found both `{}` and `{}`",
+                                   plp, i.relative_path).into());
             }
             previous_lib_relpath = Some(&i.relative_path);
         }
@@ -273,7 +276,7 @@ pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
     }
 
     let name = get_name(&path, &opts, config)?;
-    check_name(name)?;
+    check_name(name, opts.bin)?;
 
     let mkopts = MkOptions {
         version_control: opts.version_control,
@@ -283,9 +286,9 @@ pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
         bin: opts.bin,
     };
 
-    mk(config, &mkopts).chain_error(|| {
-        human(format!("Failed to create project `{}` at `{}`",
-                      name, path.display()))
+    mk(config, &mkopts).chain_err(|| {
+        format!("Failed to create project `{}` at `{}`",
+                name, path.display())
     })
 }
 
@@ -302,7 +305,7 @@ pub fn init(opts: NewOptions, config: &Config) -> CargoResult<()> {
     }
 
     let name = get_name(&path, &opts, config)?;
-    check_name(name)?;
+    check_name(name, opts.bin)?;
 
     let mut src_paths_types = vec![];
 
@@ -331,10 +334,15 @@ pub fn init(opts: NewOptions, config: &Config) -> CargoResult<()> {
             num_detected_vsces += 1;
         }
 
+        if fs::metadata(&path.join(".pijul")).is_ok() {
+            version_control = Some(VersionControl::Pijul);
+            num_detected_vsces += 1;
+        }
+
         // if none exists, maybe create git, like in `cargo new`
 
         if num_detected_vsces > 1 {
-            bail!("both .git and .hg directories found \
+            bail!("more than one of .hg, .git, or .pijul directories found \
                               and the ignore file can't be \
                               filled in as a result, \
                               specify --vcs to override detection");
@@ -349,9 +357,9 @@ pub fn init(opts: NewOptions, config: &Config) -> CargoResult<()> {
         source_files: src_paths_types,
     };
 
-    mk(config, &mkopts).chain_error(|| {
-        human(format!("Failed to create project `{}` at `{}`",
-                      name, path.display()))
+    mk(config, &mkopts).chain_err(|| {
+        format!("Failed to create project `{}` at `{}`",
+                 name, path.display())
     })
 }
 
@@ -377,19 +385,17 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
     let path = opts.path;
     let name = opts.name;
     let cfg = global_config(config)?;
-    let mut ignore = "target\n".to_string();
-    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap(), config.cwd());
-    if !opts.bin {
-        ignore.push_str("Cargo.lock\n");
-    }
+    let ignore = ["/target/\n", "**/*.rs.bk\n",
+        if !opts.bin { "Cargo.lock\n" } else { "" }]
+        .concat();
 
+    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap(), config.cwd());
     let vcs = match (opts.version_control, cfg.version_control, in_existing_vcs_repo) {
         (None, None, false) => VersionControl::Git,
         (None, Some(option), false) => option,
         (Some(option), _, _) => option,
         (_, _, true) => VersionControl::NoVcs,
     };
-
     match vcs {
         VersionControl::Git => {
             if !fs::metadata(&path.join(".git")).is_ok() {
@@ -403,13 +409,18 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
             }
             paths::append(&path.join(".hgignore"), ignore.as_bytes())?;
         },
+        VersionControl::Pijul => {
+            if !fs::metadata(&path.join(".pijul")).is_ok() {
+                PijulRepo::init(path, config.cwd())?;
+            }
+        },
         VersionControl::NoVcs => {
             fs::create_dir_all(path)?;
         },
     };
 
     let (author_name, email) = discover_author()?;
-    // Hoo boy, sure glad we've got exhaustivenes checking behind us.
+    // Hoo boy, sure glad we've got exhaustiveness checking behind us.
     let author = match (cfg.name, cfg.email, author_name, email) {
         (Some(name), Some(email), _, _) |
         (Some(name), None, _, Some(email)) |
@@ -421,7 +432,7 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
 
     let mut cargotoml_path_specifier = String::new();
 
-    // Calculare what [lib] and [[bin]]s do we need to append to Cargo.toml
+    // Calculate what [lib] and [[bin]]s do we need to append to Cargo.toml
 
     for i in &opts.source_files {
         if i.bin {

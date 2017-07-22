@@ -10,6 +10,7 @@ use std::str;
 
 use rustc_serialize::json;
 
+use cargotest::cargo_process;
 use cargotest::support::{project, execs, ProjectBuilder};
 use cargotest::support::paths;
 use cargotest::support::registry::{Package, cksum};
@@ -20,7 +21,6 @@ fn setup() {
     t!(fs::create_dir(&root.join(".cargo")));
     t!(t!(File::create(root.join(".cargo/config"))).write_all(br#"
         [source.crates-io]
-        registry = 'https://wut'
         replace-with = 'my-awesome-local-registry'
 
         [source.my-awesome-local-registry]
@@ -102,6 +102,144 @@ fn simple() {
 [COMPILING] foo v0.1.0
 [COMPILING] bar v0.1.0 ([..]bar)
 [FINISHED] [..]
+"));
+}
+
+#[test]
+fn simple_install() {
+    setup();
+
+    VendorPackage::new("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "pub fn foo() {}")
+        .build();
+
+    VendorPackage::new("bar")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = "0.1.0"
+        "#)
+        .file("src/main.rs", r#"
+            extern crate foo;
+
+            pub fn main() {
+                foo::foo();
+            }
+        "#)
+        .build();
+
+    assert_that(cargo_process().arg("install").arg("bar"),
+                execs().with_status(0).with_stderr(
+"  Installing bar v0.1.0
+   Compiling foo v0.1.0
+   Compiling bar v0.1.0
+    Finished release [optimized] target(s) in [..] secs
+  Installing [..]bar[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
+"));
+}
+
+#[test]
+fn simple_install_fail() {
+    setup();
+
+    VendorPackage::new("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "pub fn foo() {}")
+        .build();
+
+    VendorPackage::new("bar")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = "0.1.0"
+            baz = "9.8.7"
+        "#)
+        .file("src/main.rs", r#"
+            extern crate foo;
+
+            pub fn main() {
+                foo::foo();
+            }
+        "#)
+        .build();
+
+    assert_that(cargo_process().arg("install").arg("bar"),
+                execs().with_status(101).with_stderr(
+"  Installing bar v0.1.0
+error: failed to compile `bar v0.1.0`, intermediate artifacts can be found at `[..]`
+
+Caused by:
+  no matching package named `baz` found (required by `bar`)
+location searched: registry https://github.com/rust-lang/crates.io-index
+version required: ^9.8.7
+"));
+}
+
+#[test]
+fn install_without_feature_dep() {
+    setup();
+
+    VendorPackage::new("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "pub fn foo() {}")
+        .build();
+
+    VendorPackage::new("bar")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = "0.1.0"
+            baz = { version = "9.8.7", optional = true }
+
+            [features]
+            wantbaz = ["baz"]
+        "#)
+        .file("src/main.rs", r#"
+            extern crate foo;
+
+            pub fn main() {
+                foo::foo();
+            }
+        "#)
+        .build();
+
+    assert_that(cargo_process().arg("install").arg("bar"),
+                execs().with_status(0).with_stderr(
+"  Installing bar v0.1.0
+   Compiling foo v0.1.0
+   Compiling bar v0.1.0
+    Finished release [optimized] target(s) in [..] secs
+  Installing [..]bar[..]
+warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 "));
 }
 
@@ -332,4 +470,37 @@ directory sources are not intended to be edited, if modifications are \
 required then it is recommended that [replace] is used with a forked copy of \
 the source
 "));
+}
+
+#[test]
+fn only_dot_files_ok() {
+    setup();
+
+    VendorPackage::new("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "")
+        .build();
+    VendorPackage::new("bar")
+        .file(".foo", "")
+        .build();
+
+    let p = project("bar")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = "0.1.0"
+        "#)
+        .file("src/lib.rs", "");
+    p.build();
+
+    assert_that(p.cargo("build"), execs().with_status(0));
 }

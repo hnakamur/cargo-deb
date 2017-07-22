@@ -1,11 +1,11 @@
 use std::io::prelude::*;
 
-use rustc_serialize::{Encodable, Decodable};
-use toml::{self, Encoder, Value};
+use toml;
 
 use core::{Resolve, resolver, Workspace};
 use core::resolver::WorkspaceResolve;
-use util::{CargoResult, ChainError, human, Filesystem};
+use util::Filesystem;
+use util::errors::{CargoResult, CargoResultExt};
 use util::toml as cargo_toml;
 
 pub fn load_pkg_lockfile(ws: &Workspace) -> CargoResult<Option<Resolve>> {
@@ -17,18 +17,16 @@ pub fn load_pkg_lockfile(ws: &Workspace) -> CargoResult<Option<Resolve>> {
     let mut f = root.open_ro("Cargo.lock", ws.config(), "Cargo.lock file")?;
 
     let mut s = String::new();
-    f.read_to_string(&mut s).chain_error(|| {
-        human(format!("failed to read file: {}", f.path().display()))
+    f.read_to_string(&mut s).chain_err(|| {
+        format!("failed to read file: {}", f.path().display())
     })?;
 
-    (|| {
-        let table = cargo_toml::parse(&s, f.path(), ws.config())?;
-        let table = toml::Value::Table(table);
-        let mut d = toml::Decoder::new(table);
-        let v: resolver::EncodableResolve = Decodable::decode(&mut d)?;
+    (|| -> CargoResult<Option<Resolve>> {
+        let resolve : toml::Value = cargo_toml::parse(&s, f.path(), ws.config())?;
+        let v: resolver::EncodableResolve = resolve.try_into()?;
         Ok(Some(v.into_resolve(ws)?))
-    }).chain_error(|| {
-        human(format!("failed to parse lock file at: {}", f.path().display()))
+    })().chain_err(|| {
+        format!("failed to parse lock file at: {}", f.path().display())
     })
 }
 
@@ -50,24 +48,23 @@ pub fn write_pkg_lockfile(ws: &Workspace, resolve: &Resolve) -> CargoResult<()> 
         true
     };
 
-    let mut e = Encoder::new();
-    WorkspaceResolve {
+    let toml = toml::Value::try_from(WorkspaceResolve {
         ws: ws,
         resolve: resolve,
         use_root_key: use_root_key,
-    }.encode(&mut e).unwrap();
+    }).unwrap();
 
     let mut out = String::new();
 
     // Note that we do not use e.toml.to_string() as we want to control the
     // exact format the toml is in to ensure pretty diffs between updates to the
     // lockfile.
-    if let Some(root) = e.toml.get(&"root".to_string()) {
+    if let Some(root) = toml.get("root") {
         out.push_str("[root]\n");
         emit_package(root.as_table().unwrap(), &mut out);
     }
 
-    let deps = e.toml.get(&"package".to_string()).unwrap().as_slice().unwrap();
+    let deps = toml["package"].as_array().unwrap();
     for dep in deps.iter() {
         let dep = dep.as_table().unwrap();
 
@@ -75,12 +72,9 @@ pub fn write_pkg_lockfile(ws: &Workspace, resolve: &Resolve) -> CargoResult<()> 
         emit_package(dep, &mut out);
     }
 
-    match e.toml.get(&"metadata".to_string()) {
-        Some(metadata) => {
-            out.push_str("[metadata]\n");
-            out.push_str(&metadata.to_string());
-        }
-        None => {}
+    if let Some(meta) = toml.get("metadata") {
+        out.push_str("[metadata]\n");
+        out.push_str(&meta.to_string());
     }
 
     // If the lockfile contents haven't changed so don't rewrite it. This is
@@ -105,9 +99,9 @@ pub fn write_pkg_lockfile(ws: &Workspace, resolve: &Resolve) -> CargoResult<()> 
         f.file().set_len(0)?;
         f.write_all(out.as_bytes())?;
         Ok(())
-    }).chain_error(|| {
-        human(format!("failed to write {}",
-                      ws.root().join("Cargo.lock").display()))
+    }).chain_err(|| {
+        format!("failed to write {}",
+                ws.root().join("Cargo.lock").display())
     })
 }
 
@@ -120,16 +114,16 @@ fn has_crlf_line_endings(s: &str) -> bool {
     }
 }
 
-fn emit_package(dep: &toml::Table, out: &mut String) {
-    out.push_str(&format!("name = {}\n", lookup(dep, "name")));
-    out.push_str(&format!("version = {}\n", lookup(dep, "version")));
+fn emit_package(dep: &toml::value::Table, out: &mut String) {
+    out.push_str(&format!("name = {}\n", &dep["name"]));
+    out.push_str(&format!("version = {}\n", &dep["version"]));
 
     if dep.contains_key("source") {
-        out.push_str(&format!("source = {}\n", lookup(dep, "source")));
+        out.push_str(&format!("source = {}\n", &dep["source"]));
     }
 
     if let Some(ref s) = dep.get("dependencies") {
-        let slice = Value::as_slice(*s).unwrap();
+        let slice = s.as_array().unwrap();
 
         if !slice.is_empty() {
             out.push_str("dependencies = [\n");
@@ -142,10 +136,6 @@ fn emit_package(dep: &toml::Table, out: &mut String) {
         }
         out.push_str("\n");
     } else if dep.contains_key("replace") {
-        out.push_str(&format!("replace = {}\n\n", lookup(dep, "replace")));
+        out.push_str(&format!("replace = {}\n\n", &dep["replace"]));
     }
-}
-
-fn lookup<'a>(table: &'a toml::Table, key: &str) -> &'a toml::Value {
-    table.get(key).expect(&format!("didn't find {}", key))
 }

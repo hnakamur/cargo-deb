@@ -5,7 +5,8 @@ use core::registry::PackageRegistry;
 use core::resolver::{self, Resolve, Method};
 use sources::PathSource;
 use ops;
-use util::{profile, human, CargoResult, ChainError};
+use util::profile;
+use util::errors::{CargoResult, CargoResultExt};
 
 /// Resolve all dependencies for the workspace using the previous
 /// lockfile as a guide if present.
@@ -28,25 +29,42 @@ pub fn resolve_ws_precisely<'a>(ws: &Workspace<'a>,
                                 no_default_features: bool,
                                 specs: &[PackageIdSpec])
                                 -> CargoResult<(PackageSet<'a>, Resolve)> {
-    let features = features.iter().flat_map(|s| {
-        s.split_whitespace()
-    }).map(|s| s.to_string()).collect::<Vec<String>>();
+    let features = features.iter()
+        .flat_map(|s| s.split_whitespace())
+        .flat_map(|s| s.split(','))
+        .filter(|s| s.len() > 0)
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>();
 
     let mut registry = PackageRegistry::new(ws.config())?;
     if let Some(source) = source {
         registry.add_preloaded(source);
     }
 
-    // First, resolve the root_package's *listed* dependencies, as well as
-    // downloading and updating all remotes and such.
-    let resolve = resolve_with_registry(ws, &mut registry)?;
+    let resolve = if ws.require_optional_deps() {
+        // First, resolve the root_package's *listed* dependencies, as well as
+        // downloading and updating all remotes and such.
+        let resolve = resolve_with_registry(ws, &mut registry)?;
 
-    // Second, resolve with precisely what we're doing. Filter out
-    // transitive dependencies if necessary, specify features, handle
-    // overrides, etc.
-    let _p = profile::start("resolving w/ overrides...");
+        // Second, resolve with precisely what we're doing. Filter out
+        // transitive dependencies if necessary, specify features, handle
+        // overrides, etc.
+        let _p = profile::start("resolving w/ overrides...");
 
-    add_overrides(&mut registry, ws)?;
+        add_overrides(&mut registry, ws)?;
+
+        for &(ref replace_spec, ref dep) in ws.root_replace() {
+            if !resolve.iter().any(|r| replace_spec.matches(r) && !dep.matches_id(r)) {
+                ws.config().shell().warn(
+                    format!("package replacement is not used: {}", replace_spec)
+                )?
+            }
+        }
+
+        Some(resolve)
+    } else {
+        None
+    };
 
     let method = if all_features {
         Method::Everything
@@ -60,16 +78,8 @@ pub fn resolve_ws_precisely<'a>(ws: &Workspace<'a>,
 
     let resolved_with_overrides =
     ops::resolve_with_previous(&mut registry, ws,
-                               method, Some(&resolve), None,
-                               &specs)?;
-
-    for &(ref replace_spec, _) in ws.root_replace() {
-        if !resolved_with_overrides.replacements().keys().any(|r| replace_spec.matches(r)) {
-            ws.config().shell().warn(
-                format!("package replacement is not used: {}", replace_spec)
-            )?
-        }
-    }
+                               method, resolve.as_ref(), None,
+                               specs)?;
 
     let packages = get_resolved_packages(&resolved_with_overrides, registry);
 
@@ -159,8 +169,7 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
             // members in the workspace, so propagate the `Method::Everything`.
             Method::Everything => Method::Everything,
 
-            // If we're not resolving everything though then the workspace is
-            // already resolved and now we're drilling down from that to the
+            // If we're not resolving everything though then we're constructing the
             // exact crate graph we're going to build. Here we don't necessarily
             // want to keep around all workspace crates as they may not all be
             // built/tested.
@@ -176,7 +185,6 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
             // base method with no features specified but using default features
             // for any other packages specified with `-p`.
             Method::Required { dev_deps, .. } => {
-                assert!(previous.is_some());
                 let base = Method::Required {
                     dev_deps: dev_deps,
                     features: &[],
@@ -209,7 +217,9 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
                     if spec.matches(key) &&
                        dep.matches_id(val) &&
                        keep(&val, to_avoid, &to_avoid_sources) {
-                        return (spec.clone(), dep.clone().lock_to(val))
+                        let mut dep = dep.clone();
+                        dep.lock_to(val);
+                        return (spec.clone(), dep)
                     }
                 }
                 (spec.clone(), dep.clone())
@@ -254,10 +264,10 @@ fn add_overrides<'a>(registry: &mut PackageRegistry<'a>,
     for (path, definition) in paths {
         let id = SourceId::for_path(&path)?;
         let mut source = PathSource::new_recursive(&path, &id, ws.config());
-        source.update().chain_error(|| {
-            human(format!("failed to update path override `{}` \
+        source.update().chain_err(|| {
+            format!("failed to update path override `{}` \
                            (defined in `{}`)", path.display(),
-                          definition.display()))
+                          definition.display())
         })?;
         registry.add_override(Box::new(source));
     }

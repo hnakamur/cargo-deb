@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use util::{CargoResult, human};
+use util::errors::CargoResult;
+use util::paths;
 
 /// Iteratively search for `file` in `pwd` and its parents, returning
 /// the path of the directory.
@@ -38,7 +39,7 @@ pub fn find_root_manifest_for_wd(manifest_path: Option<String>, cwd: &Path)
                                   -> CargoResult<PathBuf> {
     match manifest_path {
         Some(path) => {
-            let absolute_path = cwd.join(&path);
+            let absolute_path = paths::normalize_path(&cwd.join(&path));
             if !absolute_path.ends_with("Cargo.toml") {
                 bail!("the manifest-path must be a path to a Cargo.toml file")
             }
@@ -47,7 +48,7 @@ pub fn find_root_manifest_for_wd(manifest_path: Option<String>, cwd: &Path)
             }
             Ok(absolute_path)
         },
-        None => find_project_manifest(&cwd, "Cargo.toml"),
+        None => find_project_manifest(cwd, "Cargo.toml"),
     }
 }
 
@@ -58,7 +59,7 @@ pub fn find_project_manifest_exact(pwd: &Path, file: &str) -> CargoResult<PathBu
     if fs::metadata(&manifest).is_ok() {
         Ok(manifest)
     } else {
-        Err(human(format!("Could not find `{}` in `{}`",
-                          file, pwd.display())))
+        Err(format!("Could not find `{}` in `{}`",
+                          file, pwd.display()).into())
     }
 }

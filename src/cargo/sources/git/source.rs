@@ -5,7 +5,8 @@ use url::Url;
 use core::source::{Source, SourceId};
 use core::GitReference;
 use core::{Package, PackageId, Summary, Registry, Dependency};
-use util::{CargoResult, Config};
+use util::Config;
+use util::errors::{CargoError, CargoResult};
 use util::hex::short_hash;
 use sources::PathSource;
 use sources::git::utils::{GitRemote, GitRevision};
@@ -106,7 +107,7 @@ impl<'cfg> Debug for GitSource<'cfg> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "git repo at {}", self.remote.url())?;
 
-        match self.reference.to_ref_string() {
+        match self.reference.pretty_ref() {
             Some(s) => write!(f, " ({})", s),
             None => Ok(())
         }
@@ -114,10 +115,12 @@ impl<'cfg> Debug for GitSource<'cfg> {
 }
 
 impl<'cfg> Registry for GitSource<'cfg> {
-    fn query(&mut self, dep: &Dependency) -> CargoResult<Vec<Summary>> {
+    fn query(&mut self,
+             dep: &Dependency,
+             f: &mut FnMut(Summary)) -> CargoResult<()> {
         let src = self.path_source.as_mut()
                       .expect("BUG: update() must be called before query()");
-        src.query(dep)
+        src.query(dep, f)
     }
 }
 
@@ -146,8 +149,8 @@ impl<'cfg> Source for GitSource<'cfg> {
 
             trace!("updating git source `{:?}`", self.remote);
 
-            let repo = self.remote.checkout(&db_path, &self.config)?;
-            let rev = repo.rev_for(&self.reference)?;
+            let repo = self.remote.checkout(&db_path, self.config)?;
+            let rev = repo.rev_for(&self.reference).map_err(CargoError::into_internal)?;
             (repo, rev)
         } else {
             (self.remote.db_at(&db_path)?, actual_rev.unwrap())
@@ -166,7 +169,7 @@ impl<'cfg> Source for GitSource<'cfg> {
         // in scope so the destructors here won't tamper with too much.
         // Checkout is immutable, so we don't need to protect it with a lock once
         // it is created.
-        repo.copy_to(actual_rev.clone(), &checkout_path, &self.config)?;
+        repo.copy_to(actual_rev.clone(), &checkout_path, self.config)?;
 
         let source_id = self.source_id.with_precise(Some(actual_rev.to_string()));
         let path_source = PathSource::new_recursive(&checkout_path,

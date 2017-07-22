@@ -16,7 +16,7 @@ use tempdir::TempDir;
 fn cargo_process(s: &str) -> ProcessBuilder {
     let mut p = cargotest::cargo_process();
     p.arg(s);
-    return p;
+    p
 }
 
 #[test]
@@ -31,6 +31,17 @@ fn simple_lib() {
     assert_that(&paths::root().join("foo/Cargo.toml"), existing_file());
     assert_that(&paths::root().join("foo/src/lib.rs"), existing_file());
     assert_that(&paths::root().join("foo/.gitignore"), is_not(existing_file()));
+
+    let lib = paths::root().join("foo/src/lib.rs");
+    let mut contents = String::new();
+    File::open(&lib).unwrap().read_to_string(&mut contents).unwrap();
+    assert_eq!(contents, r#"#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+    }
+}
+"#);
 
     assert_that(cargo_process("build").cwd(&paths::root().join("foo")),
                 execs().with_status(0));
@@ -58,7 +69,7 @@ fn simple_bin() {
 #[test]
 fn both_lib_and_bin() {
     let td = TempDir::new("cargo").unwrap();
-    assert_that(cargo_process("new").arg("--lib").arg("--bin").arg("foo").cwd(td.path().clone())
+    assert_that(cargo_process("new").arg("--lib").arg("--bin").arg("foo").cwd(td.path())
                                     .env("USER", "foo"),
                 execs().with_status(101).with_stderr(
                     "[ERROR] can't specify both lib and binary outputs"));
@@ -67,7 +78,7 @@ fn both_lib_and_bin() {
 #[test]
 fn simple_git() {
     let td = TempDir::new("cargo").unwrap();
-    assert_that(cargo_process("new").arg("--lib").arg("foo").cwd(td.path().clone())
+    assert_that(cargo_process("new").arg("--lib").arg("foo").cwd(td.path())
                                     .env("USER", "foo"),
                 execs().with_status(0));
 
@@ -77,7 +88,7 @@ fn simple_git() {
     assert_that(&td.path().join("foo/.git"), existing_dir());
     assert_that(&td.path().join("foo/.gitignore"), existing_file());
 
-    assert_that(cargo_process("build").cwd(&td.path().clone().join("foo")),
+    assert_that(cargo_process("build").cwd(&td.path().join("foo")),
                 execs().with_status(0));
 }
 
@@ -119,6 +130,15 @@ fn reserved_name() {
                 execs().with_status(101)
                        .with_stderr("\
 [ERROR] The name `test` cannot be used as a crate name\n\
+use --name to override crate name"));
+}
+
+#[test]
+fn reserved_binary_name() {
+    assert_that(cargo_process("new").arg("--bin").arg("incremental"),
+                execs().with_status(101)
+                       .with_stderr("\
+[ERROR] The name `incremental` cannot be used as a crate name\n\
 use --name to override crate name"));
 }
 
@@ -168,7 +188,7 @@ fn finds_author_user() {
     // the hierarchy
     let td = TempDir::new("cargo").unwrap();
     assert_that(cargo_process("new").arg("foo").env("USER", "foo")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");
@@ -183,7 +203,7 @@ fn finds_author_user_escaped() {
     // the hierarchy
     let td = TempDir::new("cargo").unwrap();
     assert_that(cargo_process("new").arg("foo").env("USER", "foo \"bar\"")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");
@@ -200,7 +220,7 @@ fn finds_author_username() {
     assert_that(cargo_process("new").arg("foo")
                                     .env_remove("USER")
                                     .env("USERNAME", "foo")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");
@@ -219,7 +239,7 @@ fn finds_author_priority() {
                                     .env("EMAIL", "baz2")
                                     .env("CARGO_NAME", "bar")
                                     .env("CARGO_EMAIL", "baz")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");
@@ -236,7 +256,7 @@ fn finds_author_email() {
     assert_that(cargo_process("new").arg("foo")
                                     .env("USER", "bar")
                                     .env("EMAIL", "baz")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");
@@ -266,7 +286,7 @@ fn finds_git_email() {
     assert_that(cargo_process("new").arg("foo")
                                     .env("GIT_AUTHOR_NAME", "foo")
                                     .env("GIT_AUTHOR_EMAIL", "gitfoo")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");
@@ -284,7 +304,7 @@ fn finds_git_author() {
     assert_that(cargo_process("new").arg("foo")
                                     .env_remove("USER")
                                     .env("GIT_COMMITTER_NAME", "gitfoo")
-                                    .cwd(td.path().clone()),
+                                    .cwd(td.path()),
                 execs().with_status(0));
 
     let toml = td.path().join("foo/Cargo.toml");

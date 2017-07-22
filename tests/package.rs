@@ -6,14 +6,15 @@ extern crate hamcrest;
 extern crate tar;
 extern crate cargo;
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use cargotest::{cargo_process, process};
-use cargotest::support::{project, execs, paths, git, path2url, cargo_dir};
+use cargotest::support::{project, execs, paths, git, path2url, cargo_exe};
+use cargotest::support::registry::Package;
 use flate2::read::GzDecoder;
-use hamcrest::{assert_that, existing_file, contains};
+use hamcrest::{assert_that, existing_file, contains, equal_to};
 use tar::Archive;
 
 #[test]
@@ -62,6 +63,7 @@ src[/]main.rs
         let fname = f.header().path_bytes();
         let fname = &*fname;
         assert!(fname == b"foo-0.0.1/Cargo.toml" ||
+                fname == b"foo-0.0.1/Cargo.toml.orig" ||
                 fname == b"foo-0.0.1/src/main.rs",
                 "unexpected filename: {:?}", f.header().path())
     }
@@ -360,9 +362,9 @@ fn no_duplicates_from_modified_tracked_files() {
             fn main() {}
         "#);
     p.build();
-    File::create(p.root().join("src/main.rs")).unwrap().write_all(r#"
+    File::create(p.root().join("src/main.rs")).unwrap().write_all(br#"
             fn main() { println!("A change!"); }
-        "#.as_bytes()).unwrap();
+        "#).unwrap();
     let mut cargo = cargo_process();
     cargo.cwd(p.root());
     assert_that(cargo.clone().arg("build"), execs().with_status(0));
@@ -423,6 +425,7 @@ src[..]main.rs
         let fname = f.header().path_bytes();
         let fname = &*fname;
         assert!(fname == b"nested-0.0.1/Cargo.toml" ||
+                fname == b"nested-0.0.1/Cargo.toml.orig" ||
                 fname == b"nested-0.0.1/src/main.rs",
                 "unexpected filename: {:?}", f.header().path())
     }
@@ -476,12 +479,12 @@ fn repackage_on_source_change() {
         panic!("could not create file {}: {}", p.root().join("src/foo.rs").display(), e)
     });
 
-    file.write_all(r#"
+    file.write_all(br#"
         fn main() { println!("foo"); }
-    "#.as_bytes()).unwrap();
+    "#).unwrap();
     std::mem::drop(file);
 
-    let mut pro = process(&cargo_dir().join("cargo"));
+    let mut pro = process(&cargo_exe());
     pro.arg("package").cwd(p.root());
 
     // Check that cargo rebuilds the tarball
@@ -546,6 +549,9 @@ Caused by:
 
 #[test]
 fn do_not_package_if_repository_is_dirty() {
+    let p = project("foo");
+    p.build();
+
     // Create a Git repository containing a minimal Rust project.
     git::repo(&paths::root().join("foo"))
         .file("Cargo.toml", r#"
@@ -562,18 +568,178 @@ fn do_not_package_if_repository_is_dirty() {
         .build();
 
     // Modify Cargo.toml without committing the change.
-    let p = project("foo");
-    let manifest_path = p.root().join("Cargo.toml");
-    let mut manifest = t!(OpenOptions::new().append(true).open(manifest_path));
-    t!(writeln!(manifest, ""));
+    p.change_file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            license = "MIT"
+            description = "foo"
+            documentation = "foo"
+            homepage = "foo"
+            repository = "foo"
+            # change
+    "#);
 
     assert_that(p.cargo("package"),
                 execs().with_status(101)
                        .with_stderr("\
-error: 1 dirty files found in the working directory:
+error: 1 files in the working directory contain changes that were not yet \
+committed into git:
 
 Cargo.toml
 
 to proceed despite this, pass the `--allow-dirty` flag
 "));
+}
+
+#[test]
+fn generated_manifest() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            exclude = ["*.txt"]
+            license = "MIT"
+            description = "foo"
+
+            [project.metadata]
+            foo = 'bar'
+
+            [workspace]
+
+            [dependencies]
+            bar = { path = "bar", version = "0.1" }
+        "#)
+        .file("src/main.rs", "")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", "");
+
+    assert_that(p.cargo_process("package").arg("--no-verify"),
+                execs().with_status(0));
+
+    let f = File::open(&p.root().join("target/package/foo-0.0.1.crate")).unwrap();
+    let mut rdr = GzDecoder::new(f).unwrap();
+    let mut contents = Vec::new();
+    rdr.read_to_end(&mut contents).unwrap();
+    let mut ar = Archive::new(&contents[..]);
+    let mut entry = ar.entries().unwrap()
+                        .map(|f| f.unwrap())
+                        .find(|e| e.path().unwrap().ends_with("Cargo.toml"))
+                        .unwrap();
+    let mut contents = String::new();
+    entry.read_to_string(&mut contents).unwrap();
+    assert_that(&contents[..], equal_to(
+r#"# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
+#
+# When uploading crates to the registry Cargo will automatically
+# "normalize" Cargo.toml files for maximal compatibility
+# with all versions of Cargo and also rewrite `path` dependencies
+# to registry (e.g. crates.io) dependencies
+#
+# If you believe there's an error in this file please file an
+# issue against the rust-lang/cargo repository. If you're
+# editing this file be aware that the upstream Cargo.toml
+# will likely look very different (and much more reasonable)
+
+[package]
+name = "foo"
+version = "0.0.1"
+authors = []
+exclude = ["*.txt"]
+description = "foo"
+license = "MIT"
+
+[package.metadata]
+foo = "bar"
+[dependencies.bar]
+version = "0.1"
+"#));
+}
+
+#[test]
+fn ignore_workspace_specifier() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+
+            authors = []
+
+            [workspace]
+
+            [dependencies]
+            bar = { path = "bar", version = "0.1" }
+        "#)
+        .file("src/main.rs", "")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+            workspace = ".."
+        "#)
+        .file("bar/src/lib.rs", "");
+    p.build();
+
+    assert_that(p.cargo("package").arg("--no-verify").cwd(p.root().join("bar")),
+                execs().with_status(0));
+
+    let f = File::open(&p.root().join("target/package/bar-0.1.0.crate")).unwrap();
+    let mut rdr = GzDecoder::new(f).unwrap();
+    let mut contents = Vec::new();
+    rdr.read_to_end(&mut contents).unwrap();
+    let mut ar = Archive::new(&contents[..]);
+    let mut entry = ar.entries().unwrap()
+                        .map(|f| f.unwrap())
+                        .find(|e| e.path().unwrap().ends_with("Cargo.toml"))
+                        .unwrap();
+    let mut contents = String::new();
+    entry.read_to_string(&mut contents).unwrap();
+    assert_that(&contents[..], equal_to(
+r#"# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
+#
+# When uploading crates to the registry Cargo will automatically
+# "normalize" Cargo.toml files for maximal compatibility
+# with all versions of Cargo and also rewrite `path` dependencies
+# to registry (e.g. crates.io) dependencies
+#
+# If you believe there's an error in this file please file an
+# issue against the rust-lang/cargo repository. If you're
+# editing this file be aware that the upstream Cargo.toml
+# will likely look very different (and much more reasonable)
+
+[package]
+name = "bar"
+version = "0.1.0"
+authors = []
+"#));
+}
+
+#[test]
+fn package_two_kinds_of_deps() {
+    Package::new("other", "1.0.0").publish();
+    Package::new("other1", "1.0.0").publish();
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            other = "1.0"
+            other1 = { version = "1.0" }
+        "#)
+        .file("src/main.rs", "");
+
+    assert_that(p.cargo_process("package").arg("--no-verify"),
+                execs().with_status(0));
 }

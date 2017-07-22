@@ -5,11 +5,12 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rustc_serialize::hex::ToHex;
-use rustc_serialize::json;
+use serde_json;
 
 use core::{Package, PackageId, Summary, SourceId, Source, Dependency, Registry};
 use sources::PathSource;
-use util::{CargoResult, human, ChainError, Config, Sha256};
+use util::{Config, Sha256};
+use util::errors::{CargoResult, CargoResultExt};
 use util::paths;
 
 pub struct DirectorySource<'cfg> {
@@ -19,7 +20,7 @@ pub struct DirectorySource<'cfg> {
     config: &'cfg Config,
 }
 
-#[derive(RustcDecodable)]
+#[derive(Deserialize)]
 struct Checksum {
     package: String,
     files: HashMap<String, String>,
@@ -44,11 +45,15 @@ impl<'cfg> Debug for DirectorySource<'cfg> {
 }
 
 impl<'cfg> Registry for DirectorySource<'cfg> {
-    fn query(&mut self, dep: &Dependency) -> CargoResult<Vec<Summary>> {
+    fn query(&mut self,
+             dep: &Dependency,
+             f: &mut FnMut(Summary)) -> CargoResult<()> {
         let packages = self.packages.values().map(|p| &p.0);
         let matches = packages.filter(|pkg| dep.matches(pkg.summary()));
-        let summaries = matches.map(|pkg| pkg.summary().clone());
-        Ok(summaries.collect())
+        for summary in matches.map(|pkg| pkg.summary().clone()) {
+            f(summary);
+        }
+        Ok(())
     }
 
     fn supports_checksums(&self) -> bool {
@@ -63,9 +68,9 @@ impl<'cfg> Source for DirectorySource<'cfg> {
 
     fn update(&mut self) -> CargoResult<()> {
         self.packages.clear();
-        let entries = self.root.read_dir().chain_error(|| {
-            human(format!("failed to read root of directory source: {}",
-                          self.root.display()))
+        let entries = self.root.read_dir().chain_err(|| {
+            format!("failed to read root of directory source: {}",
+                    self.root.display())
         })?;
 
         for entry in entries {
@@ -76,9 +81,35 @@ impl<'cfg> Source for DirectorySource<'cfg> {
             // crates and otherwise may conflict with a VCS
             // (rust-lang/cargo#3414).
             if let Some(s) = path.file_name().and_then(|s| s.to_str()) {
-                if s.starts_with(".") {
+                if s.starts_with('.') {
                     continue
                 }
+            }
+
+            // Vendor directories are often checked into a VCS, but throughout
+            // the lifetime of a vendor dir crates are often added and deleted.
+            // Some VCS implementations don't always fully delete the directory
+            // when a dir is removed from a different checkout. Sometimes a
+            // mostly-empty dir is left behind.
+            //
+            // To help work Cargo work by default in more cases we try to
+            // handle this case by default. If the directory looks like it only
+            // has dotfiles in it (or no files at all) then we skip it.
+            //
+            // In general we don't want to skip completely malformed directories
+            // to help with debugging, so we don't just ignore errors in
+            // `update` below.
+            let mut only_dotfile = true;
+            for entry in path.read_dir()?.filter_map(|e| e.ok()) {
+                if let Some(s) = entry.file_name().to_str() {
+                    if s.starts_with(".") {
+                        continue
+                    }
+                }
+                only_dotfile = false;
+            }
+            if only_dotfile {
+                continue
             }
 
             let mut src = PathSource::new(&path, &self.source_id, self.config);
@@ -86,18 +117,18 @@ impl<'cfg> Source for DirectorySource<'cfg> {
             let pkg = src.root_package()?;
 
             let cksum_file = path.join(".cargo-checksum.json");
-            let cksum = paths::read(&path.join(cksum_file)).chain_error(|| {
-                human(format!("failed to load checksum `.cargo-checksum.json` \
-                               of {} v{}",
-                              pkg.package_id().name(),
-                              pkg.package_id().version()))
+            let cksum = paths::read(&path.join(cksum_file)).chain_err(|| {
+                format!("failed to load checksum `.cargo-checksum.json` \
+                         of {} v{}",
+                        pkg.package_id().name(),
+                        pkg.package_id().version())
 
             })?;
-            let cksum: Checksum = json::decode(&cksum).chain_error(|| {
-                human(format!("failed to decode `.cargo-checksum.json` of \
-                               {} v{}",
-                              pkg.package_id().name(),
-                              pkg.package_id().version()))
+            let cksum: Checksum = serde_json::from_str(&cksum).chain_err(|| {
+                format!("failed to decode `.cargo-checksum.json` of \
+                         {} v{}",
+                        pkg.package_id().name(),
+                        pkg.package_id().version())
             })?;
 
             let mut manifest = pkg.manifest().clone();
@@ -111,8 +142,8 @@ impl<'cfg> Source for DirectorySource<'cfg> {
     }
 
     fn download(&mut self, id: &PackageId) -> CargoResult<Package> {
-        self.packages.get(id).map(|p| &p.0).cloned().chain_error(|| {
-            human(format!("failed to find package with id: {}", id))
+        self.packages.get(id).map(|p| &p.0).cloned().ok_or_else(|| {
+            format!("failed to find package with id: {}", id).into()
         })
     }
 
@@ -140,9 +171,9 @@ impl<'cfg> Source for DirectorySource<'cfg> {
                         n => h.update(&buf[..n]),
                     }
                 }
-            }).chain_error(|| {
-                human(format!("failed to calculate checksum of: {}",
-                              file.display()))
+            })().chain_err(|| {
+                format!("failed to calculate checksum of: {}",
+                        file.display())
             })?;
 
             let actual = h.finish().to_hex();

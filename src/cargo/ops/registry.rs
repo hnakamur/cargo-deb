@@ -5,7 +5,7 @@ use std::iter::repeat;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use curl::easy::Easy;
+use curl::easy::{Easy, SslOpt};
 use git2;
 use registry::{Registry, NewCrate, NewCrateDependency};
 use term::color::BLACK;
@@ -21,8 +21,9 @@ use ops;
 use sources::{RegistrySource};
 use util::config;
 use util::paths;
-use util::{CargoResult, human, ChainError, ToUrl};
+use util::ToUrl;
 use util::config::{Config, ConfigValue, Location};
+use util::errors::{CargoError, CargoResult, CargoResultExt};
 use util::important_paths::find_root_manifest_for_wd;
 
 pub struct RegistryConfig {
@@ -51,7 +52,7 @@ pub fn publish(ws: &Workspace, opts: &PublishOpts) -> CargoResult<()> {
     let (mut registry, reg_id) = registry(opts.config,
                                                opts.token.clone(),
                                                opts.index.clone())?;
-    verify_dependencies(&pkg, &reg_id)?;
+    verify_dependencies(pkg, &reg_id)?;
 
     // Prepare a tarball, with a non-surpressable warning if metadata
     // is missing since this is being put online.
@@ -66,7 +67,7 @@ pub fn publish(ws: &Workspace, opts: &PublishOpts) -> CargoResult<()> {
 
     // Upload said tarball to the specified destination
     opts.config.shell().status("Uploading", pkg.package_id().to_string())?;
-    transmit(opts.config, &pkg, tarball.file(), &mut registry, opts.dry_run)?;
+    transmit(opts.config, pkg, tarball.file(), &mut registry, opts.dry_run)?;
 
     Ok(())
 }
@@ -121,13 +122,10 @@ fn transmit(config: &Config,
         Some(ref readme) => Some(paths::read(&pkg.root().join(readme))?),
         None => None,
     };
-    match *license_file {
-        Some(ref file) => {
-            if fs::metadata(&pkg.root().join(file)).is_err() {
-                bail!("the license file `{}` does not exist", file)
-            }
+    if let Some(ref file) = *license_file {
+        if fs::metadata(&pkg.root().join(file)).is_err() {
+            bail!("the license file `{}` does not exist", file)
         }
-        None => {}
     }
 
     // Do not upload if performing a dry run
@@ -178,7 +176,7 @@ fn transmit(config: &Config,
 
             Ok(())
         },
-        Err(e) => Err(human(e.to_string())),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -203,8 +201,8 @@ pub fn registry(config: &Config,
     };
     let api_host = {
         let mut src = RegistrySource::remote(&sid, config);
-        src.update().chain_error(|| {
-            human(format!("failed to update {}", sid))
+        src.update().chain_err(|| {
+            format!("failed to update {}", sid)
         })?;
         (src.config()?).unwrap().api
     };
@@ -234,6 +232,9 @@ pub fn http_handle(config: &Config) -> CargoResult<Easy> {
     if let Some(cainfo) = config.get_path("http.cainfo")? {
         handle.cainfo(&cainfo.val)?;
     }
+    if let Some(check) = config.get_bool("http.check-revoke")? {
+        handle.ssl_options(SslOpt::new().no_revoke(!check.val))?;
+    }
     if let Some(timeout) = http_timeout(config)? {
         handle.connect_timeout(Duration::new(timeout as u64, 0))?;
         handle.low_speed_time(Duration::new(timeout as u64, 0))?;
@@ -246,18 +247,13 @@ pub fn http_handle(config: &Config) -> CargoResult<Easy> {
 /// Favor cargo's `http.proxy`, then git's `http.proxy`. Proxies specified
 /// via environment variables are picked up by libcurl.
 fn http_proxy(config: &Config) -> CargoResult<Option<String>> {
-    match config.get_string("http.proxy")? {
-        Some(s) => return Ok(Some(s.val)),
-        None => {}
+    if let Some(s) = config.get_string("http.proxy")? {
+        return Ok(Some(s.val))
     }
-    match git2::Config::open_default() {
-        Ok(cfg) => {
-            match cfg.get_str("http.proxy") {
-                Ok(s) => return Ok(Some(s.to_string())),
-                Err(..) => {}
-            }
+    if let Ok(cfg) = git2::Config::open_default() {
+        if let Ok(s) = cfg.get_str("http.proxy") {
+            return Ok(Some(s.to_string()))
         }
-        Err(..) => {}
     }
     Ok(None)
 }
@@ -282,9 +278,8 @@ pub fn http_proxy_exists(config: &Config) -> CargoResult<bool> {
 }
 
 pub fn http_timeout(config: &Config) -> CargoResult<Option<i64>> {
-    match config.get_i64("http.timeout")? {
-        Some(s) => return Ok(Some(s.val)),
-        None => {}
+    if let Some(s) = config.get_i64("http.timeout")? {
+        return Ok(Some(s.val))
     }
     Ok(env::var("HTTP_TIMEOUT").ok().and_then(|s| s.parse().ok()))
 }
@@ -293,11 +288,8 @@ pub fn registry_login(config: &Config, token: String) -> CargoResult<()> {
     let RegistryConfig { index, token: _ } = registry_configuration(config)?;
     let mut map = HashMap::new();
     let p = config.cwd().to_path_buf();
-    match index {
-        Some(index) => {
-            map.insert("index".to_string(), ConfigValue::String(index, p.clone()));
-        }
-        None => {}
+    if let Some(index) = index {
+        map.insert("index".to_string(), ConfigValue::String(index, p.clone()));
     }
     map.insert("token".to_string(), ConfigValue::String(token, p));
 
@@ -327,33 +319,27 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
     let (mut registry, _) = registry(config, opts.token.clone(),
                                           opts.index.clone())?;
 
-    match opts.to_add {
-        Some(ref v) => {
-            let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            config.shell().status("Owner", format!("adding {:?} to crate {}",
-                                                        v, name))?;
-            registry.add_owners(&name, &v).map_err(|e| {
-                human(format!("failed to add owners to crate {}: {}", name, e))
-            })?;
-        }
-        None => {}
+    if let Some(ref v) = opts.to_add {
+        let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
+        config.shell().status("Owner", format!("adding {:?} to crate {}",
+                                                    v, name))?;
+        registry.add_owners(&name, &v).map_err(|e| {
+            CargoError::from(format!("failed to add owners to crate {}: {}", name, e))
+        })?;
     }
 
-    match opts.to_remove {
-        Some(ref v) => {
-            let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-            config.shell().status("Owner", format!("removing {:?} from crate {}",
-                                                        v, name))?;
-            registry.remove_owners(&name, &v).map_err(|e| {
-                human(format!("failed to remove owners from crate {}: {}", name, e))
-            })?;
-        }
-        None => {}
+    if let Some(ref v) = opts.to_remove {
+        let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
+        config.shell().status("Owner", format!("removing {:?} from crate {}",
+                                                    v, name))?;
+        registry.remove_owners(&name, &v).map_err(|e| {
+            CargoError::from(format!("failed to remove owners from crate {}: {}", name, e))
+        })?;
     }
 
     if opts.list {
         let owners = registry.list_owners(&name).map_err(|e| {
-            human(format!("failed to list owners of crate {}: {}", name, e))
+            CargoError::from(format!("failed to list owners of crate {}: {}", name, e))
         })?;
         for owner in owners.iter() {
             print!("{}", owner.login);
@@ -393,12 +379,12 @@ pub fn yank(config: &Config,
     if undo {
         config.shell().status("Unyank", format!("{}:{}", name, version))?;
         registry.unyank(&name, &version).map_err(|e| {
-            human(format!("failed to undo a yank: {}", e))
+            CargoError::from(format!("failed to undo a yank: {}", e))
         })?;
     } else {
         config.shell().status("Yank", format!("{}:{}", name, version))?;
         registry.yank(&name, &version).map_err(|e| {
-            human(format!("failed to yank: {}", e))
+            CargoError::from(format!("failed to yank: {}", e))
         })?;
     }
 
@@ -419,12 +405,12 @@ pub fn search(query: &str,
 
     let (mut registry, _) = registry(config, None, index)?;
     let (crates, total_crates) = registry.search(query, limit).map_err(|e| {
-        human(format!("failed to retrieve search results from the registry: {}", e))
+        CargoError::from(format!("failed to retrieve search results from the registry: {}", e))
     })?;
 
     let list_items = crates.iter()
         .map(|krate| (
-            format!("{} ({})", krate.name, krate.max_version),
+            format!("{} = \"{}\"", krate.name, krate.max_version),
             krate.description.as_ref().map(|desc|
                 truncate_with_ellipsis(&desc.replace("\n", " "), 128))
         ))
@@ -439,7 +425,7 @@ pub fn search(query: &str,
             Some(desc) => {
                 let space = repeat(' ').take(description_margin - name.len())
                                        .collect::<String>();
-                name + &space + &desc
+                name + &space + "# " + &desc
             }
             None => name
         };

@@ -1,6 +1,6 @@
 use cargo::core::Workspace;
 use cargo::ops::{self, MessageFormat, Packages};
-use cargo::util::{CliResult, CliError, Human, human, Config};
+use cargo::util::{CliResult, CliError, Config, CargoErrorKind};
 use cargo::util::important_paths::find_root_manifest_for_wd;
 
 #[derive(RustcDecodable)]
@@ -17,9 +17,13 @@ pub struct Options {
     flag_lib: bool,
     flag_doc: bool,
     flag_bin: Vec<String>,
+    flag_bins: bool,
     flag_example: Vec<String>,
+    flag_examples: bool,
     flag_test: Vec<String>,
+    flag_tests: bool,
     flag_bench: Vec<String>,
+    flag_benches: bool,
     flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
@@ -29,6 +33,7 @@ pub struct Options {
     flag_frozen: bool,
     flag_locked: bool,
     flag_all: bool,
+    flag_exclude: Vec<String>,
 }
 
 pub const USAGE: &'static str = "
@@ -41,14 +46,19 @@ Options:
     -h, --help                   Print this message
     --lib                        Test only this package's library
     --doc                        Test only this library's documentation
-    --bin NAME                   Test only the specified binary
-    --example NAME               Test only the specified example
-    --test NAME                  Test only the specified integration test target
-    --bench NAME                 Test only the specified benchmark target
+    --bin NAME ...               Test only the specified binary
+    --bins                       Test all binaries
+    --example NAME ...           Check that the specified examples compile
+    --examples                   Check that all examples compile
+    --test NAME ...              Test only the specified test target
+    --tests                      Test all tests
+    --bench NAME ...             Test only the specified bench target
+    --benches                    Test all benches
     --no-run                     Compile, but don't run tests
     -p SPEC, --package SPEC ...  Package to run tests for
     --all                        Test all packages in the workspace
-    -j N, --jobs N               Number of parallel jobs, defaults to # of CPUs
+    --exclude SPEC ...           Exclude packages from the test
+    -j N, --jobs N               Number of parallel builds, see below for details
     --release                    Build artifacts in release mode, with optimizations
     --features FEATURES          Space-separated list of features to also build
     --all-features               Build all available features
@@ -78,7 +88,12 @@ All packages in the workspace are tested if the `--all` flag is supplied. The
 `--all` flag may be supplied in the presence of a virtual manifest.
 
 The --jobs argument affects the building of the test executable but does
-not affect how many jobs are used when running the tests.
+not affect how many jobs are used when running the tests. The default value
+for the --jobs argument is the number of CPUs. If you want to control the
+number of simultaneous running test cases, pass the `--test-threads` option
+to the test binaries:
+
+  cargo test -- --test-threads=1
 
 Compilation can be configured via the `test` profile in the manifest.
 
@@ -106,21 +121,20 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
     let (mode, filter);
     if options.flag_doc {
         mode = ops::CompileMode::Doctest;
-        filter = ops::CompileFilter::new(true, &empty, &empty, &empty, &empty);
+        filter = ops::CompileFilter::new(true, &empty, false, &empty, false,
+                                               &empty, false, &empty, false);
     } else {
         mode = ops::CompileMode::Test;
         filter = ops::CompileFilter::new(options.flag_lib,
-                                         &options.flag_bin,
-                                         &options.flag_test,
-                                         &options.flag_example,
-                                         &options.flag_bench);
+                                         &options.flag_bin, options.flag_bins,
+                                         &options.flag_test, options.flag_tests,
+                                         &options.flag_example, options.flag_examples,
+                                         &options.flag_bench, options.flag_benches);
     }
 
-    let spec = if options.flag_all {
-        Packages::All
-    } else {
-        Packages::Packages(&options.flag_package)
-    };
+    let spec = Packages::from_flags(options.flag_all,
+                                    &options.flag_exclude,
+                                    &options.flag_package)?;
 
     let ops = ops::TestOptions {
         no_run: options.flag_no_run,
@@ -149,8 +163,8 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
         None => Ok(()),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {
-                Some(i) => CliError::new(human("test failed"), i),
-                None => CliError::new(Box::new(Human(err)), 101),
+                Some(i) => CliError::new(err.hint().into(), i),
+                None => CliError::new(CargoErrorKind::CargoTestErrorKind(err).into(), 101),
             })
         }
     }

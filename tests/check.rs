@@ -8,9 +8,6 @@ use hamcrest::assert_that;
 
 #[test]
 fn check_success() {
-    if !is_nightly() {
-        return
-    }
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -45,9 +42,6 @@ fn check_success() {
 
 #[test]
 fn check_fail() {
-    if !is_nightly() {
-        return
-    }
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -143,10 +137,6 @@ pub fn derive(_input: TokenStream) -> TokenStream {
 
 #[test]
 fn check_build() {
-    if !is_nightly() {
-        return;
-    }
-
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -163,6 +153,8 @@ fn check_build() {
                 ::bar::baz();
             }
         "#);
+    foo.build();
+
     let bar = project("bar")
         .file("Cargo.toml", r#"
             [package]
@@ -175,18 +167,14 @@ fn check_build() {
         "#);
     bar.build();
 
-    assert_that(foo.cargo_process("check"),
+    assert_that(foo.cargo("check"),
                 execs().with_status(0));
-    assert_that(foo.cargo_process("build"),
+    assert_that(foo.cargo("build"),
                 execs().with_status(0));
 }
 
 #[test]
 fn build_check() {
-    if !is_nightly() {
-        return;
-    }
-
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -203,6 +191,8 @@ fn build_check() {
                 ::bar::baz();
             }
         "#);
+    foo.build();
+
     let bar = project("bar")
         .file("Cargo.toml", r#"
             [package]
@@ -215,9 +205,9 @@ fn build_check() {
         "#);
     bar.build();
 
-    assert_that(foo.cargo_process("build"),
+    assert_that(foo.cargo("build"),
                 execs().with_status(0));
-    assert_that(foo.cargo_process("check"),
+    assert_that(foo.cargo("check"),
                 execs().with_status(0));
 }
 
@@ -225,10 +215,6 @@ fn build_check() {
 // not built.
 #[test]
 fn issue_3418() {
-    if !is_nightly() {
-        return;
-    }
-
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -240,7 +226,6 @@ fn issue_3418() {
         "#)
         .file("src/lib.rs", "")
         .file("src/main.rs", "fn main() {}");
-    foo.build();
 
     assert_that(foo.cargo_process("check").arg("-v"),
                 execs().with_status(0)
@@ -251,10 +236,6 @@ fn issue_3418() {
 // checked, but in this case with a proc macro too.
 #[test]
 fn issue_3419() {
-    if !is_nightly() {
-        return;
-    }
-
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -304,9 +285,6 @@ fn issue_3419() {
 // test `cargo rustc --profile check`
 #[test]
 fn rustc_check() {
-    if !is_nightly() {
-        return
-    }
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -345,9 +323,6 @@ fn rustc_check() {
 
 #[test]
 fn rustc_check_err() {
-    if !is_nightly() {
-        return
-    }
     let foo = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -382,4 +357,39 @@ fn rustc_check_err() {
                    .arg("--")
                    .arg("--emit=metadata"),
                 execs().with_status(101));
+}
+
+#[test]
+fn check_all() {
+    let foo = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [workspace]
+            [dependencies]
+            b = { path = "b" }
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .file("examples/a.rs", "fn main() {}")
+        .file("tests/a.rs", "")
+        .file("src/lib.rs", "")
+        .file("b/Cargo.toml", r#"
+            [package]
+            name = "b"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("b/src/main.rs", "fn main() {}")
+        .file("b/src/lib.rs", "");
+
+    assert_that(foo.cargo_process("check").arg("--all").arg("-v"),
+                execs().with_status(0)
+        .with_stderr_contains("[..] --crate-name foo src[/]lib.rs [..]")
+        .with_stderr_contains("[..] --crate-name foo src[/]main.rs [..]")
+        .with_stderr_contains("[..] --crate-name b b[/]src[/]lib.rs [..]")
+        .with_stderr_contains("[..] --crate-name b b[/]src[/]main.rs [..]")
+        );
 }

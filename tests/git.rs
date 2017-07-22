@@ -8,7 +8,7 @@ use std::io::prelude::*;
 use std::path::Path;
 
 use cargo::util::process;
-use cargotest::{sleep_ms, RUSTC};
+use cargotest::sleep_ms;
 use cargotest::support::paths::{self, CargoPathExt};
 use cargotest::support::{git, project, execs, main_file, path2url};
 use hamcrest::{assert_that,existing_file};
@@ -257,6 +257,61 @@ fn cargo_compile_with_nested_paths() {
                 pub fn hello() -> &'static str {
                     "hello world"
                 }
+            "#)
+    }).unwrap();
+
+    let p = project("parent")
+        .file("Cargo.toml", &format!(r#"
+            [project]
+
+            name = "parent"
+            version = "0.5.0"
+            authors = ["wycats@example.com"]
+
+            [dependencies.dep1]
+
+            version = "0.5.0"
+            git = '{}'
+
+            [[bin]]
+
+            name = "parent"
+        "#, git_project.url()))
+        .file("src/parent.rs",
+              &main_file(r#""{}", dep1::hello()"#, &["dep1"]));
+
+    p.cargo_process("build")
+        .exec_with_output()
+        .unwrap();
+
+    assert_that(&p.bin("parent"), existing_file());
+
+    assert_that(process(&p.bin("parent")),
+                execs().with_stdout("hello world\n"));
+}
+
+#[test]
+fn cargo_compile_with_malformed_nested_paths() {
+    let git_project = git::new("dep1", |project| {
+        project
+            .file("Cargo.toml", r#"
+                [project]
+
+                name = "dep1"
+                version = "0.5.0"
+                authors = ["carlhuda@example.com"]
+
+                [lib]
+
+                name = "dep1"
+            "#)
+            .file("src/dep1.rs", r#"
+                pub fn hello() -> &'static str {
+                    "hello world"
+                }
+            "#)
+            .file("vendor/dep2/Cargo.toml", r#"
+                !INVALID!
             "#)
     }).unwrap();
 
@@ -752,6 +807,73 @@ fn dep_with_submodule() {
 }
 
 #[test]
+fn dep_with_bad_submodule() {
+    let project = project("foo");
+    let git_project = git::new("dep1", |project| {
+        project
+            .file("Cargo.toml", r#"
+                [package]
+                name = "dep1"
+                version = "0.5.0"
+                authors = ["carlhuda@example.com"]
+            "#)
+    }).unwrap();
+    let git_project2 = git::new("dep2", |project| {
+        project.file("lib.rs", "pub fn dep() {}")
+    }).unwrap();
+
+    let repo = git2::Repository::open(&git_project.root()).unwrap();
+    let url = path2url(git_project2.root()).to_string();
+    git::add_submodule(&repo, &url, Path::new("src"));
+    git::commit(&repo);
+
+    // now amend the first commit on git_project2 to make submodule ref point to not-found
+    // commit
+    let repo = git2::Repository::open(&git_project2.root()).unwrap();
+    let original_submodule_ref = repo.refname_to_id("refs/heads/master").unwrap();
+    let commit = repo.find_commit(original_submodule_ref).unwrap();
+    commit.amend(
+        Some("refs/heads/master"),
+        None,
+        None,
+        None,
+        Some("something something"),
+        None).unwrap();
+
+    let project = project
+        .file("Cargo.toml", &format!(r#"
+            [project]
+
+            name = "foo"
+            version = "0.5.0"
+            authors = ["wycats@example.com"]
+
+            [dependencies.dep1]
+
+            git = '{}'
+        "#, git_project.url()))
+        .file("src/lib.rs", "
+            extern crate dep1;
+            pub fn foo() { dep1::dep() }
+        ");
+
+    let expected = format!("\
+[UPDATING] git repository [..]
+[ERROR] failed to load source for a dependency on `dep1`
+
+Caused by:
+  Unable to update {}
+
+Caused by:
+  failed to update submodule `src`
+
+To learn more, run the command again with --verbose.\n", path2url(git_project.root()));
+
+    assert_that(project.cargo_process("build"),
+                execs().with_stderr(expected).with_status(101));
+}
+
+#[test]
 fn two_deps_only_update_one() {
     let project = project("foo");
     let git1 = git::new("dep1", |project| {
@@ -912,7 +1034,7 @@ fn dep_with_changed_submodule() {
 
     let repo = git2::Repository::open(&git_project.root()).unwrap();
     let mut sub = git::add_submodule(&repo, &git_project2.url().to_string(),
-                                     &Path::new("src"));
+                                     Path::new("src"));
     git::commit(&repo);
 
     let project = project
@@ -1036,13 +1158,7 @@ fn dev_deps_with_testing() {
 [COMPILING] [..] v0.5.0 ([..]
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]")
-                       .with_stdout("
-running 1 test
-test tests::foo ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
-
-"));
+                       .with_stdout_contains("test tests::foo ... ok"));
 }
 
 #[test]
@@ -1651,7 +1767,7 @@ fn dont_require_submodules_are_checked_out() {
 
     let repo = git2::Repository::open(&git1.root()).unwrap();
     let url = path2url(git2.root()).to_string();
-    git::add_submodule(&repo, &url, &Path::new("a/submodule"));
+    git::add_submodule(&repo, &url, Path::new("a/submodule"));
     git::commit(&repo);
 
     git2::Repository::init(&project.root()).unwrap();
@@ -1743,9 +1859,6 @@ fn lints_are_suppressed() {
 
 #[test]
 fn denied_lints_are_allowed() {
-    let enabled = RUSTC.with(|r| r.cap_lints);
-    if !enabled { return }
-
     let a = git::new("a", |p| {
         p.file("Cargo.toml", r#"
             [project]
@@ -1825,4 +1938,49 @@ fn add_a_git_dep() {
     "#, git.url()).as_bytes()).unwrap();
 
     assert_that(p.cargo("build"), execs().with_status(0));
+}
+
+#[test]
+fn two_at_rev_instead_of_tag() {
+    let git = git::new("git", |p| {
+        p.file("Cargo.toml", r#"
+            [project]
+            name = "git1"
+            version = "0.5.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "")
+        .file("a/Cargo.toml", r#"
+            [project]
+            name = "git2"
+            version = "0.5.0"
+            authors = []
+        "#)
+        .file("a/src/lib.rs", "")
+    }).unwrap();
+
+    // Make a tag corresponding to the current HEAD
+    let repo = git2::Repository::open(&git.root()).unwrap();
+    let head = repo.head().unwrap().target().unwrap();
+    repo.tag("v0.1.0",
+             &repo.find_object(head, None).unwrap(),
+             &repo.signature().unwrap(),
+             "make a new tag",
+             false).unwrap();
+
+    let p = project("foo")
+        .file("Cargo.toml", &format!(r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            git1 = {{ git = '{0}', rev = 'v0.1.0' }}
+            git2 = {{ git = '{0}', rev = 'v0.1.0' }}
+        "#, git.url()))
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("generate-lockfile"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
 }

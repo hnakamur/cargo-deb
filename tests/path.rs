@@ -193,12 +193,7 @@ fn cargo_compile_with_root_dev_deps_with_testing() {
 [COMPILING] [..] v0.5.0 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]")
-                       .with_stdout("
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured
-
-"));
+                       .with_stdout_contains("running 0 tests"));
 }
 
 #[test]
@@ -259,8 +254,7 @@ fn cargo_compile_with_transitive_dev_deps() {
 
 #[test]
 fn no_rebuild_dependency() {
-    let mut p = project("foo");
-    p = p
+    let p = project("foo")
         .file("Cargo.toml", r#"
             [project]
 
@@ -298,19 +292,18 @@ fn no_rebuild_dependency() {
                                              in [..]\n",
                                             p.url(),
                                             p.url())));
-    // This time we shouldn't compile bar
-    assert_that(p.cargo("build"),
-                execs().with_stdout(""));
-    p.root().move_into_the_past();
 
-    p.build(); // rebuild the files (rewriting them in the process)
+    sleep_ms(1000);
+    p.change_file("src/foo.rs", r#"
+        extern crate bar;
+        fn main() { bar::bar(); }
+    "#);
+    // Don't compile bar, but do recompile foo.
     assert_that(p.cargo("build"),
-                execs().with_stderr(&format!("[COMPILING] bar v0.5.0 ({}/bar)\n\
-                                             [COMPILING] foo v0.5.0 ({})\n\
-                                             [FINISHED] dev [unoptimized + debuginfo] target(s) \
-                                             in [..]\n",
-                                            p.url(),
-                                            p.url())));
+                execs().with_stderr("\
+                     [COMPILING] foo v0.5.0 ([..])\n\
+                     [FINISHED] dev [unoptimized + debuginfo] target(s) \
+                     in [..]\n"));
 }
 
 #[test]
@@ -802,12 +795,7 @@ fn dev_deps_no_rebuild_lib() {
 [COMPILING] [..] v0.5.0 ({url}[..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]", url = p.url()))
-                       .with_stdout("
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured
-
-"));
+                       .with_stdout_contains("running 0 tests"));
 }
 
 #[test]
