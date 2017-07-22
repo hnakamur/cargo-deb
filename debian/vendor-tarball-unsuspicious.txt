@@ -29,3 +29,7 @@ num-*/.travis/deploy.enc
 miniz-sys-*/miniz.c
 docopt-*/src/test/testcases.rs
 winapi-*/src/winnt.rs
+itoa-*/performance.png
+dtoa-*/performance.png
+backtrace-sys-*/src/libbacktrace/configure
+
