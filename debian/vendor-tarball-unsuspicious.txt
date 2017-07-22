@@ -33,3 +33,7 @@ itoa-*/performance.png
 dtoa-*/performance.png
 backtrace-sys-*/src/libbacktrace/configure
 
+# Audited manually needed by dependencies
+# pre-built archive for WinAPI
+dbghelp-sys-*/i686/libdbghelp.a
+dbghelp-sys-*/x86_64/libdbghelp.a
