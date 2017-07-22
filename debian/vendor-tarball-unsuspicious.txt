@@ -6,6 +6,8 @@ flate2-*/tests/
 tar-*/tests/archives/
 term-*/tests/data/
 toml-*/tests/
+num-*/ci/
+openssl-*/test/
 
 # misc support data
 hamcrest-*/LICENSE-*
