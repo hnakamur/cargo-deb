@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::env;
 use std::error::Error;
 use std::ffi::OsStr;
@@ -10,11 +11,11 @@ use std::process::Output;
 use std::str;
 use std::usize;
 
-use rustc_serialize::json::Json;
+use serde_json::{self, Value};
 use url::Url;
 use hamcrest as ham;
 use cargo::util::ProcessBuilder;
-use cargo::util::ProcessError;
+use cargo::util::{CargoError, CargoErrorKind, ProcessError};
 
 use support::paths::CargoPathExt;
 
@@ -95,7 +96,8 @@ pub struct ProjectBuilder {
     name: String,
     root: PathBuf,
     files: Vec<FileBuilder>,
-    symlinks: Vec<SymlinkBuilder>
+    symlinks: Vec<SymlinkBuilder>,
+    is_build: Cell<bool>,
 }
 
 impl ProjectBuilder {
@@ -104,7 +106,8 @@ impl ProjectBuilder {
             name: name.to_string(),
             root: root,
             files: vec![],
-            symlinks: vec![]
+            symlinks: vec![],
+            is_build: Cell::new(false),
         }
     }
 
@@ -159,7 +162,10 @@ impl ProjectBuilder {
     }
 
     pub fn cargo(&self, cmd: &str) -> ProcessBuilder {
-        let mut p = self.process(&cargo_dir().join("cargo"));
+        assert!(self.is_build.get(),
+                "call `.build()` before calling `.cargo()`, \
+                 or use `.cargo_process()`");
+        let mut p = self.process(&cargo_exe());
         p.arg(cmd);
         return p;
     }
@@ -175,6 +181,11 @@ impl ProjectBuilder {
         self
     }
 
+    pub fn change_file(&self, path: &str, body: &str) {
+        assert!(self.is_build.get());
+        FileBuilder::new(self.root.join(path), body).mk()
+    }
+
     pub fn symlink<T: AsRef<Path>>(mut self, dst: T,
                                    src: T) -> ProjectBuilder {
         self.symlinks.push(SymlinkBuilder::new(self.root.join(dst),
@@ -184,6 +195,9 @@ impl ProjectBuilder {
 
     // TODO: return something different than a ProjectBuilder
     pub fn build(&self) -> &ProjectBuilder {
+        assert!(!self.is_build.get(),
+                "can `.build()` project only once");
+        self.is_build.set(true);
         // First, clean the directory if it already exists
         self.rm_root();
 
@@ -303,6 +317,10 @@ pub fn cargo_dir() -> PathBuf {
     })
 }
 
+pub fn cargo_exe() -> PathBuf {
+    cargo_dir().join(format!("cargo{}", env::consts::EXE_SUFFIX))
+}
+
 /// Returns an absolute path in the filesystem that `path` points to. The
 /// returned path does not contain any symlinks in its hierarchy.
 /*
@@ -319,9 +337,10 @@ pub struct Execs {
     expect_exit_code: Option<i32>,
     expect_stdout_contains: Vec<String>,
     expect_stderr_contains: Vec<String>,
+    expect_stdout_contains_n: Vec<(String, usize)>,
     expect_stdout_not_contains: Vec<String>,
     expect_stderr_not_contains: Vec<String>,
-    expect_json: Option<Vec<Json>>,
+    expect_json: Option<Vec<Value>>,
 }
 
 impl Execs {
@@ -350,6 +369,11 @@ impl Execs {
         self
     }
 
+    pub fn with_stdout_contains_n<S: ToString>(mut self, expected: S, number: usize) -> Execs {
+        self.expect_stdout_contains_n.push((expected.to_string(), number));
+        self
+    }
+
     pub fn with_stdout_does_not_contain<S: ToString>(mut self, expected: S) -> Execs {
         self.expect_stdout_not_contains.push(expected.to_string());
         self
@@ -362,7 +386,7 @@ impl Execs {
 
     pub fn with_json(mut self, expected: &str) -> Execs {
         self.expect_json = Some(expected.split("\n\n").map(|obj| {
-            Json::from_str(obj).unwrap()
+            obj.parse().unwrap()
         }).collect());
         self
     }
@@ -397,6 +421,10 @@ impl Execs {
         for expect in self.expect_stderr_contains.iter() {
             self.match_std(Some(expect), &actual.stderr, "stderr",
                            &actual.stdout, MatchKind::Partial)?;
+        }
+        for &(ref expect, number) in self.expect_stdout_contains_n.iter() {
+            self.match_std(Some(&expect), &actual.stdout, "stdout",
+                           &actual.stderr, MatchKind::PartialN(number))?;
         }
         for expect in self.expect_stdout_not_contains.iter() {
             self.match_std(Some(expect), &actual.stdout, "stdout",
@@ -475,6 +503,26 @@ impl Execs {
                                      {}", out,
                                      actual))
             }
+            MatchKind::PartialN(number) => {
+                let mut a = actual.lines();
+                let e = out.lines();
+
+                let mut matches = 0;
+
+                while let Some(..) = { 
+                    if self.diff_lines(a.clone(), e.clone(), true).is_empty() {
+                        matches += 1;
+                    }
+                    a.next()
+                } {}
+                
+                ham::expect(matches == number,
+                            format!("expected to find {} occurences:\n\
+                                     {}\n\n\
+                                     did not find in output:\n\
+                                     {}", number, out,
+                                     actual))
+            }
             MatchKind::NotPresent => {
                 ham::expect(!actual.contains(out),
                             format!("expected not to find:\n\
@@ -486,8 +534,8 @@ impl Execs {
         }
     }
 
-    fn match_json(&self, expected: &Json, line: &str) -> ham::MatchResult {
-        let actual = match Json::from_str(line) {
+    fn match_json(&self, expected: &Value, line: &str) -> ham::MatchResult {
+        let actual = match line.parse() {
              Err(e) => return Err(format!("invalid json, {}:\n`{}`", e, line)),
              Ok(actual) => actual,
         };
@@ -495,8 +543,10 @@ impl Execs {
         match find_mismatch(expected, &actual) {
             Some((expected_part, actual_part)) => Err(format!(
                 "JSON mismatch\nExpected:\n{}\nWas:\n{}\nExpected part:\n{}\nActual part:\n{}\n",
-                expected.pretty(), actual.pretty(),
-                expected_part.pretty(), actual_part.pretty()
+                serde_json::to_string_pretty(expected).unwrap(),
+                serde_json::to_string_pretty(&actual).unwrap(),
+                serde_json::to_string_pretty(expected_part).unwrap(),
+                serde_json::to_string_pretty(actual_part).unwrap(),
             )),
             None => Ok(()),
         }
@@ -534,6 +584,7 @@ impl Execs {
 enum MatchKind {
     Exact,
     Partial,
+    PartialN(usize),
     NotPresent,
 }
 
@@ -569,32 +620,42 @@ fn lines_match_works() {
 }
 
 // Compares JSON object for approximate equality.
-// You can use `[..]` wildcard in strings (useful for OS dependent things such as paths).
-// You can use a `"{...}"` string literal as a wildcard for arbitrary nested JSON (useful
-// for parts of object emitted by other programs (e.g. rustc) rather than Cargo itself).
-// Arrays are sorted before comparison.
-fn find_mismatch<'a>(expected: &'a Json, actual: &'a Json) -> Option<(&'a Json, &'a Json)> {
-    use rustc_serialize::json::Json::*;
+// You can use `[..]` wildcard in strings (useful for OS dependent things such
+// as paths).  You can use a `"{...}"` string literal as a wildcard for
+// arbitrary nested JSON (useful for parts of object emitted by other programs
+// (e.g. rustc) rather than Cargo itself).  Arrays are sorted before comparison.
+fn find_mismatch<'a>(expected: &'a Value, actual: &'a Value)
+                     -> Option<(&'a Value, &'a Value)> {
+    use serde_json::Value::*;
     match (expected, actual) {
-        (&I64(l), &I64(r)) if l == r => None,
-        (&F64(l), &F64(r)) if l == r => None,
-        (&U64(l), &U64(r)) if l == r => None,
-        (&Boolean(l), &Boolean(r)) if l == r => None,
+        (&Number(ref l), &Number(ref r)) if l == r => None,
+        (&Bool(l), &Bool(r)) if l == r => None,
         (&String(ref l), &String(ref r)) if lines_match(l, r) => None,
         (&Array(ref l), &Array(ref r)) => {
             if l.len() != r.len() {
                 return Some((expected, actual));
             }
 
-            fn sorted(xs: &Vec<Json>) -> Vec<&Json> {
-                let mut result = xs.iter().collect::<Vec<_>>();
-                result.sort_by(|x, y| x.partial_cmp(y).expect("JSON spec does not allow NaNs"));
-                result
-            }
+            let mut l = l.iter().collect::<Vec<_>>();
+            let mut r = r.iter().collect::<Vec<_>>();
 
-            sorted(l).iter().zip(sorted(r))
-             .filter_map(|(l, r)| find_mismatch(l, r))
-             .nth(0)
+            l.retain(|l| {
+                match r.iter().position(|r| find_mismatch(l, r).is_none()) {
+                    Some(i) => {
+                        r.remove(i);
+                        false
+                    }
+                    None => true
+                }
+            });
+
+            if l.len() > 0 {
+                assert!(r.len() > 0);
+                Some((&l[0], &r[0]))
+            } else {
+                assert!(r.len() == 0);
+                None
+            }
         }
         (&Object(ref l), &Object(ref r)) => {
             let same_keys = l.len() == r.len() && l.keys().all(|k| r.contains_key(k));
@@ -658,7 +719,8 @@ impl<'a> ham::Matcher<&'a mut ProcessBuilder> for Execs {
 
         match res {
             Ok(out) => self.match_output(&out),
-            Err(ProcessError { output: Some(ref out), .. }) => {
+            Err(CargoError(CargoErrorKind::ProcessErrorKind(
+                ProcessError { output: Some(ref out), .. }), ..)) => {
                 self.match_output(out)
             }
             Err(e) => {
@@ -688,6 +750,7 @@ pub fn execs() -> Execs {
         expect_exit_code: None,
         expect_stdout_contains: Vec::new(),
         expect_stderr_contains: Vec::new(),
+        expect_stdout_contains_n: Vec::new(),
         expect_stdout_not_contains: Vec::new(),
         expect_stderr_not_contains: Vec::new(),
         expect_json: None,

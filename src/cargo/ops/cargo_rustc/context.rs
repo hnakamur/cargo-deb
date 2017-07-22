@@ -8,10 +8,13 @@ use std::path::{Path, PathBuf};
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
+use jobserver::Client;
+
 use core::{Package, PackageId, PackageSet, Resolve, Target, Profile};
 use core::{TargetKind, Profiles, Dependency, Workspace};
 use core::dependency::Kind as DepKind;
-use util::{self, CargoResult, ChainError, internal, Config, profile, Cfg, human};
+use util::{self, internal, Config, profile, Cfg, CfgExpr};
+use util::errors::{CargoResult, CargoResultExt};
 
 use super::TargetConfig;
 use super::custom_build::{BuildState, BuildScripts};
@@ -20,7 +23,7 @@ use super::layout::Layout;
 use super::links::Links;
 use super::{Kind, Compilation, BuildConfig};
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Unit<'a> {
     pub pkg: &'a Package,
     pub target: &'a Target,
@@ -42,6 +45,7 @@ pub struct Context<'a, 'cfg: 'a> {
     pub build_scripts: HashMap<Unit<'a>, Arc<BuildScripts>>,
     pub links: Links<'a>,
     pub used_in_plugin: HashSet<Unit<'a>>,
+    pub jobserver: Client,
 
     host: Layout,
     target: Option<Layout>,
@@ -49,6 +53,7 @@ pub struct Context<'a, 'cfg: 'a> {
     host_info: TargetInfo,
     profiles: &'a Profiles,
     incremental_enabled: bool,
+    target_filenames: HashMap<Unit<'a>, Arc<Vec<(PathBuf, Option<PathBuf>, bool)>>>,
 }
 
 #[derive(Clone, Default)]
@@ -78,7 +83,35 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // Enable incremental builds if the user opts in. For now,
         // this is an environment variable until things stabilize a
         // bit more.
-        let incremental_enabled = env::var("CARGO_INCREMENTAL").is_ok();
+        let incremental_enabled = match env::var("CARGO_INCREMENTAL") {
+            Ok(v) => v == "1",
+            Err(_) => false,
+        };
+
+        // -Z can only be used on nightly builds; other builds complain loudly.
+        // Since incremental builds only work on nightly anyway, we silently
+        // ignore CARGO_INCREMENTAL on anything but nightly. This allows users
+        // to always have CARGO_INCREMENTAL set without getting unexpected
+        // errors on stable/beta builds.
+        let is_nightly =
+            config.rustc()?.verbose_version.contains("-nightly") ||
+            config.rustc()?.verbose_version.contains("-dev");
+        let incremental_enabled = incremental_enabled && is_nightly;
+
+        // Load up the jobserver that we'll use to manage our parallelism. This
+        // is the same as the GNU make implementation of a jobserver, and
+        // intentionally so! It's hoped that we can interact with GNU make and
+        // all share the same jobserver.
+        //
+        // Note that if we don't have a jobserver in our environment then we
+        // create our own, and we create it with `n-1` tokens because one token
+        // is ourself, a running process.
+        let jobserver = match config.jobserver_from_env() {
+            Some(c) => c.clone(),
+            None => Client::new(build_config.jobs as usize - 1).chain_err(|| {
+                "failed to create jobserver"
+            })?,
+        };
 
         Ok(Context {
             ws: ws,
@@ -100,6 +133,8 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             links: Links::new(),
             used_in_plugin: HashSet::new(),
             incremental_enabled: incremental_enabled,
+            jobserver: jobserver,
+            target_filenames: HashMap::new(),
         })
     }
 
@@ -108,12 +143,12 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     pub fn prepare(&mut self) -> CargoResult<()> {
         let _p = profile::start("preparing layout");
 
-        self.host.prepare().chain_error(|| {
+        self.host.prepare().chain_err(|| {
             internal(format!("couldn't prepare build directories"))
         })?;
         match self.target {
             Some(ref mut target) => {
-                target.prepare().chain_error(|| {
+                target.prepare().chain_err(|| {
                     internal(format!("couldn't prepare build directories"))
                 })?;
             }
@@ -175,6 +210,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                               -> CargoResult<()> {
         let rustflags = env_args(self.config,
                                  &self.build_config,
+                                 &self.info(&kind),
                                  kind,
                                  "RUSTFLAGS")?;
         let mut process = self.config.rustc()?.process();
@@ -192,15 +228,16 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         }
 
         let mut with_cfg = process.clone();
+        with_cfg.arg("--print=sysroot");
         with_cfg.arg("--print=cfg");
 
-        let mut has_cfg = true;
+        let mut has_cfg_and_sysroot = true;
         let output = with_cfg.exec_with_output().or_else(|_| {
-            has_cfg = false;
+            has_cfg_and_sysroot = false;
             process.exec_with_output()
-        }).chain_error(|| {
-            human(format!("failed to run `rustc` to learn about \
-                           target-specific information"))
+        }).chain_err(|| {
+            format!("failed to run `rustc` to learn about \
+                     target-specific information")
         })?;
 
         let error = str::from_utf8(&output.stderr).unwrap();
@@ -233,7 +270,30 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             map.insert(crate_type.to_string(), Some((prefix.to_string(), suffix.to_string())));
         }
 
-        let cfg = if has_cfg {
+        if has_cfg_and_sysroot {
+            let line = match lines.next() {
+                Some(line) => line,
+                None => bail!("output of --print=sysroot missing when learning about \
+                               target-specific information from rustc"),
+            };
+            let mut rustlib = PathBuf::from(line);
+            if kind == Kind::Host {
+                if cfg!(windows) {
+                    rustlib.push("bin");
+                } else {
+                    rustlib.push("lib");
+                }
+                self.compilation.host_dylib_path = Some(rustlib);
+            } else {
+                rustlib.push("lib");
+                rustlib.push("rustlib");
+                rustlib.push(self.target_triple());
+                rustlib.push("lib");
+                self.compilation.target_dylib_path = Some(rustlib);
+            }
+        }
+
+        let cfg = if has_cfg_and_sysroot {
             Some(try!(lines.map(Cfg::from_str).collect()))
         } else {
             None
@@ -324,6 +384,11 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         self.host.deps()
     }
 
+    /// Return the root of the build output tree
+    pub fn target_root(&self) -> &Path {
+        self.host.dest()
+    }
+
     /// Returns the appropriate output directory for the specified package and
     /// target.
     pub fn out_dir(&mut self, unit: &Unit) -> PathBuf {
@@ -377,16 +442,17 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // Note, though, that the compiler's build system at least wants
         // path dependencies (eg libstd) to have hashes in filenames. To account for
         // that we have an extra hack here which reads the
-        // `__CARGO_DEFAULT_METADATA` environment variable and creates a
+        // `__CARGO_DEFAULT_LIB_METADATA` environment variable and creates a
         // hash in the filename if that's present.
         //
         // This environment variable should not be relied on! It's
         // just here for rustbuild. We need a more principled method
         // doing this eventually.
+        let __cargo_default_lib_metadata = env::var("__CARGO_DEFAULT_LIB_METADATA");
         if !unit.profile.test &&
-            unit.target.is_dylib() &&
+            (unit.target.is_dylib() || unit.target.is_cdylib()) &&
             unit.pkg.package_id().source_id().is_path() &&
-            !env::var("__CARGO_DEFAULT_LIB_METADATA").is_ok() {
+            !__cargo_default_lib_metadata.is_ok() {
             return None;
         }
 
@@ -396,26 +462,41 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // to pull crates from anywhere w/o worrying about conflicts
         unit.pkg.package_id().hash(&mut hasher);
 
+        // Add package properties which map to environment variables
+        // exposed by Cargo
+        let manifest_metadata = unit.pkg.manifest().metadata();
+        manifest_metadata.authors.hash(&mut hasher);
+        manifest_metadata.description.hash(&mut hasher);
+        manifest_metadata.homepage.hash(&mut hasher);
+
         // Also mix in enabled features to our metadata. This'll ensure that
         // when changing feature sets each lib is separately cached.
-        match self.resolve.features(unit.pkg.package_id()) {
-            Some(features) => {
-                let mut feat_vec: Vec<&String> = features.iter().collect();
-                feat_vec.sort();
-                feat_vec.hash(&mut hasher);
-            }
-            None => Vec::<&String>::new().hash(&mut hasher),
-        }
+        self.resolve.features_sorted(unit.pkg.package_id()).hash(&mut hasher);
 
         // Throw in the profile we're compiling with. This helps caching
         // panic=abort and panic=unwind artifacts, additionally with various
         // settings like debuginfo and whatnot.
         unit.profile.hash(&mut hasher);
 
+        // Artifacts compiled for the host should have a different metadata
+        // piece than those compiled for the target, so make sure we throw in
+        // the unit's `kind` as well
+        unit.kind.hash(&mut hasher);
+
         // Finally throw in the target name/kind. This ensures that concurrent
         // compiles of targets in the same crate don't collide.
         unit.target.name().hash(&mut hasher);
         unit.target.kind().hash(&mut hasher);
+
+        if let Ok(ref rustc) = self.config.rustc() {
+            rustc.verbose_version.hash(&mut hasher);
+        }
+
+        // Seed the contents of __CARGO_DEFAULT_LIB_METADATA to the hasher if present.
+        // This should be the release channel, to get a different hash for each channel.
+        if let Ok(ref channel) = __cargo_default_lib_metadata {
+            channel.hash(&mut hasher);
+        }
 
         Some(Metadata(hasher.finish()))
     }
@@ -441,7 +522,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     /// Returns a tuple with the directory and name of the hard link we expect
     /// our target to be copied to. Eg, file_stem may be out_dir/deps/foo-abcdef
     /// and link_stem would be out_dir/foo
-    /// This function returns it in two parts so the caller can add prefix/suffis
+    /// This function returns it in two parts so the caller can add prefix/suffix
     /// to filename separately
 
     /// Returns an Option because in some cases we don't want to link
@@ -481,8 +562,12 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     /// filename: filename rustc compiles to. (Often has metadata suffix).
     /// link_dst: Optional file to link/copy the result to (without metadata suffix)
     /// linkable: Whether possible to link against file (eg it's a library)
-    pub fn target_filenames(&mut self, unit: &Unit)
-                            -> CargoResult<Vec<(PathBuf, Option<PathBuf>, bool)>> {
+    pub fn target_filenames(&mut self, unit: &Unit<'a>)
+                            -> CargoResult<Arc<Vec<(PathBuf, Option<PathBuf>, bool)>>> {
+        if let Some(cache) = self.target_filenames.get(unit) {
+            return Ok(cache.clone())
+        }
+
         let out_dir = self.out_dir(unit);
         let stem = self.file_stem(unit);
         let link_stem = self.link_stem(unit);
@@ -558,6 +643,9 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                   unit.pkg, self.target_triple());
         }
         info!("Target filenames: {:?}", ret);
+
+        let ret = Arc::new(ret);
+        self.target_filenames.insert(*unit, ret.clone());
         Ok(ret)
     }
 
@@ -598,11 +686,8 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
                 // If the dependency is optional, then we're only activating it
                 // if the corresponding feature was activated
-                if d.is_optional() {
-                    match self.resolve.features(id) {
-                        Some(f) if f.contains(d.name()) => {}
-                        _ => return false,
-                    }
+                if d.is_optional() && !self.resolve.features(id).contains(d.name()) {
+                    return false;
                 }
 
                 // If we've gotten past all that, then this dependency is
@@ -646,7 +731,15 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // Integration tests/benchmarks require binaries to be built
         if unit.profile.test &&
            (unit.target.is_test() || unit.target.is_bench()) {
-            ret.extend(unit.pkg.targets().iter().filter(|t| t.is_bin()).map(|t| {
+            ret.extend(unit.pkg.targets().iter().filter(|t| {
+                let no_required_features = Vec::new();
+
+                t.is_bin() &&
+                // Skip binaries with required features that have not been selected.
+                t.required_features().unwrap_or(&no_required_features).iter().all(|f| {
+                    self.resolve.features(id).contains(f)
+                })
+            }).map(|t| {
                 Unit {
                     pkg: unit.pkg,
                     target: t,
@@ -856,7 +949,11 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     }
 
     pub fn incremental_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
-        if self.incremental_enabled {
+        // Only enable incremental compilation for sources the user can modify.
+        // For things that change infrequently, non-incremental builds yield
+        // better performance.
+        // (see also https://github.com/rust-lang/cargo/issues/3972)
+        if self.incremental_enabled && unit.pkg.package_id().source_id().is_path() {
             Ok(vec![format!("-Zincremental={}", self.layout(unit.kind).incremental().display())])
         } else {
             Ok(vec![])
@@ -864,15 +961,22 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     }
 
     pub fn rustflags_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
-        env_args(self.config, &self.build_config, unit.kind, "RUSTFLAGS")
+        env_args(self.config, &self.build_config, self.info(&unit.kind), unit.kind, "RUSTFLAGS")
     }
 
     pub fn rustdocflags_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
-        env_args(self.config, &self.build_config, unit.kind, "RUSTDOCFLAGS")
+        env_args(self.config, &self.build_config, self.info(&unit.kind), unit.kind, "RUSTDOCFLAGS")
     }
 
     pub fn show_warnings(&self, pkg: &PackageId) -> bool {
         pkg.source_id().is_path() || self.config.extra_verbose()
+    }
+
+    fn info(&self, kind: &Kind) -> &TargetInfo {
+        match *kind {
+            Kind::Host => &self.host_info,
+            Kind::Target => &self.target_info,
+        }
     }
 }
 
@@ -880,6 +984,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 // RUSTFLAGS environment variable and similar config values
 fn env_args(config: &Config,
             build_config: &BuildConfig,
+            target_info: &TargetInfo,
             kind: Kind,
             name: &str) -> CargoResult<Vec<String>> {
     // We *want* to apply RUSTFLAGS only to builds for the
@@ -920,13 +1025,34 @@ fn env_args(config: &Config,
         return Ok(args.collect());
     }
 
+    let mut rustflags = Vec::new();
+
     let name = name.chars().flat_map(|c| c.to_lowercase()).collect::<String>();
-    // Then the target.*.rustflags value
+    // Then the target.*.rustflags value...
     let target = build_config.requested_target.as_ref().unwrap_or(&build_config.host_triple);
     let key = format!("target.{}.{}", target, name);
     if let Some(args) = config.get_list_or_split_string(&key)? {
         let args = args.val.into_iter();
-        return Ok(args.collect());
+        rustflags.extend(args);
+    }
+    // ...including target.'cfg(...)'.rustflags
+    if let Some(ref target_cfg) = target_info.cfg {
+        if let Some(table) = config.get_table("target")? {
+            let cfgs = table.val.iter().map(|(t, _)| (CfgExpr::from_str(t), t))
+                .filter_map(|(c, n)| c.map(|c| (c, n)).ok())
+                .filter(|&(ref c, _)| c.matches(target_cfg));
+            for (_, n) in cfgs {
+                let key = format!("target.'{}'.{}", n, name);
+                if let Some(args) = config.get_list_or_split_string(&key)? {
+                    let args = args.val.into_iter();
+                    rustflags.extend(args);
+                }
+            }
+        }
+    }
+
+    if !rustflags.is_empty() {
+        return Ok(rustflags);
     }
 
     // Then the build.rustflags value

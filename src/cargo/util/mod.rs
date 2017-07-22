@@ -1,10 +1,9 @@
 pub use self::cfg::{Cfg, CfgExpr};
-pub use self::config::{Config, homedir};
+pub use self::config::{Config, ConfigValue, homedir};
 pub use self::dependency_queue::{DependencyQueue, Fresh, Dirty, Freshness};
-pub use self::errors::{CargoResult, CargoError, ChainError, CliResult};
+pub use self::errors::{CargoResult, CargoResultExt, CargoError, CargoErrorKind, Test, CliResult};
 pub use self::errors::{CliError, ProcessError, CargoTestError};
-pub use self::errors::{Human, caused_human};
-pub use self::errors::{process_error, internal_error, internal, human};
+pub use self::errors::{process_error, internal};
 pub use self::flock::{FileLock, Filesystem};
 pub use self::graph::Graph;
 pub use self::hex::{to_hex, short_hash, hash_u64};
@@ -17,7 +16,7 @@ pub use self::rustc::Rustc;
 pub use self::sha256::Sha256;
 pub use self::to_semver::ToSemver;
 pub use self::to_url::ToUrl;
-pub use self::vcs::{GitRepo, HgRepo};
+pub use self::vcs::{GitRepo, HgRepo, PijulRepo};
 pub use self::read2::read2;
 
 pub mod config;

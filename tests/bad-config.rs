@@ -121,6 +121,9 @@ Caused by:
   Couldn't load Cargo configuration
 
 Caused by:
+  failed to merge configuration at `[..]`
+
+Caused by:
   failed to merge key `foo` between files:
   file 1: [..]foo[..]foo[..]config
   file 2: [..]foo[..]config
@@ -206,12 +209,13 @@ fn invalid_global_config() {
 [ERROR] Couldn't load Cargo configuration
 
 Caused by:
-  could not parse TOML configuration in `[..]config`
+  could not parse TOML configuration in `[..]`
 
 Caused by:
   could not parse input as TOML
-[..]config:1:2 expected `=`, but found eof
 
+Caused by:
+  expected an equals, found eof at line 1
 "));
 }
 
@@ -232,7 +236,7 @@ fn bad_cargo_lock() {
 [ERROR] failed to parse lock file at: [..]Cargo.lock
 
 Caused by:
-  expected a value of type `string` for the key `package.name`
+  missing field `name` for key `package`
 "));
 }
 
@@ -315,7 +319,7 @@ fn bad_source_in_cargo_lock() {
 [ERROR] failed to parse lock file at: [..]
 
 Caused by:
-  invalid source `You shall not parse` for the key `package.source`
+  invalid source `You shall not parse` for key `package.source`
 "));
 }
 
@@ -421,8 +425,9 @@ fn malformed_override() {
 
 Caused by:
   could not parse input as TOML
-Cargo.toml:[..]
 
+Caused by:
+  expected a table key, found a newline at line 8
 "));
 }
 
@@ -686,7 +691,7 @@ fn ambiguous_git_reference() {
         authors = []
 
         [dependencies.bar]
-        git = "https://example.com"
+        git = "https://127.0.0.1"
         branch = "master"
         tag = "some-tag"
     "#)
@@ -860,7 +865,7 @@ fn both_git_and_path_specified() {
         authors = []
 
         [dependencies.bar]
-        git = "https://example.com"
+        git = "https://127.0.0.1"
         path = "bar"
     "#)
         .file("src/lib.rs", "");
@@ -943,5 +948,72 @@ fn bad_source_config7() {
     assert_that(p.cargo_process("build"),
                 execs().with_status(101).with_stderr("\
 error: more than one source URL specified for `source.foo`
+"));
+}
+
+#[test]
+fn bad_dependency() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.0"
+            authors = []
+
+            [dependencies]
+            bar = 3
+        "#)
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+error: failed to parse manifest at `[..]`
+
+Caused by:
+  invalid type: integer `3`, expected a version string like [..]
+"));
+}
+
+#[test]
+fn bad_debuginfo() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.0"
+            authors = []
+
+            [profile.dev]
+            debug = 'a'
+        "#)
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+error: failed to parse manifest at `[..]`
+
+Caused by:
+  invalid type: string \"a\", expected a boolean or an integer for [..]
+"));
+}
+
+#[test]
+fn bad_opt_level() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.0"
+            authors = []
+            build = 3
+        "#)
+        .file("src/lib.rs", "");
+
+    assert_that(p.cargo_process("build"),
+                execs().with_status(101).with_stderr("\
+error: failed to parse manifest at `[..]`
+
+Caused by:
+  invalid type: integer `3`, expected a boolean or a string for key [..]
 "));
 }

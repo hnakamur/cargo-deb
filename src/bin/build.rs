@@ -21,12 +21,17 @@ pub struct Options {
     flag_release: bool,
     flag_lib: bool,
     flag_bin: Vec<String>,
+    flag_bins: bool,
     flag_example: Vec<String>,
+    flag_examples: bool,
     flag_test: Vec<String>,
+    flag_tests: bool,
     flag_bench: Vec<String>,
+    flag_benches: bool,
     flag_locked: bool,
     flag_frozen: bool,
     flag_all: bool,
+    flag_exclude: Vec<String>,
 }
 
 pub const USAGE: &'static str = "
@@ -39,12 +44,17 @@ Options:
     -h, --help                   Print this message
     -p SPEC, --package SPEC ...  Package to build
     --all                        Build all packages in the workspace
+    --exclude SPEC ...           Exclude packages from the build
     -j N, --jobs N               Number of parallel jobs, defaults to # of CPUs
     --lib                        Build only this package's library
     --bin NAME                   Build only the specified binary
+    --bins                       Build all binaries
     --example NAME               Build only the specified example
+    --examples                   Build all examples
     --test NAME                  Build only the specified test target
-    --bench NAME                 Build only the specified benchmark target
+    --tests                      Build all tests
+    --bench NAME                 Build only the specified bench target
+    --benches                    Build all benches
     --release                    Build artifacts in release mode, with optimizations
     --features FEATURES          Space-separated list of features to also build
     --all-features               Build all available features
@@ -65,6 +75,7 @@ current package is built. For more information on SPEC and its format, see the
 
 All packages in the workspace are built if the `--all` flag is supplied. The
 `--all` flag may be supplied in the presence of a virtual manifest.
+Note that `--exclude` has to be specified in conjunction with the `--all` flag.
 
 Compilation can be configured via the use of profiles which are configured in
 the manifest. The default profile for this command is `dev`, but passing
@@ -82,11 +93,9 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
 
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
 
-    let spec = if options.flag_all {
-        Packages::All
-    } else {
-        Packages::Packages(&options.flag_package)
-    };
+    let spec = Packages::from_flags(options.flag_all,
+                                    &options.flag_exclude,
+                                    &options.flag_package)?;
 
     let opts = CompileOptions {
         config: config,
@@ -99,10 +108,10 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
         mode: ops::CompileMode::Build,
         release: options.flag_release,
         filter: ops::CompileFilter::new(options.flag_lib,
-                                        &options.flag_bin,
-                                        &options.flag_test,
-                                        &options.flag_example,
-                                        &options.flag_bench),
+                                        &options.flag_bin, options.flag_bins,
+                                        &options.flag_test, options.flag_tests,
+                                        &options.flag_example, options.flag_examples,
+                                        &options.flag_bench, options.flag_benches,),
         message_format: options.flag_message_format,
         target_rustdoc_args: None,
         target_rustc_args: None,

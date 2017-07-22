@@ -41,6 +41,15 @@ building native code. More information can be found in the build script
 build = "build.rs"
 ```
 
+## The `documentation` field (optional)
+
+This field specifies a URL to a website hosting the crate's documentation.
+If no URL is specified in the manifest file, [crates.io][cratesio] will
+automatically link your crate to the corresponding [docs.rs][docsrs] page.
+
+[docsrs]: https://docs.rs/
+[cratesio]: https://crates.io/
+
 ## The `exclude` and `include` fields (optional)
 
 You can explicitly specify to Cargo that a set of [globs][globs] should be
@@ -142,8 +151,8 @@ license = "..."
 license-file = "..."
 
 # Optional specification of badges to be displayed on crates.io. The badges
-# currently available are Travis CI and Appveyor latest build status, specified
-# using the following parameters:
+# currently available are Travis CI, Appveyor, and GitLab latest build status,
+# specified using the following parameters:
 [badges]
 # Travis CI: `repository` is required. `branch` is optional; default is `master`
 travis-ci = { repository = "...", branch = "master" }
@@ -151,6 +160,19 @@ travis-ci = { repository = "...", branch = "master" }
 # `service` is optional; valid values are `github` (default), `bitbucket`, and
 # `gitlab`.
 appveyor = { repository = "...", branch = "master", service = "github" }
+# GitLab: `repository` is required. `branch` is optional; default is `master`
+gitlab = { repository = "...", branch = "master" }
+# Is it maintained resolution time: `repository` is required.
+is-it-maintained-issue-resolution = { repository = "..." }
+# Is it maintained percentage of open issues: `repository` is required.
+is-it-maintained-open-issues = { repository = "..." }
+# Codecov: `repository` is required. `branch` is optional; default is `master`
+# `service` is optional; valid values are `github` (default), `bitbucket`, and
+# `gitlab`.
+codecov = { repository = "...", branch = "master", service = "github" }
+# Coveralls: `repository` is required. `branch` is optional; default is `master`
+# `service` is optional; valid values are `github` (default) and `bitbucket`.
+coveralls = { repository = "...", branch = "master", service = "github" }
 ```
 
 The [crates.io](https://crates.io) registry will render the description, display
@@ -385,7 +407,10 @@ as:
 [workspace]
 
 # Optional key, inferred if not present
-members = ["path/to/member1", "path/to/member2"]
+members = ["path/to/member1", "path/to/member2", "path/to/member3/*"]
+
+# Optional key, empty if not present
+exclude = ["path1", "path/to/dir2"]
 ```
 
 Workspaces were added to Cargo as part [RFC 1525] and have a number of
@@ -408,7 +433,12 @@ manifest, is responsible for defining the entire workspace. All `path`
 dependencies residing in the workspace directory become members. You can add
 additional packages to the workspace by listing them in the `members` key. Note
 that members of the workspaces listed explicitly will also have their path
-dependencies included in the workspace.
+dependencies included in the workspace. Sometimes a project may have a lot of
+workspace members and it can be onerous to keep up to date. The path dependency
+can also use [globs][globs] to match multiple paths. Finally, the `exclude`
+key can be used to blacklist paths from being included in a workspace. This can
+be useful if some path dependencies aren't desired to be in the workspace at
+all.
 
 The `package.workspace` manifest key (described above) is used in member crates
 to point at a workspace's root crate. If this key is omitted then it is inferred
@@ -427,7 +457,11 @@ Most of the time workspaces will not need to be dealt with as `cargo new` and
 If your project is an executable, name the main source file `src/main.rs`. If it
 is a library, name the main source file `src/lib.rs`.
 
-Cargo will also treat any files located in `src/bin/*.rs` as executables.
+Cargo will also treat any files located in `src/bin/*.rs` as executables.  Do
+note, however, once you add a `[[bin]]` section ([see
+below](#configuring-a-target)), Cargo will no longer automatically build files
+located in `src/bin/*.rs`.  Instead you must create a `[[bin]]` section for
+each file you want to build.
 
 Your project can optionally contain folders named `examples`, `tests`, and
 `benches`, which Cargo will treat as containing examples,
@@ -549,6 +583,25 @@ proc-macro = false
 harness = true
 ```
 
+## The `required-features` field (optional)
+
+The `required-features` field specifies which features the target needs in order
+to be built. If any of the required features are not selected, the target will
+be skipped. This is only relevant for the `[[bin]]`, `[[bench]]`, `[[test]]`,
+and `[[example]]` sections, it has no effect on `[lib]`.
+
+```toml
+[features]
+# ...
+postgres = []
+sqlite = []
+tools = []
+
+[[bin]]
+# ...
+required-features = ["postgres", "tools"]
+```
+
 # Building dynamic or static libraries
 
 If your project produces a library, you can specify which kind of library to
@@ -568,7 +621,7 @@ compile packages (dependencies) based on the requirements of the project that
 includes them.
 
 You can read more about the different crate types in the
-[Rust Reference Manual](https://doc.rust-lang.org/reference.html#linkage)
+[Rust Reference Manual](https://doc.rust-lang.org/reference/linkage.html)
 
 # The `[replace]` Section
 

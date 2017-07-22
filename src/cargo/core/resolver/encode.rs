@@ -2,15 +2,16 @@ use std::collections::{HashMap, HashSet, BTreeMap};
 use std::fmt;
 use std::str::FromStr;
 
-use regex::Regex;
-use rustc_serialize::{Encodable, Encoder, Decodable, Decoder};
+use serde::ser;
+use serde::de;
 
 use core::{Package, PackageId, SourceId, Workspace};
-use util::{CargoResult, Graph, Config, internal, ChainError, CargoError};
+use util::{Graph, Config, internal};
+use util::errors::{CargoResult, CargoResultExt, CargoError};
 
 use super::Resolve;
 
-#[derive(RustcEncodable, RustcDecodable, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct EncodableResolve {
     package: Option<Vec<EncodableDependency>>,
     /// `root` is optional to allow forward compatibility.
@@ -132,7 +133,7 @@ impl EncodableResolve {
         for (k, v) in metadata.iter().filter(|p| p.0.starts_with(prefix)) {
             to_remove.push(k.to_string());
             let k = &k[prefix.len()..];
-            let enc_id: EncodablePackageId = k.parse().chain_error(|| {
+            let enc_id: EncodablePackageId = k.parse().chain_err(|| {
                 internal("invalid encoding of checksum in lockfile")
             })?;
             let id = match lookup_id(&enc_id) {
@@ -154,6 +155,7 @@ impl EncodableResolve {
 
         Ok(Resolve {
             graph: g,
+            empty_features: HashSet::new(),
             features: HashMap::new(),
             replacements: replacements,
             checksums: checksums,
@@ -207,7 +209,7 @@ fn build_path_deps(ws: &Workspace) -> HashMap<String, SourceId> {
     }
 }
 
-#[derive(RustcEncodable, RustcDecodable, Debug, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub struct EncodableDependency {
     name: String,
     version: String,
@@ -234,19 +236,22 @@ impl fmt::Display for EncodablePackageId {
 }
 
 impl FromStr for EncodablePackageId {
-    type Err = Box<CargoError>;
+    type Err = CargoError;
 
     fn from_str(s: &str) -> CargoResult<EncodablePackageId> {
-        let regex = Regex::new(r"^([^ ]+) ([^ ]+)(?: \(([^\)]+)\))?$").unwrap();
-        let captures = regex.captures(s).ok_or_else(|| {
+        let mut s = s.splitn(3, ' ');
+        let name = s.next().unwrap();
+        let version = s.next().ok_or_else(|| {
             internal("invalid serialized PackageId")
         })?;
-
-        let name = captures.at(1).unwrap();
-        let version = captures.at(2).unwrap();
-
-        let source_id = match captures.at(3) {
-            Some(s) => Some(SourceId::from_url(s)?),
+        let source_id = match s.next() {
+            Some(s) => {
+                if s.starts_with("(") && s.ends_with(")") {
+                    Some(SourceId::from_url(&s[1..s.len() - 1])?)
+                } else {
+                    bail!("invalid serialized PackageId")
+                }
+            }
             None => None,
         };
 
@@ -258,17 +263,21 @@ impl FromStr for EncodablePackageId {
     }
 }
 
-impl Encodable for EncodablePackageId {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        self.to_string().encode(s)
+impl ser::Serialize for EncodablePackageId {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+        where S: ser::Serializer,
+    {
+        s.collect_str(self)
     }
 }
 
-impl Decodable for EncodablePackageId {
-    fn decode<D: Decoder>(d: &mut D) -> Result<EncodablePackageId, D::Error> {
-        String::decode(d).and_then(|string| {
+impl<'de> de::Deserialize<'de> for EncodablePackageId {
+    fn deserialize<D>(d: D) -> Result<EncodablePackageId, D::Error>
+        where D: de::Deserializer<'de>,
+    {
+        String::deserialize(d).and_then(|string| {
             string.parse::<EncodablePackageId>()
-                  .map_err(|e| d.error(&e.to_string()))
+                  .map_err(de::Error::custom)
         })
     }
 }
@@ -279,8 +288,10 @@ pub struct WorkspaceResolve<'a, 'cfg: 'a> {
     pub use_root_key: bool,
 }
 
-impl<'a, 'cfg> Encodable for WorkspaceResolve<'a, 'cfg> {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl<'a, 'cfg> ser::Serialize for WorkspaceResolve<'a, 'cfg> {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+        where S: ser::Serializer,
+    {
         let mut ids: Vec<&PackageId> = self.resolve.graph.iter().collect();
         ids.sort();
 
@@ -318,7 +329,7 @@ impl<'a, 'cfg> Encodable for WorkspaceResolve<'a, 'cfg> {
             package: Some(encodable),
             root: root,
             metadata: metadata,
-        }.encode(s)
+        }.serialize(s)
     }
 }
 

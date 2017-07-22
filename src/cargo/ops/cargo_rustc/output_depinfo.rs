@@ -22,7 +22,7 @@ fn render_filename<P: AsRef<Path>>(path: P, basedir: Option<&str>) -> CargoResul
 fn add_deps_for_unit<'a, 'b>(deps: &mut HashSet<PathBuf>, context: &mut Context<'a, 'b>,
     unit: &Unit<'a>, visited: &mut HashSet<Unit<'a>>) -> CargoResult<()>
 {
-    if !visited.insert(unit.clone()) {
+    if !visited.insert(*unit) {
         return Ok(());
     }
 
@@ -61,8 +61,8 @@ pub fn output_depinfo<'a, 'b>(context: &mut Context<'a, 'b>, unit: &Unit<'a>) ->
     let mut visited = HashSet::new();
     let success = add_deps_for_unit(&mut deps, context, unit, &mut visited).is_ok();
     let basedir = None; // TODO
-    for (_filename, link_dst, _linkable) in context.target_filenames(unit)? {
-        if let Some(link_dst) = link_dst {
+    for &(_, ref link_dst, _) in context.target_filenames(unit)?.iter() {
+        if let Some(ref link_dst) = *link_dst {
             let output_path = link_dst.with_extension("d");
             if success {
                 let mut outfile = BufWriter::new(File::create(output_path)?);
@@ -76,13 +76,10 @@ pub fn output_depinfo<'a, 'b>(context: &mut Context<'a, 'b>, unit: &Unit<'a>) ->
                 // dep-info generation failed, so delete output file. This will usually
                 // cause the build system to always rerun the build rule, which is correct
                 // if inefficient.
-                match fs::remove_file(output_path) {
-                    Err(err) => {
-                        if err.kind() != ErrorKind::NotFound {
-                            return Err(err.into());
-                        }
+                if let Err(err) = fs::remove_file(output_path) {
+                    if err.kind() != ErrorKind::NotFound {
+                        return Err(err.into());
                     }
-                    _ => ()
                 }
             }
         }

@@ -8,7 +8,7 @@ use glob::Pattern;
 
 use core::{Package, PackageId, Summary, SourceId, Source, Dependency, Registry};
 use ops;
-use util::{self, CargoResult, internal, internal_error, human, ChainError};
+use util::{self, CargoError, CargoResult, internal};
 use util::Config;
 
 pub struct PathSource<'cfg> {
@@ -90,7 +90,7 @@ impl<'cfg> PathSource<'cfg> {
 
         let parse = |p: &String| {
             Pattern::new(p).map_err(|e| {
-                human(format!("could not parse pattern `{}`: {}", p, e))
+                CargoError::from(format!("could not parse pattern `{}`: {}", p, e))
             })
         };
 
@@ -107,10 +107,10 @@ impl<'cfg> PathSource<'cfg> {
                          .collect::<Result<Vec<_>, _>>()?;
 
         let mut filter = |p: &Path| {
-            let relative_path = util::without_prefix(p, &root).unwrap();
-            include.iter().any(|p| p.matches_path(&relative_path)) || {
+            let relative_path = util::without_prefix(p, root).unwrap();
+            include.iter().any(|p| p.matches_path(relative_path)) || {
                 include.is_empty() &&
-                 !exclude.iter().any(|p| p.matches_path(&relative_path))
+                 !exclude.iter().any(|p| p.matches_path(relative_path))
             }
         };
 
@@ -154,8 +154,8 @@ impl<'cfg> PathSource<'cfg> {
                       -> CargoResult<Vec<PathBuf>> {
         warn!("list_files_git {}", pkg.package_id());
         let index = repo.index()?;
-        let root = repo.workdir().chain_error(|| {
-            internal_error("Can't list files on a bare repository.", "")
+        let root = repo.workdir().ok_or_else(|| {
+            internal("Can't list files on a bare repository.")
         })?;
         let pkg_path = pkg.root();
 
@@ -171,24 +171,24 @@ impl<'cfg> PathSource<'cfg> {
         let index_files = index.iter().map(|entry| {
             use libgit2_sys::GIT_FILEMODE_COMMIT;
             let is_dir = entry.mode == GIT_FILEMODE_COMMIT as u32;
-            (join(&root, &entry.path), Some(is_dir))
+            (join(root, &entry.path), Some(is_dir))
         });
         let mut opts = git2::StatusOptions::new();
         opts.include_untracked(true);
-        if let Some(suffix) = util::without_prefix(pkg_path, &root) {
+        if let Some(suffix) = util::without_prefix(pkg_path, root) {
             opts.pathspec(suffix);
         }
         let statuses = repo.statuses(Some(&mut opts))?;
         let untracked = statuses.iter().filter_map(|entry| {
             match entry.status() {
-                git2::STATUS_WT_NEW => Some((join(&root, entry.path_bytes()), None)),
+                git2::STATUS_WT_NEW => Some((join(root, entry.path_bytes()), None)),
                 _ => None
             }
         });
 
         let mut subpackages_found = Vec::new();
 
-        'outer: for (file_path, is_dir) in index_files.chain(untracked) {
+        for (file_path, is_dir) in index_files.chain(untracked) {
             let file_path = file_path?;
 
             // Filter out files blatantly outside this package. This is helped a
@@ -229,9 +229,9 @@ impl<'cfg> PathSource<'cfg> {
 
             if is_dir.unwrap_or_else(|| file_path.is_dir()) {
                 warn!("  found submodule {}", file_path.display());
-                let rel = util::without_prefix(&file_path, &root).unwrap();
-                let rel = rel.to_str().chain_error(|| {
-                    human(format!("invalid utf-8 filename: {}", rel.display()))
+                let rel = util::without_prefix(&file_path, root).unwrap();
+                let rel = rel.to_str().ok_or_else(|| {
+                    CargoError::from(format!("invalid utf-8 filename: {}", rel.display()))
                 })?;
                 // Git submodules are currently only named through `/` path
                 // separators, explicitly not `\` which windows uses. Who knew?
@@ -317,8 +317,15 @@ impl<'cfg> Debug for PathSource<'cfg> {
 }
 
 impl<'cfg> Registry for PathSource<'cfg> {
-    fn query(&mut self, dep: &Dependency) -> CargoResult<Vec<Summary>> {
-        self.packages.query(dep)
+    fn query(&mut self,
+             dep: &Dependency,
+             f: &mut FnMut(Summary)) -> CargoResult<()> {
+        for s in self.packages.iter().map(|p| p.summary()) {
+            if dep.matches(s) {
+                f(s.clone())
+            }
+        }
+        Ok(())
     }
 }
 
@@ -348,7 +355,7 @@ impl<'cfg> Source for PathSource<'cfg> {
 
     fn fingerprint(&self, pkg: &Package) -> CargoResult<String> {
         if !self.updated {
-            return Err(internal_error("BUG: source was not updated", ""));
+            return Err(internal("BUG: source was not updated"));
         }
 
         let mut max = FileTime::zero();

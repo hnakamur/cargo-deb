@@ -4,7 +4,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use core::{Package, SourceId, PackageId, EitherManifest};
-use util::{self, paths, CargoResult, human, Config, ChainError};
+use util::{self, paths, Config};
+use util::errors::{CargoResult, CargoResultExt};
 use util::important_paths::find_project_manifest_exact;
 use util::toml::Layout;
 
@@ -15,9 +16,9 @@ pub fn read_manifest(path: &Path, source_id: &SourceId, config: &Config)
 
     let layout = Layout::from_project_path(path.parent().unwrap());
     let root = layout.root.clone();
-    util::toml::to_manifest(&contents, source_id, layout, config).chain_error(|| {
-        human(format!("failed to parse manifest at `{}`",
-                      root.join("Cargo.toml").display()))
+    util::toml::to_manifest(&contents, source_id, layout, config).chain_err(|| {
+        format!("failed to parse manifest at `{}`",
+                root.join("Cargo.toml").display())
     })
 }
 
@@ -73,7 +74,7 @@ pub fn read_packages(path: &Path, source_id: &SourceId, config: &Config)
     })?;
 
     if all_packages.is_empty() {
-        Err(human(format!("Could not find Cargo.toml in `{}`", path.display())))
+        Err(format!("Could not find Cargo.toml in `{}`", path.display()).into())
     } else {
         Ok(all_packages.into_iter().map(|(_, v)| v).collect())
     }
@@ -94,8 +95,8 @@ fn walk(path: &Path, callback: &mut FnMut(&Path) -> CargoResult<bool>)
             return Ok(())
         }
         Err(e) => {
-            return Err(human(e)).chain_error(|| {
-                human(format!("failed to read directory `{}`", path.display()))
+            return Err(e).chain_err(|| {
+                format!("failed to read directory `{}`", path.display())
             })
         }
     };
@@ -121,7 +122,22 @@ fn read_nested_packages(path: &Path,
 
     let manifest_path = find_project_manifest_exact(path, "Cargo.toml")?;
 
-    let (manifest, nested) = read_manifest(&manifest_path, source_id, config)?;
+    let (manifest, nested) = match read_manifest(&manifest_path, source_id, config) {
+        Err(_) => {
+            // Ignore malformed manifests found on git repositories
+            //
+            // git source try to find and read all manifests from the repository
+            // but since it's not possible to exclude folders from this search
+            // it's safer to ignore malformed manifests to avoid
+            //
+            // TODO: Add a way to exclude folders?
+            info!("skipping malformed package found at `{}`",
+                  path.to_string_lossy());
+            return Ok(());
+        }
+        Ok(tuple) => tuple
+    };
+
     let manifest = match manifest {
         EitherManifest::Real(manifest) => manifest,
         EitherManifest::Virtual(..) => return Ok(()),

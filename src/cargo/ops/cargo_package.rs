@@ -7,11 +7,12 @@ use std::sync::Arc;
 use flate2::read::GzDecoder;
 use flate2::{GzBuilder, Compression};
 use git2;
-use tar::{Archive, Builder, Header};
+use tar::{Archive, Builder, Header, EntryType};
 
-use core::{SourceId, Package, PackageId, Workspace, Source};
+use core::{Package, Workspace, Source, SourceId};
 use sources::PathSource;
-use util::{self, CargoResult, human, internal, ChainError, Config, FileLock};
+use util::{self, internal, Config, FileLock};
+use util::errors::{CargoResult, CargoResultExt};
 use ops::{self, DefaultExecutor};
 
 pub struct PackageOpts<'cfg> {
@@ -67,21 +68,21 @@ pub fn package(ws: &Workspace,
     // it exists.
     config.shell().status("Packaging", pkg.package_id().to_string())?;
     dst.file().set_len(0)?;
-    tar(ws, &src, dst.file(), &filename).chain_error(|| {
-        human("failed to prepare local package for uploading")
+    tar(ws, &src, dst.file(), &filename).chain_err(|| {
+        "failed to prepare local package for uploading"
     })?;
     if opts.verify {
         dst.seek(SeekFrom::Start(0))?;
-        run_verify(ws, dst.file(), opts).chain_error(|| {
-            human("failed to verify package tarball")
+        run_verify(ws, dst.file(), opts).chain_err(|| {
+            "failed to verify package tarball"
         })?
     }
     dst.seek(SeekFrom::Start(0))?;
     {
         let src_path = dst.path();
         let dst_path = dst.parent().join(&filename);
-        fs::rename(&src_path, &dst_path).chain_error(|| {
-            human("failed to move temporary tarball into final location")
+        fs::rename(&src_path, &dst_path).chain_err(|| {
+            "failed to move temporary tarball into final location"
         })?;
     }
     Ok(Some(dst))
@@ -173,7 +174,8 @@ fn check_not_dirty(p: &Package, src: &PathSource) -> CargoResult<()> {
         if dirty.is_empty() {
             Ok(())
         } else {
-            bail!("{} dirty files found in the working directory:\n\n{}\n\n\
+            bail!("{} files in the working directory contain changes that were \
+                   not yet committed into git:\n\n{}\n\n\
                    to proceed despite this, pass the `--allow-dirty` flag",
                   dirty.len(), dirty.join("\n"))
         }
@@ -197,12 +199,9 @@ fn tar(ws: &Workspace,
     for file in src.list_files(pkg)?.iter() {
         let relative = util::without_prefix(&file, &root).unwrap();
         check_filename(relative)?;
-        let relative = relative.to_str().chain_error(|| {
-            human(format!("non-utf8 path in source directory: {}",
-                          relative.display()))
-        })?;
-        let mut file = File::open(file).chain_error(|| {
-            human(format!("failed to open for archiving: `{}`", file.display()))
+        let relative = relative.to_str().ok_or_else(|| {
+            format!("non-utf8 path in source directory: {}",
+                    relative.display())
         })?;
         config.shell().verbose(|shell| {
             shell.status("Archiving", &relative)
@@ -229,18 +228,41 @@ fn tar(ws: &Workspace,
         // unpack the selectors 0.4.0 crate on crates.io. Either that or take a
         // look at rust-lang/cargo#2326
         let mut header = Header::new_ustar();
-        let metadata = file.metadata().chain_error(|| {
-            human(format!("could not learn metadata for: `{}`", relative))
+        header.set_path(&path).chain_err(|| {
+            format!("failed to add to archive: `{}`", relative)
         })?;
-        header.set_path(&path).chain_error(|| {
-            human(format!("failed to add to archive: `{}`", relative))
+        let mut file = File::open(file).chain_err(|| {
+            format!("failed to open for archiving: `{}`", file.display())
+        })?;
+        let metadata = file.metadata().chain_err(|| {
+            format!("could not learn metadata for: `{}`", relative)
         })?;
         header.set_metadata(&metadata);
-        header.set_cksum();
 
-        ar.append(&header, &mut file).chain_error(|| {
-            internal(format!("could not archive source file `{}`", relative))
-        })?;
+        if relative == "Cargo.toml" {
+            let orig = Path::new(&path).with_file_name("Cargo.toml.orig");
+            header.set_path(&orig)?;
+            header.set_cksum();
+            ar.append(&header, &mut file).chain_err(|| {
+                internal(format!("could not archive source file `{}`", relative))
+            })?;
+
+            let mut header = Header::new_ustar();
+            let toml = pkg.to_registry_toml();
+            header.set_path(&path)?;
+            header.set_entry_type(EntryType::file());
+            header.set_mode(0o644);
+            header.set_size(toml.len() as u64);
+            header.set_cksum();
+            ar.append(&header, toml.as_bytes()).chain_err(|| {
+                internal(format!("could not archive source file `{}`", relative))
+            })?;
+        } else {
+            header.set_cksum();
+            ar.append(&header, &mut file).chain_err(|| {
+                internal(format!("could not archive source file `{}`", relative))
+            })?;
+        }
     }
     let encoder = ar.into_inner()?;
     encoder.finish()?;
@@ -261,30 +283,14 @@ fn run_verify(ws: &Workspace, tar: &File, opts: &PackageOpts) -> CargoResult<()>
     }
     let mut archive = Archive::new(f);
     archive.unpack(dst.parent().unwrap())?;
-    let manifest_path = dst.join("Cargo.toml");
 
-    // When packages are uploaded to a registry, all path dependencies are
-    // implicitly converted to registry dependencies, so we rewrite those
-    // dependencies here.
-    //
-    // We also make sure to point all paths at `dst` instead of the previous
-    // location that the package was originally read from. In locking the
-    // `SourceId` we're telling it that the corresponding `PathSource` will be
-    // considered updated and we won't actually read any packages.
-    let cratesio = SourceId::crates_io(config)?;
-    let precise = Some("locked".to_string());
-    let new_src = SourceId::for_path(&dst)?.with_precise(precise);
-    let new_pkgid = PackageId::new(pkg.name(), pkg.version(), &new_src)?;
-    let new_summary = pkg.summary().clone().map_dependencies(|d| {
-        if !d.source_id().is_path() { return d }
-        d.clone_inner().set_source_id(cratesio.clone()).into_dependency()
-    });
-    let mut new_manifest = pkg.manifest().clone();
-    new_manifest.set_summary(new_summary.override_id(new_pkgid));
-    let new_pkg = Package::new(new_manifest, &manifest_path);
+    // Manufacture an ephemeral workspace to ensure that even if the top-level
+    // package has a workspace we can still build our new crate.
+    let id = SourceId::for_path(&dst)?;
+    let mut src = PathSource::new(&dst, &id, ws.config());
+    let new_pkg = src.root_package()?;
+    let ws = Workspace::ephemeral(new_pkg, config, None, true)?;
 
-    // Now that we've rewritten all our path dependencies, compile it!
-    let ws = Workspace::ephemeral(new_pkg, config, None)?;
     ops::compile_ws(&ws, None, &ops::CompileOptions {
         config: config,
         jobs: opts.jobs,
@@ -293,7 +299,7 @@ fn run_verify(ws: &Workspace, tar: &File, opts: &PackageOpts) -> CargoResult<()>
         no_default_features: false,
         all_features: false,
         spec: ops::Packages::Packages(&[]),
-        filter: ops::CompileFilter::Everything,
+        filter: ops::CompileFilter::Everything { required_features_filterable: true },
         release: false,
         message_format: ops::MessageFormat::Human,
         mode: ops::CompileMode::Build,

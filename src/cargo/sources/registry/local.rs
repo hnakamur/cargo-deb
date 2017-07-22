@@ -6,8 +6,10 @@ use rustc_serialize::hex::ToHex;
 
 use core::PackageId;
 use sources::registry::{RegistryData, RegistryConfig};
-use util::{Config, CargoResult, ChainError, human, Sha256, Filesystem};
 use util::FileLock;
+use util::paths;
+use util::{Config, Sha256, Filesystem};
+use util::errors::{CargoResult, CargoResultExt};
 
 pub struct LocalRegistry<'cfg> {
     index_path: Filesystem,
@@ -34,7 +36,14 @@ impl<'cfg> RegistryData for LocalRegistry<'cfg> {
         &self.index_path
     }
 
-    fn config(&self) -> CargoResult<Option<RegistryConfig>> {
+    fn load(&self,
+            root: &Path,
+            path: &Path,
+            data: &mut FnMut(&[u8]) -> CargoResult<()>) -> CargoResult<()> {
+        data(&paths::read_bytes(&root.join(path))?)
+    }
+
+    fn config(&mut self) -> CargoResult<Option<RegistryConfig>> {
         // Local registries don't have configuration for remote APIs or anything
         // like that
         Ok(None)
@@ -78,8 +87,8 @@ impl<'cfg> RegistryData for LocalRegistry<'cfg> {
         let mut state = Sha256::new();
         let mut buf = [0; 64 * 1024];
         loop {
-            let n = crate_file.read(&mut buf).chain_error(|| {
-                human(format!("failed to read `{}`", crate_file.path().display()))
+            let n = crate_file.read(&mut buf).chain_err(|| {
+                format!("failed to read `{}`", crate_file.path().display())
             })?;
             if n == 0 {
                 break

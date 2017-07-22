@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{PathBuf, Path};
+use std::rc::Rc;
 
 use semver::Version;
-use rustc_serialize::{Encoder, Encodable};
+use serde::ser;
 
 use core::{Dependency, PackageId, Summary, SourceId, PackageIdSpec};
 use core::WorkspaceConfig;
+use util::toml::TomlManifest;
 
 pub enum EitherManifest {
     Real(Manifest),
@@ -14,7 +16,7 @@ pub enum EitherManifest {
 }
 
 /// Contains all the information about a package, as loaded from a Cargo.toml.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Manifest {
     summary: Summary,
     targets: Vec<Target>,
@@ -27,6 +29,7 @@ pub struct Manifest {
     publish: bool,
     replace: Vec<(PackageIdSpec, Dependency)>,
     workspace: WorkspaceConfig,
+    original: Rc<TomlManifest>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +62,7 @@ pub struct ManifestMetadata {
     pub badges: HashMap<String, HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum LibKind {
     Lib,
     Rlib,
@@ -101,7 +104,7 @@ impl LibKind {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TargetKind {
     Lib(Vec<LibKind>),
     Bin,
@@ -112,56 +115,51 @@ pub enum TargetKind {
     CustomBuild,
 }
 
-impl Encodable for TargetKind {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl ser::Serialize for TargetKind {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+        where S: ser::Serializer,
+    {
+        use self::TargetKind::*;
         match *self {
-            TargetKind::Lib(ref kinds) |
-            TargetKind::ExampleLib(ref kinds) => {
-                kinds.iter().map(LibKind::crate_type).collect()
-            }
-            TargetKind::Bin => vec!["bin"],
-            TargetKind::ExampleBin => vec!["example"],
-            TargetKind::Test => vec!["test"],
-            TargetKind::CustomBuild => vec!["custom-build"],
-            TargetKind::Bench => vec!["bench"],
-        }.encode(s)
+            Lib(ref kinds) => kinds.iter().map(LibKind::crate_type).collect(),
+            Bin => vec!["bin"],
+            ExampleBin | ExampleLib(_) => vec!["example"],
+            Test => vec!["test"],
+            CustomBuild => vec!["custom-build"],
+            Bench => vec!["bench"]
+        }.serialize(s)
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+
+// Note that most of the fields here are skipped when serializing because we
+// don't want to export them just yet (becomes a public API of Cargo). Others
+// though are definitely needed!
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Serialize)]
 pub struct Profile {
     pub opt_level: String,
+    #[serde(skip_serializing)]
     pub lto: bool,
+    #[serde(skip_serializing)]
     pub codegen_units: Option<u32>,    // None = use rustc default
+    #[serde(skip_serializing)]
     pub rustc_args: Option<Vec<String>>,
+    #[serde(skip_serializing)]
     pub rustdoc_args: Option<Vec<String>>,
     pub debuginfo: Option<u32>,
     pub debug_assertions: bool,
+    pub overflow_checks: bool,
+    #[serde(skip_serializing)]
     pub rpath: bool,
     pub test: bool,
+    #[serde(skip_serializing)]
     pub doc: bool,
+    #[serde(skip_serializing)]
     pub run_custom_build: bool,
+    #[serde(skip_serializing)]
     pub check: bool,
+    #[serde(skip_serializing)]
     pub panic: Option<String>,
-}
-
-#[derive(RustcEncodable)]
-struct SerializedProfile<'a> {
-    opt_level: &'a str,
-    debuginfo: Option<u32>,
-    debug_assertions: bool,
-    test: bool,
-}
-
-impl Encodable for Profile {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
-        SerializedProfile {
-            opt_level: &self.opt_level,
-            debuginfo: self.debuginfo,
-            debug_assertions: self.debug_assertions,
-            test: self.test,
-        }.encode(s)
-    }
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
@@ -185,6 +183,7 @@ pub struct Target {
     kind: TargetKind,
     name: String,
     src_path: PathBuf,
+    required_features: Option<Vec<String>>,
     tested: bool,
     benched: bool,
     doc: bool,
@@ -193,20 +192,26 @@ pub struct Target {
     for_host: bool,
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct SerializedTarget<'a> {
+    /// Is this a `--bin bin`, `--lib`, `--example ex`?
+    /// Serialized as a list of strings for historical reasons.
     kind: &'a TargetKind,
+    /// Corresponds to `--crate-type` compiler attribute.
+    /// See https://doc.rust-lang.org/reference.html#linkage
+    crate_types: Vec<&'a str>,
     name: &'a str,
-    src_path: &'a str,
+    src_path: &'a PathBuf,
 }
 
-impl Encodable for Target {
-    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+impl ser::Serialize for Target {
+    fn serialize<S: ser::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         SerializedTarget {
             kind: &self.kind,
+            crate_types: self.rustc_crate_types(),
             name: &self.name,
-            src_path: &self.src_path.display().to_string(),
-        }.encode(s)
+            src_path: &self.src_path,
+        }.serialize(s)
     }
 }
 
@@ -220,7 +225,8 @@ impl Manifest {
                profiles: Profiles,
                publish: bool,
                replace: Vec<(PackageIdSpec, Dependency)>,
-               workspace: WorkspaceConfig) -> Manifest {
+               workspace: WorkspaceConfig,
+               original: Rc<TomlManifest>) -> Manifest {
         Manifest {
             summary: summary,
             targets: targets,
@@ -233,6 +239,7 @@ impl Manifest {
             publish: publish,
             replace: replace,
             workspace: workspace,
+            original: original,
         }
     }
 
@@ -249,6 +256,7 @@ impl Manifest {
     pub fn profiles(&self) -> &Profiles { &self.profiles }
     pub fn publish(&self) -> bool { self.publish }
     pub fn replace(&self) -> &[(PackageIdSpec, Dependency)] { &self.replace }
+    pub fn original(&self) -> &TomlManifest { &self.original }
     pub fn links(&self) -> Option<&str> {
         self.links.as_ref().map(|s| &s[..])
     }
@@ -305,6 +313,7 @@ impl Target {
             kind: TargetKind::Bin,
             name: String::new(),
             src_path: src_path,
+            required_features: None,
             doc: false,
             doctest: false,
             harness: true,
@@ -326,10 +335,12 @@ impl Target {
         }
     }
 
-    pub fn bin_target(name: &str, src_path: PathBuf) -> Target {
+    pub fn bin_target(name: &str, src_path: PathBuf,
+                      required_features: Option<Vec<String>>) -> Target {
         Target {
             kind: TargetKind::Bin,
             name: name.to_string(),
+            required_features: required_features,
             doc: true,
             ..Target::with_path(src_path)
         }
@@ -349,7 +360,8 @@ impl Target {
 
     pub fn example_target(name: &str,
                           crate_targets: Vec<LibKind>,
-                          src_path: PathBuf) -> Target {
+                          src_path: PathBuf,
+                          required_features: Option<Vec<String>>) -> Target {
         let kind = if crate_targets.is_empty() {
             TargetKind::ExampleBin
         } else {
@@ -359,24 +371,29 @@ impl Target {
         Target {
             kind: kind,
             name: name.to_string(),
+            required_features: required_features,
             benched: false,
             ..Target::with_path(src_path)
         }
     }
 
-    pub fn test_target(name: &str, src_path: PathBuf) -> Target {
+    pub fn test_target(name: &str, src_path: PathBuf,
+                       required_features: Option<Vec<String>>) -> Target {
         Target {
             kind: TargetKind::Test,
             name: name.to_string(),
+            required_features: required_features,
             benched: false,
             ..Target::with_path(src_path)
         }
     }
 
-    pub fn bench_target(name: &str, src_path: PathBuf) -> Target {
+    pub fn bench_target(name: &str, src_path: PathBuf,
+                        required_features: Option<Vec<String>>) -> Target {
         Target {
             kind: TargetKind::Bench,
             name: name.to_string(),
+            required_features: required_features,
             tested: false,
             ..Target::with_path(src_path)
         }
@@ -385,6 +402,7 @@ impl Target {
     pub fn name(&self) -> &str { &self.name }
     pub fn crate_name(&self) -> String { self.name.replace("-", "_") }
     pub fn src_path(&self) -> &Path { &self.src_path }
+    pub fn required_features(&self) -> Option<&Vec<String>> { self.required_features.as_ref() }
     pub fn kind(&self) -> &TargetKind { &self.kind }
     pub fn tested(&self) -> bool { self.tested }
     pub fn harness(&self) -> bool { self.harness }
@@ -423,6 +441,19 @@ impl Target {
         }
     }
 
+    pub fn is_cdylib(&self) -> bool {
+        let libs = match self.kind {
+            TargetKind::Lib(ref libs) => libs,
+            _ => return false
+        };
+        libs.iter().any(|l| {
+            match *l {
+                LibKind::Other(ref s) => s == "cdylib",
+                _ => false,
+            }
+        })
+    }
+
     pub fn linkable(&self) -> bool {
         match self.kind {
             TargetKind::Lib(ref kinds) => {
@@ -438,6 +469,14 @@ impl Target {
         match self.kind {
             TargetKind::ExampleBin |
             TargetKind::ExampleLib(..) => true,
+            _ => false
+        }
+    }
+
+    pub fn is_bin_example(&self) -> bool {
+        // Needed for --all-examples in contexts where only runnable examples make sense
+        match self.kind {
+            TargetKind::ExampleBin => true,
             _ => false
         }
     }
@@ -517,6 +556,7 @@ impl Profile {
         Profile {
             debuginfo: Some(2),
             debug_assertions: true,
+            overflow_checks: true,
             ..Profile::default()
         }
     }
@@ -583,6 +623,7 @@ impl Default for Profile {
             rustdoc_args: None,
             debuginfo: None,
             debug_assertions: false,
+            overflow_checks: false,
             rpath: false,
             test: false,
             doc: false,

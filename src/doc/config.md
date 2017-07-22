@@ -58,19 +58,28 @@ vcs = "none"
 
 # For the following sections, $triple refers to any valid target triple, not the
 # literal string "$triple", and it will apply whenever that target triple is
-# being compiled to.
-[target]
-# For Cargo builds which do not mention --target, this is the linker
-# which is passed to rustc (via `-C linker=`). By default this flag is not
-# passed to the compiler.
-linker = ".."
-
+# being compiled to. 'cfg(...)' refers to the Rust-like `#[cfg]` syntax for
+# conditional compilation.
 [target.$triple]
-# Similar to the above linker configuration, but this only applies to
-# when the `$triple` is being compiled for.
+# This is the linker which is passed to rustc (via `-C linker=`) when the `$triple`
+# is being compiled for. By default this flag is not passed to the compiler.
 linker = ".."
+# Same but for the library archiver which is passed to rustc via `-C ar=`.
+ar = ".."
+# If a runner is provided, compiled targets for the `$triple` will be executed
+# by invoking the specified runner executable with actual target as first argument.
+# This applies to `cargo run`, `cargo test` and `cargo bench` commands.
+# By default compiled targets are executed directly.
+runner = ".."
 # custom flags to pass to all compiler invocations that target $triple
 # this value overrides build.rustflags when both are present
+rustflags = ["..", ".."]
+
+[target.'cfg(...)']
+# Similar for the $triple configuration, but using the `cfg` syntax.
+# If several `cfg` and $triple targets are candidates, then the rustflags
+# are concatenated. The `cfg` syntax only applies to rustflags, and not to
+# linker.
 rustflags = ["..", ".."]
 
 # Configuration keys related to the registry
@@ -83,6 +92,7 @@ proxy = "host:port" # HTTP proxy to use for HTTP requests (defaults to none)
                     # in libcurl format, e.g. "socks5h://host:port"
 timeout = 60000     # Timeout for each HTTP request, in milliseconds
 cainfo = "cert.pem" # Path to Certificate Authority (CA) bundle (optional)
+check-revoke = true # Indicates whether SSL certs are checked for revocation
 
 [build]
 jobs = 1                  # number of parallel jobs, defaults to # of CPUs

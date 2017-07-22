@@ -1,7 +1,7 @@
 use std::env;
 
 use cargo::core::Workspace;
-use cargo::ops::{self, CompileOptions, MessageFormat};
+use cargo::ops::{self, CompileOptions, MessageFormat, Packages};
 use cargo::util::{CliResult, Config};
 use cargo::util::important_paths::find_root_manifest_for_wd;
 
@@ -13,13 +13,19 @@ Usage:
 
 Options:
     -h, --help                   Print this message
-    -p SPEC, --package SPEC ...  Package to check
+    -p SPEC, --package SPEC ...  Package(s) to check
+    --all                        Check all packages in the workspace
+    --exclude SPEC ...           Exclude packages from the check
     -j N, --jobs N               Number of parallel jobs, defaults to # of CPUs
     --lib                        Check only this package's library
     --bin NAME                   Check only the specified binary
+    --bins                       Check all binaries
     --example NAME               Check only the specified example
+    --examples                   Check all examples
     --test NAME                  Check only the specified test target
-    --bench NAME                 Check only the specified benchmark target
+    --tests                      Check all tests
+    --bench NAME                 Check only the specified bench target
+    --benches                    Check all benches
     --release                    Check artifacts in release mode, with optimizations
     --features FEATURES          Space-separated list of features to also check
     --all-features               Check all available features
@@ -59,11 +65,17 @@ pub struct Options {
     flag_release: bool,
     flag_lib: bool,
     flag_bin: Vec<String>,
+    flag_bins: bool,
     flag_example: Vec<String>,
+    flag_examples: bool,
     flag_test: Vec<String>,
+    flag_tests: bool,
     flag_bench: Vec<String>,
+    flag_benches: bool,
     flag_locked: bool,
     flag_frozen: bool,
+    flag_all: bool,
+    flag_exclude: Vec<String>,
 }
 
 pub fn execute(options: Options, config: &Config) -> CliResult {
@@ -79,6 +91,10 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
     let ws = Workspace::new(&root, config)?;
 
+    let spec = Packages::from_flags(options.flag_all,
+                                    &options.flag_exclude,
+                                    &options.flag_package)?;
+
     let opts = CompileOptions {
         config: config,
         jobs: options.flag_jobs,
@@ -86,14 +102,14 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
         features: &options.flag_features,
         all_features: options.flag_all_features,
         no_default_features: options.flag_no_default_features,
-        spec: ops::Packages::Packages(&options.flag_package),
+        spec: spec,
         mode: ops::CompileMode::Check,
         release: options.flag_release,
         filter: ops::CompileFilter::new(options.flag_lib,
-                                        &options.flag_bin,
-                                        &options.flag_test,
-                                        &options.flag_example,
-                                        &options.flag_bench),
+                                        &options.flag_bin, options.flag_bins,
+                                        &options.flag_test, options.flag_tests,
+                                        &options.flag_example, options.flag_examples,
+                                        &options.flag_bench, options.flag_benches,),
         message_format: options.flag_message_format,
         target_rustdoc_args: None,
         target_rustc_args: None,

@@ -1,13 +1,15 @@
 extern crate cargotest;
 extern crate hamcrest;
+extern crate cargo;
 
 use std::str;
 use std::fs;
 
-use cargotest::{is_nightly, rustc_host};
+use cargotest::rustc_host;
 use cargotest::support::{project, execs, path2url};
 use cargotest::support::registry::Package;
 use hamcrest::{assert_that, existing_file, existing_dir, is_not};
+use cargo::util::{CargoError, CargoErrorKind};
 
 #[test]
 fn simple() {
@@ -284,8 +286,6 @@ fn doc_same_name() {
 fn doc_target() {
     const TARGET: &'static str = "arm-unknown-linux-gnueabihf";
 
-    if !is_nightly() { return }
-
     let p = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -359,11 +359,16 @@ fn output_not_captured() {
             pub fn foo() {}
         ");
 
-    let output = p.cargo_process("doc").exec_with_output().err().unwrap()
-                                                          .output.unwrap();
-    let stderr = str::from_utf8(&output.stderr).unwrap();
-    assert!(stderr.contains("☃"), "no snowman\n{}", stderr);
-    assert!(stderr.contains("unknown start of token"), "no message\n{}", stderr);
+    let error = p.cargo_process("doc").exec_with_output().err().unwrap();
+    if let CargoError(CargoErrorKind::ProcessErrorKind(perr), ..) = error {
+        let output = perr.output.unwrap();
+        let stderr = str::from_utf8(&output.stderr).unwrap();
+    
+        assert!(stderr.contains("☃"), "no snowman\n{}", stderr);
+        assert!(stderr.contains("unknown start of token"), "no message{}", stderr);
+    } else {
+        assert!(false, "an error kind other than ProcessErrorKind was encountered");
+    }
 }
 
 #[test]
@@ -561,13 +566,15 @@ fn rerun_when_dir_removed() {
             /// dox
             pub fn foo() {}
         "#);
-    assert_that(p.cargo_process("doc"),
+    p.build();
+
+    assert_that(p.cargo("doc"),
                 execs().with_status(0));
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
 
     fs::remove_dir_all(p.root().join("target/doc/foo")).unwrap();
 
-    assert_that(p.cargo_process("doc"),
+    assert_that(p.cargo("doc"),
                 execs().with_status(0));
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
 }
@@ -643,7 +650,6 @@ fn doc_all_workspace() {
         .file("bar/src/lib.rs", r#"
             pub fn bar() {}
         "#);
-    p.build();
 
     // The order in which bar is compiled or documented is not deterministic
     assert_that(p.cargo_process("doc")
@@ -677,7 +683,6 @@ fn doc_all_virtual_manifest() {
         .file("bar/src/lib.rs", r#"
             pub fn bar() {}
         "#);
-    p.build();
 
     // The order in which foo and bar are documented is not guaranteed
     assert_that(p.cargo_process("doc")
@@ -705,7 +710,6 @@ fn doc_all_member_dependency_same_name() {
         .file("a/src/lib.rs", r#"
             pub fn a() {}
         "#);
-    p.build();
 
     Package::new("a", "0.1.0").publish();
 

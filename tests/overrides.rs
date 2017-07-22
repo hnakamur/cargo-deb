@@ -928,6 +928,59 @@ fn overriding_nonexistent_no_spurious() {
 }
 
 #[test]
+fn no_warnings_when_replace_is_used_in_another_workspace_member() {
+    Package::new("foo", "0.1.0").publish();
+    Package::new("bar", "0.1.0").publish();
+
+    let p = project("ws")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = [ "first_crate", "second_crate"]
+
+            [replace]
+            "foo:0.1.0" = { path = "local_foo" }"#)
+        .file("first_crate/Cargo.toml", r#"
+            [package]
+            name = "first_crate"
+            version = "0.1.0"
+
+            [dependencies]
+            foo = "0.1.0"
+        "#)
+        .file("first_crate/src/lib.rs", "")
+        .file("second_crate/Cargo.toml", r#"
+            [package]
+            name = "second_crate"
+            version = "0.1.0"
+        "#)
+        .file("second_crate/src/lib.rs", "")
+        .file("local_foo/Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+        "#)
+        .file("local_foo/src/lib.rs", "");
+    p.build();
+
+    assert_that(p.cargo("build").cwd(p.root().join("first_crate")),
+                execs().with_status(0)
+                    .with_stdout("")
+                    .with_stderr("\
+[UPDATING] registry `[..]`
+[COMPILING] foo v0.1.0 ([..])
+[COMPILING] first_crate v0.1.0 ([..])
+[FINISHED] [..]"));
+
+    assert_that(p.cargo("build").cwd(p.root().join("second_crate")),
+                execs().with_status(0)
+                    .with_stdout("")
+                    .with_stderr("\
+[COMPILING] second_crate v0.1.0 ([..])
+[FINISHED] [..]"));
+}
+
+
+#[test]
 fn override_to_path_dep() {
     Package::new("foo", "0.1.0").dep("bar", "0.1").publish();
     Package::new("bar", "0.1.0").publish();
@@ -1102,5 +1155,98 @@ fn paths_add_optional_bad() {
                 execs().with_status(0).with_stderr_contains("\
 warning: path override for crate `foo` has altered the original list of
 dependencies; the dependency on `bar` was either added or\
+"));
+}
+
+#[test]
+fn override_with_default_feature() {
+    Package::new("another", "0.1.0").publish();
+    Package::new("another", "0.1.1")
+            .dep("bar", "0.1")
+            .publish();
+    Package::new("bar", "0.1.0").publish();
+
+    let p = project("local")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "local"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            bar = { path = "bar", default-features = false }
+            another = "0.1"
+            another2 = { path = "another2" }
+
+            [replace]
+            'bar:0.1.0' = { path = "bar" }
+        "#)
+        .file("src/main.rs", r#"
+            extern crate bar;
+
+            fn main() {
+                bar::bar();
+            }
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [features]
+            default = []
+        "#)
+        .file("bar/src/lib.rs", r#"
+            #[cfg(feature = "default")]
+            pub fn bar() {}
+        "#)
+        .file("another2/Cargo.toml", r#"
+            [package]
+            name = "another2"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            bar = { version = "0.1", default-features = false }
+        "#)
+        .file("another2/src/lib.rs", "");
+
+    assert_that(p.cargo_process("run"),
+                execs().with_status(0));
+}
+
+#[test]
+fn override_plus_dep() {
+    Package::new("bar", "0.1.0").publish();
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            bar = "0.1"
+
+            [replace]
+            'bar:0.1.0' = { path = "bar" }
+        "#)
+        .file("src/lib.rs", "")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = { path = ".." }
+        "#)
+        .file("bar/src/lib.rs", "");
+
+    assert_that(p.cargo_process("build"),
+                execs().with_status(101).with_stderr_contains("\
+error: cyclic package dependency: [..]
 "));
 }

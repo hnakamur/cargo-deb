@@ -17,6 +17,9 @@ system:
   relative to the current working directory.
 * `RUSTC` - Instead of running `rustc`, Cargo will execute this specified
   compiler instead.
+* `RUSTC_WRAPPER` - Instead of simply running `rustc`, Cargo will execute this
+  specified wrapper instead, passing as its commandline arguments the rustc
+  invocation, with the first argument being rustc.
 * `RUSTDOC` - Instead of running `rustdoc`, Cargo will execute this specified
   `rustdoc` instance instead.
 * `RUSTFLAGS` - A space-separated list of custom flags to pass to all compiler
@@ -30,8 +33,9 @@ configuration values, as described in [that documentation][config-env]
 
 # Environment variables Cargo sets for crates
 
-Cargo exposes these environment variables to your crate when it is compiled. To get the
-value of any of these variables in a Rust program, do this:
+Cargo exposes these environment variables to your crate when it is compiled.
+Note that this applies for test binaries as well.
+To get the value of any of these variables in a Rust program, do this:
 
 ```
 let version = env!("CARGO_PKG_VERSION");
@@ -39,16 +43,19 @@ let version = env!("CARGO_PKG_VERSION");
 
 `version` will now contain the value of `CARGO_PKG_VERSION`.
 
+* `CARGO` - Path to the `cargo` binary performing the build.
 * `CARGO_MANIFEST_DIR` - The directory containing the manifest of your package.
 * `CARGO_PKG_VERSION` - The full version of your package.
 * `CARGO_PKG_VERSION_MAJOR` - The major version of your package.
 * `CARGO_PKG_VERSION_MINOR` - The minor version of your package.
 * `CARGO_PKG_VERSION_PATCH` - The patch version of your package.
 * `CARGO_PKG_VERSION_PRE` - The pre-release version of your package.
-* `CARGO_PKG_AUTHORS` - Colon seperated list of authors from the manifest of your package.
+* `CARGO_PKG_AUTHORS` - Colon separated list of authors from the manifest of your package.
 * `CARGO_PKG_NAME` - The name of your package.
 * `CARGO_PKG_DESCRIPTION` - The description of your package.
 * `CARGO_PKG_HOMEPAGE` - The home page of your package.
+* `OUT_DIR` - If the package has a build script, this is set to the folder where the build
+              script should place its output.  See below for more information.
 
 # Environment variables Cargo sets for build scripts
 
@@ -81,11 +88,17 @@ let out_dir = env::var("OUT_DIR").unwrap();
              triples can be found in [clang’s own documentation][clang].
 * `HOST` - the host triple of the rust compiler.
 * `NUM_JOBS` - the parallelism specified as the top-level parallelism. This can
-               be useful to pass a `-j` parameter to a system like `make`.
+               be useful to pass a `-j` parameter to a system like `make`. Note
+               that care should be taken when interpreting this environment
+               variable. For historical purposes this is still provided but
+               recent versions of Cargo, for example, do not need to run `make
+               -j` as it'll automatically happen. Cargo implements its own
+               [jobserver] and will allow build scripts to inherit this
+               information, so programs compatible with GNU make jobservers will
+               already have appropriately configured parallelism.
 * `OPT_LEVEL`, `DEBUG` - values of the corresponding variables for the
                          profile currently being built.
-* `PROFILE` - name of the profile currently being built (see
-              [profiles][profile]).
+* `PROFILE` - `release` for release builds, `debug` for other builds.
 * `DEP_<name>_<key>` - For more information about this set of environment
                        variables, see build script documentation about [`links`][links].
 * `RUSTC`, `RUSTDOC` - the compiler and documentation generator that Cargo has
@@ -95,3 +108,11 @@ let out_dir = env::var("OUT_DIR").unwrap();
 [links]: build-script.html#the-links-manifest-key
 [profile]: manifest.html#the-profile-sections
 [clang]:http://clang.llvm.org/docs/CrossCompilation.html#target-triple
+[jobserver]: http://make.mad-scientist.net/papers/jobserver-implementation/
+
+# Environment variables Cargo sets for 3rd party subcommands
+
+Cargo exposes this environment variable to 3rd party subcommands
+(ie. programs named `cargo-foobar` placed in `$PATH`):
+
+* `CARGO` - Path to the `cargo` binary performing the build.

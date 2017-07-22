@@ -6,11 +6,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use filetime::FileTime;
-use rustc_serialize::{json, Encodable, Decodable, Encoder, Decoder};
+use serde::ser::{self, Serialize};
+use serde::de::{self, Deserialize};
+use serde_json;
 
 use core::{Package, TargetKind};
 use util;
-use util::{CargoResult, Fresh, Dirty, Freshness, internal, profile, ChainError};
+use util::{Fresh, Dirty, Freshness, internal, profile};
+use util::errors::{CargoResult, CargoResultExt};
 use util::paths;
 
 use super::job::Work;
@@ -70,7 +73,7 @@ pub fn prepare_target<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
     if compare.is_err() {
         let source_id = unit.pkg.package_id().source_id();
         let sources = cx.packages.sources();
-        let source = sources.get(source_id).chain_error(|| {
+        let source = sources.get(source_id).ok_or_else(|| {
             internal("missing package source")
         })?;
         source.verify(unit.pkg.package_id())?;
@@ -82,9 +85,9 @@ pub fn prepare_target<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
         missing_outputs = !root.join(unit.target.crate_name())
                                .join("index.html").exists();
     } else {
-        for (src, link_dst, _) in cx.target_filenames(unit)? {
+        for &(ref src, ref link_dst, _) in cx.target_filenames(unit)?.iter() {
             missing_outputs |= !src.exists();
-            if let Some(link_dst) = link_dst {
+            if let Some(ref link_dst) = *link_dst {
                 missing_outputs |= !link_dst.exists();
             }
         }
@@ -125,18 +128,48 @@ pub fn prepare_target<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
 /// `DependencyQueue`, but it also needs to be retained here because Cargo can
 /// be interrupted while executing, losing the state of the `DependencyQueue`
 /// graph.
+#[derive(Serialize, Deserialize)]
 pub struct Fingerprint {
     rustc: u64,
     features: String,
     target: u64,
     profile: u64,
+    #[serde(serialize_with = "serialize_deps", deserialize_with = "deserialize_deps")]
     deps: Vec<(String, Arc<Fingerprint>)>,
     local: LocalFingerprint,
+    #[serde(skip_serializing, skip_deserializing)]
     memoized_hash: Mutex<Option<u64>>,
     rustflags: Vec<String>,
 }
 
-#[derive(RustcEncodable, RustcDecodable, Hash)]
+fn serialize_deps<S>(deps: &Vec<(String, Arc<Fingerprint>)>, ser: S)
+                     -> Result<S::Ok, S::Error>
+    where S: ser::Serializer,
+{
+    deps.iter().map(|&(ref a, ref b)| {
+        (a, b.hash())
+    }).collect::<Vec<_>>().serialize(ser)
+}
+
+fn deserialize_deps<'de, D>(d: D) -> Result<Vec<(String, Arc<Fingerprint>)>, D::Error>
+    where D: de::Deserializer<'de>,
+{
+    let decoded = <Vec<(String, u64)>>::deserialize(d)?;
+    Ok(decoded.into_iter().map(|(name, hash)| {
+        (name, Arc::new(Fingerprint {
+            rustc: 0,
+            target: 0,
+            profile: 0,
+            local: LocalFingerprint::Precalculated(String::new()),
+            features: String::new(),
+            deps: Vec::new(),
+            memoized_hash: Mutex::new(Some(hash)),
+            rustflags: Vec::new(),
+        }))
+    }).collect())
+}
+
+#[derive(Serialize, Deserialize, Hash)]
 enum LocalFingerprint {
     Precalculated(String),
     MtimeBased(MtimeSlot, PathBuf),
@@ -148,9 +181,10 @@ impl Fingerprint {
     fn update_local(&self) -> CargoResult<()> {
         match self.local {
             LocalFingerprint::MtimeBased(ref slot, ref path) => {
-                let meta = fs::metadata(path).chain_error(|| {
-                    internal(format!("failed to stat `{}`", path.display()))
-                })?;
+                let meta = fs::metadata(path)
+                    .chain_err(|| {
+                        internal(format!("failed to stat `{}`", path.display()))
+                    })?;
                 let mtime = FileTime::from_last_modification_time(&meta);
                 *slot.0.lock().unwrap() = Some(mtime);
             }
@@ -242,79 +276,27 @@ impl hash::Hash for Fingerprint {
     }
 }
 
-impl Encodable for Fingerprint {
-    fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
-        e.emit_struct("Fingerprint", 6, |e| {
-            e.emit_struct_field("rustc", 0, |e| self.rustc.encode(e))?;
-            e.emit_struct_field("target", 1, |e| self.target.encode(e))?;
-            e.emit_struct_field("profile", 2, |e| self.profile.encode(e))?;
-            e.emit_struct_field("local", 3, |e| self.local.encode(e))?;
-            e.emit_struct_field("features", 4, |e| {
-                self.features.encode(e)
-            })?;
-            e.emit_struct_field("deps", 5, |e| {
-                self.deps.iter().map(|&(ref a, ref b)| {
-                    (a, b.hash())
-                }).collect::<Vec<_>>().encode(e)
-            })?;
-            e.emit_struct_field("rustflags", 6, |e| self.rustflags.encode(e))?;
-            Ok(())
-        })
-    }
-}
-
-impl Decodable for Fingerprint {
-    fn decode<D: Decoder>(d: &mut D) -> Result<Fingerprint, D::Error> {
-        fn decode<T: Decodable, D: Decoder>(d: &mut D) -> Result<T, D::Error> {
-            Decodable::decode(d)
-        }
-        d.read_struct("Fingerprint", 6, |d| {
-            Ok(Fingerprint {
-                rustc: d.read_struct_field("rustc", 0, decode)?,
-                target: d.read_struct_field("target", 1, decode)?,
-                profile: d.read_struct_field("profile", 2, decode)?,
-                local: d.read_struct_field("local", 3, decode)?,
-                features: d.read_struct_field("features", 4, decode)?,
-                memoized_hash: Mutex::new(None),
-                deps: {
-                    let decode = decode::<Vec<(String, u64)>, D>;
-                    let v = d.read_struct_field("deps", 5, decode)?;
-                    v.into_iter().map(|(name, hash)| {
-                        (name, Arc::new(Fingerprint {
-                            rustc: 0,
-                            target: 0,
-                            profile: 0,
-                            local: LocalFingerprint::Precalculated(String::new()),
-                            features: String::new(),
-                            deps: Vec::new(),
-                            memoized_hash: Mutex::new(Some(hash)),
-                            rustflags: Vec::new(),
-                        }))
-                    }).collect()
-                },
-                rustflags: d.read_struct_field("rustflags", 6, decode)?,
-            })
-        })
-    }
-}
-
 impl hash::Hash for MtimeSlot {
     fn hash<H: Hasher>(&self, h: &mut H) {
         self.0.lock().unwrap().hash(h)
     }
 }
 
-impl Encodable for MtimeSlot {
-    fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
+impl ser::Serialize for MtimeSlot {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+        where S: ser::Serializer,
+    {
         self.0.lock().unwrap().map(|ft| {
             (ft.seconds_relative_to_1970(), ft.nanoseconds())
-        }).encode(e)
+        }).serialize(s)
     }
 }
 
-impl Decodable for MtimeSlot {
-    fn decode<D: Decoder>(e: &mut D) -> Result<MtimeSlot, D::Error> {
-        let kind: Option<(u64, u32)> = Decodable::decode(e)?;
+impl<'de> de::Deserialize<'de> for MtimeSlot {
+    fn deserialize<D>(d: D) -> Result<MtimeSlot, D::Error>
+        where D: de::Deserializer<'de>,
+    {
+        let kind: Option<(u64, u32)> = de::Deserialize::deserialize(d)?;
         Ok(MtimeSlot(Mutex::new(kind.map(|(s, n)| {
             FileTime::from_seconds_since_1970(s, n)
         }))))
@@ -338,16 +320,6 @@ fn calculate<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
     if let Some(s) = cx.fingerprints.get(unit) {
         return Ok(s.clone())
     }
-
-    // First, calculate all statically known "salt data" such as the profile
-    // information (compiler flags), the compiler version, activated features,
-    // and target configuration.
-    let features = cx.resolve.features(unit.pkg.package_id());
-    let features = features.map(|s| {
-        let mut v = s.iter().collect::<Vec<_>>();
-        v.sort();
-        v
-    });
 
     // Next, recursively calculate the fingerprint for all of our dependencies.
     //
@@ -385,7 +357,7 @@ fn calculate<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
         rustc: util::hash_u64(&cx.config.rustc()?.verbose_version),
         target: util::hash_u64(&unit.target),
         profile: util::hash_u64(&unit.profile),
-        features: format!("{:?}", features),
+        features: format!("{:?}", cx.resolve.features_sorted(unit.pkg.package_id())),
         deps: deps,
         local: local,
         memoized_hash: Mutex::new(None),
@@ -507,25 +479,21 @@ fn write_fingerprint(loc: &Path, fingerprint: &Fingerprint) -> CargoResult<()> {
     debug!("write fingerprint: {}", loc.display());
     paths::write(&loc, util::to_hex(hash).as_bytes())?;
     paths::write(&loc.with_extension("json"),
-                 json::encode(&fingerprint).unwrap().as_bytes())?;
+                 &serde_json::to_vec(&fingerprint).unwrap())?;
     Ok(())
 }
 
-/// Prepare work for when a package starts to build
+/// Prepare for work when a package starts to build
 pub fn prepare_init(cx: &mut Context, unit: &Unit) -> CargoResult<()> {
     let new1 = cx.fingerprint_dir(unit);
-    let new2 = new1.clone();
 
     if fs::metadata(&new1).is_err() {
         fs::create_dir(&new1)?;
     }
-    if fs::metadata(&new2).is_err() {
-        fs::create_dir(&new2)?;
-    }
+
     Ok(())
 }
 
-/// Returns the (old, new) location for the dep info file of a target.
 pub fn dep_info_loc(cx: &mut Context, unit: &Unit) -> PathBuf {
     cx.fingerprint_dir(unit).join(&format!("dep-{}", filename(cx, unit)))
 }
@@ -540,26 +508,20 @@ fn compare_old_fingerprint(loc: &Path, new_fingerprint: &Fingerprint)
     }
 
     let old_fingerprint_json = paths::read(&loc.with_extension("json"))?;
-    let old_fingerprint = json::decode(&old_fingerprint_json).chain_error(|| {
-        internal(format!("failed to deserialize json"))
-    })?;
+    let old_fingerprint = serde_json::from_str(&old_fingerprint_json)
+        .chain_err(|| internal(format!("failed to deserialize json")))?;
     new_fingerprint.compare(&old_fingerprint)
 }
 
 fn log_compare(unit: &Unit, compare: &CargoResult<()>) {
-    let mut e = match *compare {
+    let ce = match *compare {
         Ok(..) => return,
-        Err(ref e) => &**e,
+        Err(ref e) => e,
     };
-    info!("fingerprint error for {}: {}", unit.pkg, e);
-    while let Some(cause) = e.cargo_cause() {
+    info!("fingerprint error for {}: {}", unit.pkg, ce);
+
+    for cause in ce.iter() {
         info!("  cause: {}", cause);
-        e = cause;
-    }
-    let mut e = e.cause();
-    while let Some(cause) = e {
-        info!("  cause: {}", cause);
-        e = cause.cause();
     }
 }
 
@@ -579,7 +541,7 @@ pub fn parse_dep_info(dep_info: &Path) -> CargoResult<Option<Vec<PathBuf>>> {
         Some(Ok(line)) => line,
         _ => return Ok(None),
     };
-    let pos = line.find(": ").chain_error(|| {
+    let pos = line.find(": ").ok_or_else(|| {
         internal(format!("dep-info not in an understood format: {}",
                          dep_info.display()))
     })?;
@@ -587,16 +549,13 @@ pub fn parse_dep_info(dep_info: &Path) -> CargoResult<Option<Vec<PathBuf>>> {
 
     let mut paths = Vec::new();
     let mut deps = deps.split(' ').map(|s| s.trim()).filter(|s| !s.is_empty());
-    loop {
-        let mut file = match deps.next() {
-            Some(s) => s.to_string(),
-            None => break,
-        };
-        while file.ends_with("\\") {
+    while let Some(s) = deps.next() {
+        let mut file = s.to_string();
+        while file.ends_with('\\') {
             file.pop();
             file.push(' ');
-            file.push_str(deps.next().chain_error(|| {
-                internal(format!("malformed dep-info format, trailing \\"))
+            file.push_str(deps.next().ok_or_else(|| {
+                internal("malformed dep-info format, trailing \\".to_string())
             })?);
         }
         paths.push(cwd.join(&file));
@@ -606,7 +565,7 @@ pub fn parse_dep_info(dep_info: &Path) -> CargoResult<Option<Vec<PathBuf>>> {
 
 fn dep_info_mtime_if_fresh(dep_info: &Path) -> CargoResult<Option<FileTime>> {
     if let Some(paths) = parse_dep_info(dep_info)? {
-        Ok(mtime_if_fresh(&dep_info, paths.iter()))
+        Ok(mtime_if_fresh(dep_info, paths.iter()))
     } else {
         Ok(None)
     }
@@ -615,7 +574,8 @@ fn dep_info_mtime_if_fresh(dep_info: &Path) -> CargoResult<Option<FileTime>> {
 fn pkg_fingerprint(cx: &Context, pkg: &Package) -> CargoResult<String> {
     let source_id = pkg.package_id().source_id();
     let sources = cx.packages.sources();
-    let source = sources.get(source_id).chain_error(|| {
+
+    let source = sources.get(source_id).ok_or_else(|| {
         internal("missing package source")
     })?;
     source.fingerprint(pkg)
