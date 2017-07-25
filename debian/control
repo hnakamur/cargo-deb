@@ -5,14 +5,14 @@ Uploaders: Luca Bruno <lucab@debian.org>,
  Angus Lees <gus@debian.org>,
  Ximin Luo <infinity0@debian.org>
 Priority: extra
+# :native annotations are to support cross-compiling, see README.Debian of rustc
 Build-Depends: debhelper (>= 9.20141010),
                dpkg-dev (>= 1.17.14),
-               rustc (>= 1.16),
-# Direct dependency needed for cross-compiling
+               python-dulwich           <pkg.cargo.mkstage0>,
+               python-pytoml            <pkg.cargo.mkstage0>,
+               cargo:native    (>= 0.17.0) <!pkg.cargo.mkstage0>,
+               rustc:native    (>= 1.16),
                libstd-rust-dev (>= 1.16),
-               cargo (>= 0.13.0) <!pkg.cargo.mkstage0>,
-               python-dulwich <pkg.cargo.mkstage0>,
-               python-pytoml <pkg.cargo.mkstage0>,
                pkg-config,
                cmake,
                ca-certificates,
@@ -31,7 +31,7 @@ Vcs-Browser: https://anonscm.debian.org/cgit/pkg-rust/cargo.git
 
 Package: cargo
 Architecture: any
-Multi-Arch: foreign
+Multi-Arch: allowed
 Depends: ${shlibs:Depends}, ${misc:Depends},
          rustc (>= 1.1),
          binutils,

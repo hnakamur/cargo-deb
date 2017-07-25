@@ -1,3 +1,9 @@
+cargo (0.17.0-3) UNRELEASED; urgency=medium
+
+  * Fix cross-compiling declarations, Multi-Arch: foreign => allowed
+
+ -- Ximin Luo <infinity0@debian.org>  Wed, 21 Jun 2017 15:30:28 +0200
+
 cargo (0.17.0-2) unstable; urgency=medium
 
   * Re-embed libgit2 0.25.1 due to the Debian testing freeze. It will be
