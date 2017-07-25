@@ -3,6 +3,9 @@
 - work around https://github.com/rust-lang/rust/issues/43449
 - update d/copyright
 
+- see if it is possible to build dynamically linked (e.g. against libgit2)
+  rather than embedding these things
+
 Later
 =====
 
