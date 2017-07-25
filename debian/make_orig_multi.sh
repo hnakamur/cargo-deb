@@ -50,7 +50,7 @@ cargo vendor --explicit-version --verbose
 
 # Clean embedded libs and update checksums
 grep -v '^#' ${VENDOR_FILTER} | xargs  -I% sh -c 'rm -rf vendor/%'
-for i in vendor/*; do ${WORKDIR}/debian/cargo-checksums-prune.py "$i"; done
+for i in vendor/*; do ${WORKDIR}/debian/scripts/prune-checksums "$i"; done
 
 # Report any suspicious files
 cp -R vendor vendor-scan
