@@ -82,18 +82,21 @@ override_dh_auto_clean:
 			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0
 
-CROSS_SBUILD = DEB_BUILD_OPTIONS=nocheck sbuild --profiles=nocheck \
+CROSS_SBUILD = sbuild --profiles=nocheck \
 	  --build-failed-commands '%SBUILD_SHELL' \
-	  --add-depends=libc-dev:$(DEB_HOST_ARCH) \
-	  $(EXTRA_SBUILD_FLAGS) \
 	  --host=$(DEB_HOST_ARCH) \
-	  --no-arch-all
+	  --no-arch-all $(EXTRA_SBUILD_FLAGS)
+
+SBUILD_REPO_EXPERIMENTAL = --extra-repository="deb http://httpredir.debian.org/debian experimental main"
+
+# Sometimes this is necessary, if the mirrors have different versions for different architectures
+ifeq (1,$(SBUILD_USE_INCOMING))
+CROSS_SBUILD += --extra-repository="deb http://incoming.debian.org/debian-buildd buildd-unstable main"
+SBUILD_REPO_EXPERIMENTAL += --extra-repository="deb http://incoming.debian.org/debian-buildd buildd-experimental main"
+endif
 
 crossbuild:
 	$(CROSS_SBUILD) .
 
 crossbuild-experimental:
-	$(CROSS_SBUILD) \
-	  --extra-repository='deb http://httpredir.debian.org/debian experimental main' \
-	  --build-dep-resolver=aspcud \
-	  .
+	$(CROSS_SBUILD) $(SBUILD_REPO_EXPERIMENTAL) --build-dep-resolver=aspcud .

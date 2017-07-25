@@ -1,3 +1,17 @@
+cargo (0.17.0-2) unstable; urgency=medium
+
+  * Re-embed libgit2 0.25.1 due to the Debian testing freeze. It will be
+    removed again after the freeze is over, when libgit2 0.25.1 can again
+    enter Debian unstable.
+
+ -- Ximin Luo <infinity0@debian.org>  Wed, 03 May 2017 16:56:03 +0200
+
+cargo (0.17.0-1) unstable; urgency=medium
+
+  * Upload to unstable so we have something to build rustc 1.17.0 with.
+
+ -- Ximin Luo <infinity0@debian.org>  Wed, 03 May 2017 11:24:08 +0200
+
 cargo (0.17.0-1~exp3) experimental; urgency=medium
 
   * Add git to Build-Depends to fix FTBFS.
