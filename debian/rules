@@ -60,7 +60,11 @@ ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 endif
 
 override_dh_auto_test:
+ifeq (,$(findstring nocheck,$(DEB_BUILD_PROFILES)))
+ifeq (,$(findstring nocheck,$(DEB_BUILD_OPTIONS)))
 	CFG_DISABLE_CROSS_TESTS=1 $(CARGO) test $(CARGOFLAGS)
+endif
+endif
 
 override_dh_auto_install:
 	# We pick stuff directly from target/

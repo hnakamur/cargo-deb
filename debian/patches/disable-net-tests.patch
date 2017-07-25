@@ -23,6 +23,15 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn https_something_happens() {
      let server = TcpListener::bind("127.0.0.1:0").unwrap();
      let addr = server.local_addr().unwrap();
+@@ -177,7 +177,7 @@
+ }
+ 
+ // Boy, sure would be nice to have an SSH implementation in rust!
+-#[test]
++//#[test]
+ fn ssh_something_happens() {
+     let server = TcpListener::bind("127.0.0.1:0").unwrap();
+     let addr = server.local_addr().unwrap();
 --- a/tests/net-config.rs
 +++ b/tests/net-config.rs
 @@ -4,7 +4,7 @@
