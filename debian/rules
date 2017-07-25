@@ -14,6 +14,8 @@ RUSTFLAGS += -C linker=$(DEB_HOST_GNU_TYPE)-gcc
 RUSTFLAGS += $(foreach flag,$(LDFLAGS),-C link-arg=$(flag))
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 
+CARGO = RUST_BACKTRACE=1 cargo
+CARGOFLAGS = --release
 # Cargo looks for config in and writes cache to $CARGO_HOME/
 export CARGO_HOME = $(CURDIR)/debian/cargohome
 # Ask cargo to be verbose when building
@@ -43,39 +45,29 @@ ifneq ($(filter pkg.cargo.mkstage0,$(DEB_BUILD_PROFILES)),)
 	# Workaround for https://github.com/rust-lang/cargo/issues/1423
 	ln -s `find $(CURDIR)/deps -name 'cargo-*' -type f -executable` $(CURDIR)/cargo-stage0
 else
-	ln -s `which cargo` $(CURDIR)/cargo-stage0
+	ln -sf `which cargo` $(CURDIR)/cargo-stage0
 endif
+	debian/scripts/prune-checksums vendor/backtrace-sys-*/
 	debian/scripts/prune-checksums vendor/libgit2-sys-*/
-	# Configure to build cargo using the just-built stage0
-	./configure \
-		--prefix=/usr \
-		--disable-debug \
-		--enable-optimize \
-		--local-rust-root=/usr \
-		--release-channel=stable \
-		--cargo=$(CURDIR)/cargo-stage0 \
-		--build=$(DEB_BUILD_RUST_TYPE) \
-		--host=$(DEB_HOST_RUST_TYPE) \
-		--target=$(DEB_TARGET_RUST_TYPE)
 
 override_dh_auto_build-arch:
-	RUST_BACKTRACE=1 $(MAKE)
+	$(CARGO) build $(CARGOFLAGS)
 
 override_dh_auto_build-indep:
 ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
-	$(MAKE) doc
+	$(CARGO) doc $(CARGOFLAGS)
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
 endif
 
 override_dh_auto_test:
-	RUST_BACKTRACE=1 CFG_DISABLE_CROSS_TESTS=1 dh_auto_test
+	CFG_DISABLE_CROSS_TESTS=1 $(CARGO) test $(CARGOFLAGS)
 
 override_dh_auto_install:
 	# We pick stuff directly from target/
 
 override_dh_auto_clean:
 	-mv $(CURDIR)/.Cargo.lock.orig $(CURDIR)/Cargo.lock
-	dh_auto_clean
+	$(CARGO) clean $(CARGOFLAGS)
 	-$(RM) -r $(CURDIR)/target/ \
 			$(CURDIR)/.cargo \
 			$(CURDIR)/config.mk \

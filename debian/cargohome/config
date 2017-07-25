@@ -3,3 +3,6 @@ replace-with = "dh-cargo-registry"
 
 [source.dh-cargo-registry]
 directory = "../vendor"
+
+[build]
+rustflags = "-g"
