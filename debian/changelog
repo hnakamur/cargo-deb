@@ -1,5 +1,6 @@
 cargo (0.20.0-1) UNRELEASED; urgency=medium
 
+  * DO NOT RELEASE, see TODO.Debian
   * New upstream release.
   * Fix cross-compiling declarations, Multi-Arch: foreign => allowed
   * Un-embed libgit2 0.25.1 again.
