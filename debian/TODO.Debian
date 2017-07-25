@@ -1,0 +1,3 @@
+- transition libgit to 0.25
+- write better explanation for the libdbghelp.a stuff
+- work around https://github.com/rust-lang/rust/issues/43449
