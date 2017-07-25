@@ -45,7 +45,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
          .file("Cargo.toml", r#"
 --- a/tests/test.rs
 +++ b/tests/test.rs
-@@ -2265,7 +2265,7 @@
+@@ -2194,7 +2194,7 @@
                  execs().with_status(0));
  }
  

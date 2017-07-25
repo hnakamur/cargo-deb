@@ -45,6 +45,7 @@ ifneq ($(filter pkg.cargo.mkstage0,$(DEB_BUILD_PROFILES)),)
 else
 	ln -s `which cargo` $(CURDIR)/cargo-stage0
 endif
+	debian/scripts/prune-checksums vendor/libgit2-sys-*/
 	# Configure to build cargo using the just-built stage0
 	./configure \
 		--prefix=/usr \
