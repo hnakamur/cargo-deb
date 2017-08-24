@@ -27,7 +27,7 @@ def prune_keep(cfile):
 
 def prune(cfile):
     with open(cfile, "r+") as fp:
-        sums = json.load(fp)
+        sums = json.load(fp, object_pairs_hook=OrderedDict)
         sums["files"] = {}
         fp.seek(0)
         json.dump(sums, fp, separators=(',', ':'))
