@@ -7,10 +7,8 @@ Files: src/*
        .*
        Cargo.*
        LICENSE-*
-       Makefile.*
        README.*
        appveyor.yml
-       configure
 Copyright: 2014 The Rust Project Developers
 License: MIT or Apache-2.0
 Comment: please do not add * to the above paragraph, so we can use lintian to
@@ -148,12 +146,12 @@ Copyright: 2013 Simon Sapin <simon.sapin@exyr.org>
            1991-2015 Unicode, Inc
 License: MIT or Apache-2.0
 
-Files: vendor/idna-0.1.0/src/IdnaMappingTable.txt
-       vendor/idna-0.1.0/tests/IdnaTest.txt
-       vendor/unicode-bidi-0.2.3/src/BidiCharacterTest.txt
-       vendor/unicode-bidi-0.2.3/src/BidiTest.txt
-       vendor/unicode-normalization-0.1.2/src/DerivedNormalizationProps.txt
-       vendor/unicode-normalization-0.1.2/src/ReadMe.txt
+Files: vendor/idna-0*/src/IdnaMappingTable.txt
+       vendor/idna-0*/tests/IdnaTest.txt
+       vendor/unicode-bidi-0*/src/BidiCharacterTest.txt
+       vendor/unicode-bidi-0*/src/BidiTest.txt
+       vendor/unicode-normalization-0*/src/DerivedNormalizationProps.txt
+       vendor/unicode-normalization-0*/src/ReadMe.txt
 Copyright: 1991-2017 Unicode, Inc
 License: Unicode-terms
  Distributed under the Terms of Use in http://www.unicode.org/copyright.html.
@@ -197,11 +195,6 @@ Files: vendor/matches-*
 Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
 License: MIT
 Comment: see https://github.com/SimonSapin/rust-std-candidates
-
-Files: vendor/metadeps-1.*
-Copyright: 2016 Josh Triplett <josh@joshtriplett.org>
-License: MIT or Apache-2.0
-Comment: see https://github.com/joshtriplett/metadeps
 
 Files: vendor/miniz-sys-*/miniz.c
 Copyright: Rich Geldreich <richgel99@gmail.com>
