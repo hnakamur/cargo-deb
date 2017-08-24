@@ -51,10 +51,13 @@ Comment:
  same MIT/Apache-2.0 dual-license. See https://github.com/rust-lang.
  Exceptions are noted below.
 
-Files: vendor/cfg-if-0*
+Files: vendor/backtrace-0*
+       vendor/backtrace-sys-0*
+       vendor/cfg-if-0*
        vendor/filetime-*
        vendor/git2-0*
        vendor/git2-curl-*
+       vendor/jobserver-0*
        vendor/libz-sys-*
        vendor/libgit2-sys-*
        vendor/libssh2-sys-*
@@ -62,9 +65,12 @@ Files: vendor/cfg-if-0*
        vendor/miniz-sys-*
        vendor/openssl-probe-*
        vendor/pkg-config-*
+       vendor/rustc-demangle-0*
+       vendor/scoped-tls-0*
        vendor/tar-0*
        vendor/toml-0*
-Copyright: 2014-2016 Alex Crichton <alex@alexcrichton.com>
+Copyright: 2014-2017 Alex Crichton <alex@alexcrichton.com>
+           2014-2017 The Rust Project Developers
 License: MIT-License or Apache-2.0
 Comment: see https://github.com/alexcrichton/
 
@@ -81,14 +87,15 @@ Comment: see upstream projects,
  * https://github.com/BurntSushi/utf8-ranges
 
 Files: vendor/advapi32-sys-*
+       vendor/dbghelp-sys-0*
        vendor/gdi32-sys-*
        vendor/kernel32-*
        vendor/psapi-sys-*
        vendor/user32-sys-*
        vendor/winapi-*
        vendor/ws2_32-sys-*
-Copyright: 2015-2016 Peter Atashian <retep998@gmail.com>
-           2015-2016 winapi-rs developers
+Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
+           2014-2017 winapi-rs developers
 License: MIT-License
 Comment: see https://github.com/retep998/winapi-rs
 
@@ -99,6 +106,13 @@ Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
 License: MIT-License
 Comment: see https://github.com/sfackler/rust-openssl
 
+Files: vendor/dtoa-0*
+       vendor/itoa-0*
+       vendor/quote-0*
+Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/dtolnay
+
 Files: vendor/error-chain-0*
 Copyright: 2016 Brian Anderson <banderson@mozilla.com>,
            2016 Paul Colomiets <paul@colomiets.name>,
@@ -106,6 +120,11 @@ Copyright: 2016 Brian Anderson <banderson@mozilla.com>,
            2016 Yamakaky <yamakaky@yamaworld.fr>
 License: MIT-License or Apache-2.0
 Comment: see https://github.com/brson/error-chain
+
+Files: vendor/foreign-types-0*
+Copyright: 2017-2017 Steven Fackler <sfackler@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/sfackler/foreign-types
 
 Files: vendor/hamcrest-0*
 Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
@@ -205,15 +224,34 @@ Copyright: 2015 Steven Fackler <sfackler@gmail.com>
 License: MIT-License
 Comment: see https://github.com/sfackler/rust-openssl
 
+Files: vendor/serde-1.*
+       vendor/serde_derive-1.*
+       vendor/serde_derive_internals-0*
+       vendor/serde_ignored-0*
+       vendor/serde_json-1.*
+Copyright: 2014-2017 Erick Tryzelaar <erick.tryzelaar@gmail.com>
+           2014-2017 David Tolnay <dtolnay@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/serde-rs
+         see https://github.com/dtolnay/serde-ignored
+
 Files: vendor/strsim-*
 Copyright: 2015 Danny Guo <dannyguo91@gmail.com>
 License: MIT-License
 Comment: see https://github.com/dguo/strsim-rs
 
+Files: vendor/syn-0*
+       vendor/synom-0*
+Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/dtolnay/syn
+
 Files: vendor/thread-id-2.*
-Copyright: 2016 Ruud van Asseldonk <dev@veniogames.com>
+       vendor/thread-id-3.*
+Copyright: 2016-2017 Ruud van Asseldonk <dev@veniogames.com>
 License: Apache-2.0
 Comment: see https://github.com/ruud-v-a/thread-id
+         see https://github.com/ruuda/thread-id
 
 Files: vendor/thread_local-0*
 Copyright: 2016 Amanieu d'Antras <amanieu@gmail.com>
@@ -230,11 +268,28 @@ Copyright: 2016 kwantam <kwantam@gmail.com>
 License: MIT-License or Apache-2.0
 Comment: see https://github.com/unicode-rs/unicode-normalization
 
+Files: vendor/unicode-xid-0*
+Copyright: 2015-2017 erick.tryzelaar <erick.tryzelaar@gmail.com>
+           2015-2017 kwantam <kwantam@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/unicode-rs/unicode-xid
+
+Files: vendor/unreachable-0*
+       vendor/void-1.*
+Copyright: 2015-2017 Jonathan Reem <jonathan.reem@gmail.com>
+License: MIT-License
+Comment: see https://github.com/reem/
+
 Files: vendor/url-1.*
 Copyright: 2015-2016 Simon Sapin <simon.sapin@exyr.org>
            2013-2016 The rust-url developers
 License: MIT-License or Apache-2.0
 Comment: see https://github.com/servo/rust-url
+
+Files: vendor/vcpkg-0*
+Copyright: 2017-2017 Jim McGrath <jimmc2@gmail.com>
+License: MIT-License or Apache-2.0
+Comment: see https://github.com/mcgoo/vcpkg-rs
 
 Files: src/doc/javascripts/prism.js
        debian/missing-sources/prism.js
