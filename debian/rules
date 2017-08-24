@@ -15,11 +15,9 @@ RUSTFLAGS += $(foreach flag,$(LDFLAGS),-C link-arg=$(flag))
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 
 CARGO = RUST_BACKTRACE=1 cargo
-CARGOFLAGS = --release --target=$(DEB_HOST_RUST_TYPE)
+CARGOFLAGS = --release --target=$(DEB_HOST_RUST_TYPE) --verbose
 # Cargo looks for config in and writes cache to $CARGO_HOME/
 export CARGO_HOME = $(CURDIR)/debian/cargohome
-# Ask cargo to be verbose when building
-export VERBOSE = 1
 
 %:
 	dh $@ --with bash-completion
