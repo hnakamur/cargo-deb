@@ -1,5 +1,3 @@
-- update d/copyright
-
 - later: experiment with -C prefer-dynamic
   - see TODO in d/rules, need to update rustc
 - (possibly not needed, seems Windows-only):
