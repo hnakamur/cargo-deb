@@ -1,10 +1,8 @@
-- transition libgit to 0.25
-- write better explanation for the libdbghelp.a stuff
-- work around https://github.com/rust-lang/rust/issues/43449
 - update d/copyright
 
-- see if it is possible to build dynamically linked (e.g. against libgit2)
-  rather than embedding these things
+- later: experiment with -C prefer-dynamic
+- (possibly not needed, seems Windows-only):
+  work around https://github.com/rust-lang/rust/issues/43449
 
 Later
 =====
