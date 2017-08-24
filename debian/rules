@@ -79,6 +79,10 @@ override_dh_auto_clean:
 			$(CURDIR)/Makefile \
 			$(CURDIR)/cargo-stage0
 
+override_dh_clean:
+	# Upstream contains a lot of these
+	dh_clean -XCargo.toml.orig
+
 CROSS_SBUILD = sbuild --profiles=nocheck \
 	  --build-failed-commands '%SBUILD_SHELL' \
 	  --host=$(DEB_HOST_ARCH) \
