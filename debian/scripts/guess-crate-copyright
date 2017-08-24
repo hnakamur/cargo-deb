@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # Copyright: 2015-2017 The Debian Project
-# License: MIT-License or Apache-2.0
+# License: MIT or Apache-2.0
 #
 # Guess the copyright of a cargo crate by looking at its git history.
 
@@ -37,6 +37,6 @@ Comment: see {3}
 """.format(
 		os.path.join(crate, "*"),
 		"\n           ".join("%s-%s %s" % (first_year, last_year, a.replace(" <>", "")) for a in data ["package"]["authors"]),
-		data["package"].get("license", "???").replace("/", " or ").replace("MIT", "Expat"),
+		data["package"].get("license", "???").replace("/", " or "),
 		repo or "???"
 	))
