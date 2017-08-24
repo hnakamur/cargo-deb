@@ -1,11 +1,11 @@
-cargo (0.20.0-1) UNRELEASED; urgency=medium
+cargo (0.20.0-1) unstable; urgency=medium
 
   * New upstream release.
   * Fix cross-compiling declarations, Multi-Arch: foreign => allowed
   * Un-embed libgit2 0.25.1 again. (Closes: #860990)
   * Update to latest Standards-Version; no changes required.
 
- -- Ximin Luo <infinity0@debian.org>  Tue, 25 Jul 2017 14:46:16 +0200
+ -- Ximin Luo <infinity0@debian.org>  Thu, 24 Aug 2017 19:13:00 +0200
 
 cargo (0.17.0-2) unstable; urgency=medium
 
