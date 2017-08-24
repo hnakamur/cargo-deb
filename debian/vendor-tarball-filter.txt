@@ -5,6 +5,16 @@ libgit2-sys-*/libgit2*/
 libssh2-sys-*/libssh2*/
 libz-sys-*/src/zlib-*/
 strsim-*/docs/
+# pre-built archive for WinAPI
+# <WindowsBunny> infinity0: So the libfoo.a in my hundreds of -sys crates are from MinGW-w64
+# <WindowsBunny> infinity0: They're import libraries that only matter when targetting pc-windows-gnu
+# <WindowsBunny> infinity0: And even then they only matter when the user doesn't have a full MinGW-w64 installation already
+# so for now we just omit them because we don't target windows in Debian (yet)
+# in the future we will have to figure out how to build them, as follows:
+# <infinity0> well, how do we know it's free software if we don't have the build scripts for it?
+# <WindowsBunny> infinity0: Well, the .def files are in the winapi repo
+# <WindowsBunny> infinity0: and you can uh... run whatever mingw tool to create the import libraries from those .def files
+dbghelp-sys-*/*/*.a
 
 # To clean deps before making a new tarball, run
 # grep -v '^#' debian/deps-tarball-filter.txt | xargs -I% sh -c 'rm -rf %'
