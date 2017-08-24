@@ -9,7 +9,11 @@ include /usr/share/rustc/architecture.mk
 export PKG_CONFIG = $(DEB_HOST_GNU_TYPE)-pkg-config
 export PKG_CONFIG_ALLOW_CROSS = 1
 RUSTFLAGS += -C linker=$(DEB_HOST_GNU_TYPE)-gcc
-RUSTFLAGS += -C prefer-dynamic
+# TODO: we cannot enable this until dh_shlibdeps works correctly; atm we get:
+# dpkg-shlibdeps: warning: can't extract name and version from library name 'libstd-XXXXXXXX.so'
+# and the resulting cargo.deb does not depend on the correct version of libstd-rust-1.XX
+# We probably need to add override_dh_makeshlibs to d/rules of rustc
+#RUSTFLAGS += -C prefer-dynamic
 
 # Pass on dpkg-buildflags stuff
 RUSTFLAGS += $(foreach flag,$(LDFLAGS),-C link-arg=$(flag))

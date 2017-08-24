@@ -39,7 +39,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends},
          rustc (>= 1.1),
          binutils,
          gcc | clang | c-compiler
-Suggests: cargo-doc
+Suggests: cargo-doc, python3-minimal
 Description: Rust package manager
  Cargo is a tool that allows Rust projects to declare their various
  dependencies, and ensure that you'll always get a repeatable build.
@@ -53,7 +53,6 @@ Description: Rust package manager
  .
  Cargo downloads your Rust project’s dependencies and compiles your
  project.
-
 
 Package: cargo-doc
 Section: doc
