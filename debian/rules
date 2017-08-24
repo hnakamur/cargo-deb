@@ -54,6 +54,9 @@ override_dh_auto_build-arch:
 override_dh_auto_build-indep:
 ifeq (,$(findstring nodoc,$(DEB_BUILD_PROFILES)))
 	$(CARGO) doc $(CARGOFLAGS)
+	# Extra instructions from README.md, unfortunately not done by "cargo doc"
+	sh src/ci/dox.sh
+	# Post-processing for Debian
 	cd target/doc/ && rm -f jquery.js && ln -s /usr/share/javascript/jquery/jquery.js
 endif
 
