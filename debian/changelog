@@ -1,8 +1,8 @@
-cargo (0.20.0-2) UNRELEASED; urgency=medium
+cargo (0.20.0-2) unstable; urgency=medium
 
   * Work around #865549, fixes FTBFS on ppc64el.
 
- -- Ximin Luo <infinity0@debian.org>  Thu, 14 Sep 2017 13:28:00 +0200
+ -- Ximin Luo <infinity0@debian.org>  Thu, 14 Sep 2017 15:47:55 +0200
 
 cargo (0.20.0-1) unstable; urgency=medium
 
