@@ -24,8 +24,15 @@ CARGOFLAGS = --release --target=$(DEB_HOST_RUST_TYPE) --verbose
 # Cargo looks for config in and writes cache to $CARGO_HOME/
 export CARGO_HOME = $(CURDIR)/debian/cargohome
 
+# Work around #865549, needed when using older cargo that is affected by it.
+# TODO: remove after cargo/unstable is a version that was compiled with rustc
+# >= 1.18 where this bug was fixed in Debian (i.e. probably after 0.20).
+ifeq (0,$(shell test $$(uname -s) = "Linux" -a $$(getconf PAGESIZE) -gt 4096; echo $$?))
+  SYSTEM_WORKAROUNDS += ulimit -s $$(expr $$(getconf PAGESIZE) / 1024 '*' 256 + 8192);
+endif
+
 %:
-	dh $@ --with bash-completion
+	$(SYSTEM_WORKAROUNDS) dh $@ --with bash-completion
 
 override_dh_auto_configure:
 	cp -a $(CURDIR)/Cargo.lock $(CURDIR)/.Cargo.lock.orig
