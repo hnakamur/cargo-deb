@@ -3,7 +3,8 @@ Section: devel
 Maintainer: Rust Maintainers <pkg-rust-maintainers@lists.alioth.debian.org>
 Uploaders: Luca Bruno <lucab@debian.org>,
  Angus Lees <gus@debian.org>,
- Ximin Luo <infinity0@debian.org>
+ Ximin Luo <infinity0@debian.org>,
+ Vasudev Kamath <vasudev@copyninja.info>
 Priority: extra
 # :native annotations are to support cross-compiling, see README.Debian of rustc
 Build-Depends: debhelper (>= 9.20141010),
