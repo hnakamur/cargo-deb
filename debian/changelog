@@ -1,3 +1,9 @@
+cargo (0.20.0-3) UNRELEASED; urgency=medium
+
+  * Add myself as uploader for cargo package.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 17 Sep 2017 21:31:39 +0530
+
 cargo (0.20.0-2) unstable; urgency=medium
 
   * Work around #865549, fixes FTBFS on ppc64el.
