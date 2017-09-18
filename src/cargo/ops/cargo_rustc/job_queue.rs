@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 use std::collections::hash_map::HashMap;
 use std::fmt;
-use std::io::{self, Write};
+use std::io;
 use std::mem;
 use std::sync::mpsc::{channel, Sender, Receiver};
 
 use crossbeam::{self, Scope};
 use jobserver::{Acquired, HelperThread};
-use term::color::YELLOW;
 
 use core::{PackageId, Target, Profile};
 use util::{Config, DependencyQueue, Fresh, Dirty, Freshness};
@@ -114,7 +113,7 @@ impl<'a> JobQueue<'a> {
         let _p = profile::start("executing the job graph");
 
         // We need to give a handle to the send half of our message queue to the
-        // jobserver helper thrad. Unfortunately though we need the handle to be
+        // jobserver helper thread. Unfortunately though we need the handle to be
         // `'static` as that's typically what's required when spawning a
         // thread!
         //
@@ -212,7 +211,7 @@ impl<'a> JobQueue<'a> {
                 }
                 Message::Stdout(out) => {
                     if cx.config.extra_verbose() {
-                        writeln!(cx.config.shell().out(), "{}", out)?;
+                        println!("{}", out);
                     }
                 }
                 Message::Stderr(err) => {
@@ -236,9 +235,9 @@ impl<'a> JobQueue<'a> {
                             if self.active > 0 {
                                 error = Some("build failed".into());
                                 handle_error(e, &mut *cx.config.shell());
-                                cx.config.shell().say(
-                                            "Build failed, waiting for other \
-                                             jobs to finish...", YELLOW)?;
+                                cx.config.shell().warn(
+                                            "build failed, waiting for other \
+                                             jobs to finish...")?;
                             }
                             else {
                                 error = Some(e);

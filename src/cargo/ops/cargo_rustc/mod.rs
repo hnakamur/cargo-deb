@@ -10,7 +10,7 @@ use serde_json;
 
 use core::{Package, PackageId, PackageSet, Target, Resolve};
 use core::{Profile, Profiles, Workspace};
-use core::shell::ColorConfig;
+use core::shell::ColorChoice;
 use util::{self, ProcessBuilder, machine_message};
 use util::{Config, internal, profile, join_paths, short_hash};
 use util::errors::{CargoResult, CargoResultExt};
@@ -80,8 +80,14 @@ pub trait Executor: Send + Sync + 'static {
                  handle_stdout: &mut FnMut(&str) -> CargoResult<()>,
                  handle_stderr: &mut FnMut(&str) -> CargoResult<()>)
                  -> CargoResult<()> {
-        cmd.exec_with_streaming(handle_stdout, handle_stderr)?;
+        cmd.exec_with_streaming(handle_stdout, handle_stderr, false)?;
         Ok(())
+    }
+
+    /// Queried when queuing each unit of work. If it returns true, then the
+    /// unit will always be rebuilt, independent of whether it needs to be.
+    fn force_rebuild(&self, _unit: &Unit) -> bool {
+        false
     }
 }
 
@@ -230,7 +236,7 @@ fn compile<'a, 'cfg: 'a>(cx: &mut Context<'a, 'cfg>,
         // we run these targets later, so this is just a noop for now
         (Work::new(|_| Ok(())), Work::new(|_| Ok(())), Freshness::Fresh)
     } else {
-        let (freshness, dirty, fresh) = fingerprint::prepare_target(cx, unit)?;
+        let (mut freshness, dirty, fresh) = fingerprint::prepare_target(cx, unit)?;
         let work = if unit.profile.doc {
             rustdoc(cx, unit)?
         } else {
@@ -239,6 +245,11 @@ fn compile<'a, 'cfg: 'a>(cx: &mut Context<'a, 'cfg>,
         // Need to link targets on both the dirty and fresh
         let dirty = work.then(link_targets(cx, unit, false)?).then(dirty);
         let fresh = link_targets(cx, unit, true)?.then(fresh);
+
+        if exec.force_rebuild(unit) {
+            freshness = Freshness::Dirty;
+        }
+
         (dirty, fresh, freshness)
     };
     jobs.enqueue(cx, unit, Job::new(dirty, fresh), freshness)?;
@@ -679,9 +690,10 @@ fn build_base_args(cx: &mut Context,
 
     cmd.arg(&root_path(cx, unit));
 
-    let color_config = cx.config.shell().color_config();
-    if color_config != ColorConfig::Auto {
-        cmd.arg("--color").arg(&color_config.to_string());
+    match cx.config.shell().color_choice() {
+        ColorChoice::Always => { cmd.arg("--color").arg("always"); }
+        ColorChoice::Never => { cmd.arg("--color").arg("never"); }
+        ColorChoice::CargoAuto => {}
     }
 
     if cx.build_config.json_messages {

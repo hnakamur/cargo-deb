@@ -1,6 +1,6 @@
 [package]
 name = "cargo"
-version = "0.20.0"
+version = "0.21.1"
 authors = ["Yehuda Katz <wycats@gmail.com>",
            "Carl Lerche <me@carllerche.com>",
            "Alex Crichton <alex@alexcrichton.com>"]
@@ -17,24 +17,25 @@ name = "cargo"
 path = "src/cargo/lib.rs"
 
 [dependencies]
-crates-io = { path = "src/crates-io", version = "0.9" }
+atty = "0.2"
+crates-io = { path = "src/crates-io", version = "0.10" }
 crossbeam = "0.2"
 curl = "0.4.6"
-docopt = "0.7"
+docopt = "0.8"
 env_logger = "0.4"
-error-chain = "0.10.0"
+error-chain = "0.11.0"
 filetime = "0.1"
 flate2 = "0.2"
 fs2 = "0.4"
 git2 = "0.6"
 git2-curl = "0.7"
 glob = "0.2"
+hex = "0.2"
 jobserver = "0.1.6"
 libc = "0.2"
 libgit2-sys = "0.6"
 log = "0.3"
 num_cpus = "1.0"
-rustc-serialize = "0.3"
 scoped-tls = "0.1"
 semver = { version = "0.7.0", features = ["serde"] }
 serde = "1.0"
@@ -44,7 +45,7 @@ serde_json = "1.0"
 shell-escape = "0.1"
 tar = { version = "0.4", default-features = false }
 tempdir = "0.3"
-term = "0.4.4"
+termcolor = "0.3"
 toml = "0.4"
 url = "1.1"
 
