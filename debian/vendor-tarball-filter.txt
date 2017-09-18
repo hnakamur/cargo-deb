@@ -18,3 +18,6 @@ dbghelp-sys-*/*/*.a
 
 # To clean deps before making a new tarball, run
 # grep -v '^#' debian/deps-tarball-filter.txt | xargs -I% sh -c 'rm -rf %'
+
+# We do not need sublime workspace file for building package
+hex-*/rust-hex.sublime-workspace
