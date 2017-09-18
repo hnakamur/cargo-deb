@@ -16,7 +16,7 @@ fn cargo_bench_simple() {
 
     let p = project("foo")
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file("src/foo.rs", r#"
+        .file("src/main.rs", r#"
             #![feature(test)]
             extern crate test;
 
@@ -153,7 +153,7 @@ fn cargo_bench_verbose() {
 
     let p = project("foo")
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file("src/foo.rs", r#"
+        .file("src/main.rs", r#"
             #![feature(test)]
             extern crate test;
             fn main() {}
@@ -163,7 +163,7 @@ fn cargo_bench_verbose() {
     assert_that(p.cargo_process("bench").arg("-v").arg("hello"),
                 execs().with_stderr(&format!("\
 [COMPILING] foo v0.5.0 ({url})
-[RUNNING] `rustc [..] src[/]foo.rs [..]`
+[RUNNING] `rustc [..] src[/]main.rs [..]`
 [FINISHED] release [optimized] target(s) in [..]
 [RUNNING] `[..]target[/]release[/]deps[/]foo-[..][EXE] hello --bench`", url = p.url()))
                        .with_stdout_contains("test bench_hello ... bench: [..]"));
@@ -213,7 +213,7 @@ fn cargo_bench_failing_test() {
 
     let p = project("foo")
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file("src/foo.rs", r#"
+        .file("src/main.rs", r#"
             #![feature(test)]
             extern crate test;
             fn hello() -> &'static str {
@@ -241,9 +241,11 @@ fn cargo_bench_failing_test() {
 [COMPILING] foo v0.5.0 ({})
 [FINISHED] release [optimized] target(s) in [..]
 [RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
-thread '[..]' panicked at 'assertion failed: `(left == right)`[..]", p.url()))
+thread '[..]' panicked at 'assertion failed: \
+    `(left == right)`[..]", p.url()))
                        .with_stderr_contains("[..]left: `\"hello\"`[..]")
                        .with_stderr_contains("[..]right: `\"nope\"`[..]")
+                       .with_stderr_contains("[..]src[/]main.rs:14[..]")
                        .with_status(101));
 }
 
@@ -878,6 +880,44 @@ fn test_bench_no_run() {
 }
 
 #[test]
+fn test_bench_no_fail_fast() {
+    if !is_nightly() { return }
+
+    let p = project("foo")
+        .file("Cargo.toml", &basic_bin_manifest("foo"))
+        .file("src/foo.rs", r#"
+            #![feature(test)]
+            extern crate test;
+            fn hello() -> &'static str {
+                "hello"
+            }
+
+            pub fn main() {
+                println!("{}", hello())
+            }
+
+            #[bench]
+            fn bench_hello(_b: &mut test::Bencher) {
+                assert_eq!(hello(), "hello")
+            }
+
+            #[bench]
+            fn bench_nope(_b: &mut test::Bencher) {
+                assert_eq!("nope", hello())
+            }"#);
+
+    assert_that(p.cargo_process("bench").arg("--no-fail-fast"),
+                execs().with_status(101)
+                    .with_stderr_contains("\
+[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
+                    .with_stdout_contains("running 2 tests")
+                    .with_stderr_contains("\
+[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
+                    .with_stdout_contains("test bench_hello [..]")
+                    .with_stdout_contains("test bench_nope [..]"));
+}
+
+#[test]
 fn test_bench_multiple_packages() {
     if !is_nightly() { return }
 
@@ -1059,7 +1099,7 @@ fn bench_all_exclude() {
                 execs().with_status(0)
                     .with_stdout_contains("\
 running 1 test
-test bar ... bench:           0 ns/iter (+/- 0)"));
+test bar ... bench:           [..] ns/iter (+/- [..])"));
 }
 
 #[test]
@@ -1118,3 +1158,34 @@ fn bench_all_virtual_manifest() {
                        .with_stdout_contains("test bench_foo ... bench: [..]"));
 }
 
+// https://github.com/rust-lang/cargo/issues/4287
+#[test]
+fn legacy_bench_name() {
+    if !is_nightly() { return }
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+
+            [[bench]]
+            name = "bench"
+        "#)
+        .file("src/lib.rs", r#"
+            pub fn foo() {}
+        "#)
+        .file("src/bench.rs", r#"
+            #![feature(test)]
+            extern crate test;
+
+            use test::Bencher;
+
+            #[bench]
+            fn bench_foo(_: &mut Bencher) -> () { () }
+        "#);
+
+    assert_that(p.cargo_process("bench"), execs().with_status(0).with_stderr_contains("\
+[WARNING] path `src[/]bench.rs` was erroneously implicitly accepted for benchmark bench,
+please set bench.path in Cargo.toml"));
+}

@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -12,7 +14,6 @@ use curl;
 use git2;
 use semver;
 use serde_json;
-use term;
 use toml;
 use registry;
 
@@ -32,7 +33,6 @@ error_chain! {
         SerdeJson(serde_json::Error);
         TomlSer(toml::ser::Error);
         TomlDe(toml::de::Error);
-        Term(term::Error);
         ParseInt(num::ParseIntError);
         ParseBool(str::ParseBoolError);
         Parse(string::ParseError);
@@ -73,18 +73,18 @@ impl CargoError {
             &CargoErrorKind::Curl(_) => true,
             &CargoErrorKind::HttpNot200(..) => true,
             &CargoErrorKind::ProcessErrorKind(_) => true,
-            &CargoErrorKind::CrateRegistry(_) |
+            &CargoErrorKind::CrateRegistry(_) => true,
             &CargoErrorKind::ParseSemver(_) |
             &CargoErrorKind::Semver(_) |
             &CargoErrorKind::Io(_) |
             &CargoErrorKind::SerdeJson(_) |
-            &CargoErrorKind::Term(_) |
             &CargoErrorKind::ParseInt(_) |
             &CargoErrorKind::ParseBool(_) |
             &CargoErrorKind::Parse(_) |
             &CargoErrorKind::Git(_) |
             &CargoErrorKind::Internal(_) |
-            &CargoErrorKind::CargoTestErrorKind(_) => false
+            &CargoErrorKind::CargoTestErrorKind(_) |
+            &CargoErrorKind::__Nonexhaustive { .. } => false
         }
     }
 }

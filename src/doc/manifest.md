@@ -18,10 +18,11 @@ All three of these fields are mandatory.
 Cargo bakes in the concept of [Semantic
 Versioning](http://semver.org/), so make sure you follow some basic rules:
 
-* Before you reach 1.0.0, anything goes.
+* Before you reach 1.0.0, anything goes, but if you make breaking changes,
+  increment the minor version. In Rust, breaking changes include adding fields to
+  structs or variants to enums.
 * After 1.0.0, only make breaking changes when you increment the major version.
-  In Rust, breaking changes include adding fields to structs or variants to
-  enums. Don’t break the build.
+  Don’t break the build.
 * After 1.0.0, don’t add any new public API (no new `pub` anything) in tiny
   versions. Always increment the minor version if you add any new `pub` structs,
   traits, fields, types, functions, methods or anything else.
@@ -162,6 +163,8 @@ travis-ci = { repository = "...", branch = "master" }
 appveyor = { repository = "...", branch = "master", service = "github" }
 # GitLab: `repository` is required. `branch` is optional; default is `master`
 gitlab = { repository = "...", branch = "master" }
+# Circle CI: `repository` is required. `branch` is optiona; default is `master`
+circle-ci = { repository = "...", branch = "master" }
 # Is it maintained resolution time: `repository` is required.
 is-it-maintained-issue-resolution = { repository = "..." }
 # Is it maintained percentage of open issues: `repository` is required.
@@ -457,8 +460,11 @@ Most of the time workspaces will not need to be dealt with as `cargo new` and
 If your project is an executable, name the main source file `src/main.rs`. If it
 is a library, name the main source file `src/lib.rs`.
 
-Cargo will also treat any files located in `src/bin/*.rs` as executables.  Do
-note, however, once you add a `[[bin]]` section ([see
+Cargo will also treat any files located in `src/bin/*.rs` as executables. If your
+executable consist of more than just one source file, you might also use a directory
+inside `src/bin` containing a `main.rs` file which will be treated as an executable
+with a name of the parent directory.
+Do note, however, once you add a `[[bin]]` section ([see
 below](#configuring-a-target)), Cargo will no longer automatically build files
 located in `src/bin/*.rs`.  Instead you must create a `[[bin]]` section for
 each file you want to build.
@@ -473,6 +479,8 @@ integration tests, and benchmarks respectively.
   main.rs        # the main entry point for projects producing executables
   ▾ bin/         # (optional) directory containing additional executables
     *.rs
+  ▾ */           # (optional) directories containing multi-file executables
+    main.rs
 ▾ examples/      # (optional) examples
   *.rs
 ▾ tests/         # (optional) integration tests

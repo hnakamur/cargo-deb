@@ -6,14 +6,13 @@ extern crate filetime;
 extern crate flate2;
 extern crate git2;
 extern crate hamcrest;
+extern crate hex;
 extern crate libc;
-extern crate rustc_serialize;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
 extern crate tar;
 extern crate tempdir;
-extern crate term;
 extern crate url;
 #[cfg(windows)] extern crate kernel32;
 #[cfg(windows)] extern crate winapi;

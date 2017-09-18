@@ -17,7 +17,7 @@ use util::{self, internal, Config, profile, Cfg, CfgExpr};
 use util::errors::{CargoResult, CargoResultExt};
 
 use super::TargetConfig;
-use super::custom_build::{BuildState, BuildScripts};
+use super::custom_build::{BuildState, BuildScripts, BuildDeps};
 use super::fingerprint::Fingerprint;
 use super::layout::Layout;
 use super::links::Links;
@@ -38,7 +38,7 @@ pub struct Context<'a, 'cfg: 'a> {
     pub compilation: Compilation<'cfg>,
     pub packages: &'a PackageSet<'cfg>,
     pub build_state: Arc<BuildState>,
-    pub build_explicit_deps: HashMap<Unit<'a>, (PathBuf, Vec<String>)>,
+    pub build_explicit_deps: HashMap<Unit<'a>, BuildDeps>,
     pub fingerprints: HashMap<Unit<'a>, Arc<Fingerprint>>,
     pub compiled: HashSet<Unit<'a>>,
     pub build_config: BuildConfig,
@@ -949,15 +949,26 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     }
 
     pub fn incremental_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
-        // Only enable incremental compilation for sources the user can modify.
-        // For things that change infrequently, non-incremental builds yield
-        // better performance.
-        // (see also https://github.com/rust-lang/cargo/issues/3972)
-        if self.incremental_enabled && unit.pkg.package_id().source_id().is_path() {
-            Ok(vec![format!("-Zincremental={}", self.layout(unit.kind).incremental().display())])
-        } else {
-            Ok(vec![])
+        if self.incremental_enabled {
+            if unit.pkg.package_id().source_id().is_path() {
+                // Only enable incremental compilation for sources the user can modify.
+                // For things that change infrequently, non-incremental builds yield
+                // better performance.
+                // (see also https://github.com/rust-lang/cargo/issues/3972)
+                return Ok(vec![format!("-Zincremental={}",
+                                       self.layout(unit.kind).incremental().display())]);
+            } else {
+                if unit.profile.codegen_units.is_none() {
+                    // For non-incremental builds we set a higher number of
+                    // codegen units so we get faster compiles. It's OK to do
+                    // so because the user has already opted into slower
+                    // runtime code by setting CARGO_INCREMENTAL.
+                    return Ok(vec![format!("-Ccodegen-units={}", ::num_cpus::get())]);
+                }
+            }
         }
+
+        Ok(vec![])
     }
 
     pub fn rustflags_args(&self, unit: &Unit) -> CargoResult<Vec<String>> {
@@ -1038,11 +1049,18 @@ fn env_args(config: &Config,
     // ...including target.'cfg(...)'.rustflags
     if let Some(ref target_cfg) = target_info.cfg {
         if let Some(table) = config.get_table("target")? {
-            let cfgs = table.val.iter().map(|(t, _)| (CfgExpr::from_str(t), t))
-                .filter_map(|(c, n)| c.map(|c| (c, n)).ok())
-                .filter(|&(ref c, _)| c.matches(target_cfg));
-            for (_, n) in cfgs {
-                let key = format!("target.'{}'.{}", n, name);
+            let cfgs = table.val.keys().filter_map(|t| {
+                if t.starts_with("cfg(") && t.ends_with(")") {
+                    let cfg = &t[4..t.len() - 1];
+                    CfgExpr::from_str(cfg)
+                        .ok()
+                        .and_then(|c| if c.matches(target_cfg) { Some(t) } else { None })
+                } else {
+                    None
+                }
+            });
+            for n in cfgs {
+                let key = format!("target.{}.{}", n, name);
                 if let Some(args) = config.get_list_or_split_string(&key)? {
                     let args = args.val.into_iter();
                     rustflags.extend(args);

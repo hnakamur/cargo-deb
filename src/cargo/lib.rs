@@ -8,6 +8,7 @@
 #[macro_use] extern crate scoped_tls;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
+extern crate atty;
 extern crate crates_io as registry;
 extern crate crossbeam;
 extern crate curl;
@@ -17,33 +18,31 @@ extern crate flate2;
 extern crate fs2;
 extern crate git2;
 extern crate glob;
+extern crate hex;
 extern crate jobserver;
 extern crate libc;
 extern crate libgit2_sys;
 extern crate num_cpus;
-extern crate rustc_serialize;
 extern crate semver;
 extern crate serde;
 extern crate serde_ignored;
 extern crate shell_escape;
 extern crate tar;
 extern crate tempdir;
-extern crate term;
+extern crate termcolor;
 extern crate toml;
 extern crate url;
 
-use std::io;
 use std::fmt;
 use std::error::Error;
 
 use error_chain::ChainedError;
-use rustc_serialize::Decodable;
+use serde::Deserialize;
 use serde::ser;
 use docopt::Docopt;
 
-use core::{Shell, MultiShell, ShellConfig, Verbosity, ColorConfig};
-use core::shell::Verbosity::{Verbose};
-use term::color::{BLACK};
+use core::Shell;
+use core::shell::Verbosity::Verbose;
 
 pub use util::{CargoError, CargoErrorKind, CargoResult, CliError, CliResult, Config};
 
@@ -105,7 +104,7 @@ impl fmt::Display for VersionInfo {
     }
 }
 
-pub fn call_main_without_stdin<Flags: Decodable>(
+pub fn call_main_without_stdin<'de, Flags: Deserialize<'de>>(
             exec: fn(Flags, &Config) -> CliResult,
             config: &Config,
             usage: &str,
@@ -117,7 +116,7 @@ pub fn call_main_without_stdin<Flags: Decodable>(
         .argv(args.iter().map(|s| &s[..]))
         .help(true);
 
-    let flags = docopt.decode().map_err(|e| {
+    let flags = docopt.deserialize().map_err(|e| {
         let code = if e.fatal() {1} else {0};
         CliError::new(e.to_string().into(), code)
     })?;
@@ -130,90 +129,46 @@ pub fn print_json<T: ser::Serialize>(obj: &T) {
     println!("{}", encoded);
 }
 
-pub fn shell(verbosity: Verbosity, color_config: ColorConfig) -> MultiShell {
-    enum Output {
-        Stdout,
-        Stderr,
-    }
-
-    let tty = isatty(Output::Stderr);
-
-    let config = ShellConfig { color_config: color_config, tty: tty };
-    let err = Shell::create(|| Box::new(io::stderr()), config);
-
-    let tty = isatty(Output::Stdout);
-
-    let config = ShellConfig { color_config: color_config, tty: tty };
-    let out = Shell::create(|| Box::new(io::stdout()), config);
-
-    return MultiShell::new(out, err, verbosity);
-
-    #[cfg(unix)]
-    fn isatty(output: Output) -> bool {
-        let fd = match output {
-            Output::Stdout => libc::STDOUT_FILENO,
-            Output::Stderr => libc::STDERR_FILENO,
-        };
-
-        unsafe { libc::isatty(fd) != 0 }
-    }
-    #[cfg(windows)]
-    fn isatty(output: Output) -> bool {
-        extern crate kernel32;
-        extern crate winapi;
-
-        let handle = match output {
-            Output::Stdout => winapi::winbase::STD_OUTPUT_HANDLE,
-            Output::Stderr => winapi::winbase::STD_ERROR_HANDLE,
-        };
-
-        unsafe {
-            let handle = kernel32::GetStdHandle(handle);
-            let mut out = 0;
-            kernel32::GetConsoleMode(handle, &mut out) != 0
-        }
-    }
-}
-
-pub fn exit_with_error(err: CliError, shell: &mut MultiShell) -> ! {
+pub fn exit_with_error(err: CliError, shell: &mut Shell) -> ! {
     debug!("exit_with_error; err={:?}", err);
 
     let CliError { error, exit_code, unknown } = err;
     // exit_code == 0 is non-fatal error, e.g. docopt version info
     let fatal = exit_code != 0;
 
-    let hide = unknown && shell.get_verbose() != Verbose;
+    let hide = unknown && shell.verbosity() != Verbose;
 
     if let Some(error) = error {
-        let _ignored_result = if hide {
-            shell.error("An unknown error occurred")
+        if hide {
+            drop(shell.error("An unknown error occurred"))
         } else if fatal {
-            shell.error(&error)
+            drop(shell.error(&error))
         } else {
-            shell.say(&error, BLACK)
-        };
+            drop(writeln!(shell.err(), "{}", error))
+        }
 
         if !handle_cause(error, shell) || hide {
-            let _ = shell.err().say("\nTo learn more, run the command again \
-                                     with --verbose.".to_string(), BLACK);
+            drop(writeln!(shell.err(), "\nTo learn more, run the command again \
+                                        with --verbose."));
         }
     }
 
     std::process::exit(exit_code)
 }
 
-pub fn handle_error(err: CargoError, shell: &mut MultiShell) {
+pub fn handle_error(err: CargoError, shell: &mut Shell) {
     debug!("handle_error; err={:?}", &err);
 
     let _ignored_result = shell.error(&err);
     handle_cause(err, shell);
 }
 
-fn handle_cause<E, EKind>(cargo_err: E, shell: &mut MultiShell) -> bool
-    where E: ChainedError<ErrorKind=EKind> + 'static {
-    fn print(error: String, shell: &mut MultiShell) {
-        let _ = shell.err().say("\nCaused by:", BLACK);
-        let _ = shell.err().say(format!("  {}", error), BLACK);
+fn handle_cause<E, EKind>(cargo_err: E, shell: &mut Shell) -> bool
+    where E: ChainedError<ErrorKind=EKind> + 'static
+{
+    fn print(error: String, shell: &mut Shell) {
+        drop(writeln!(shell.err(), "\nCaused by:"));
+        drop(writeln!(shell.err(), "  {}", error));
     }
 
     //Error inspection in non-verbose mode requires inspecting the
@@ -228,7 +183,7 @@ fn handle_cause<E, EKind>(cargo_err: E, shell: &mut MultiShell) -> bool
         std::mem::transmute::<&Error, &Error>(r)
     }
 
-    let verbose = shell.get_verbose();
+    let verbose = shell.verbosity();
 
     if verbose == Verbose {
         //The first error has already been printed to the shell
