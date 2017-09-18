@@ -32,3 +32,4 @@ winapi-*/src/winnt.rs
 itoa-*/performance.png
 dtoa-*/performance.png
 backtrace-sys-*/src/libbacktrace/configure
+unicode-normalization-*/src/tables.rs
