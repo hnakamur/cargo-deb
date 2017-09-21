@@ -1,8 +1,10 @@
-cargo (0.20.0-3) UNRELEASED; urgency=medium
+cargo (0.21.1-1) UNRELEASED; urgency=medium
 
   * Add myself as uploader for cargo package.
+  * Mark tables.rs from unicode-normalization as unsuspicious.
+  * Ignore sublime workspace file from hex crate.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 17 Sep 2017 21:31:39 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Mon, 18 Sep 2017 21:32:21 +0530
 
 cargo (0.20.0-2) unstable; urgency=medium
 
