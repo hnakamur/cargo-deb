@@ -1,6 +1,8 @@
-From: Luca Bruno <lucab@debian.org>
 Description: Remove remote jquery references
+From: Luca Bruno <lucab@debian.org>
 Forwarded: no
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/src/doc/html-headers.html
 +++ b/src/doc/html-headers.html
 @@ -1,2 +1,2 @@
