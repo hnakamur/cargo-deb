@@ -1,10 +1,22 @@
-cargo (0.21.1-1) UNRELEASED; urgency=medium
+cargo (0.21.1-1) experimental; urgency=medium
 
-  * Add myself as uploader for cargo package.
+  * debian/control:
+    + Add myself as uploader for cargo package.
+    + Mark package compliance with Debian Policy 4.1.0.
   * Mark tables.rs from unicode-normalization as unsuspicious.
   * Ignore sublime workspace file from hex crate.
+  * debian/copyright:
+    + Drop wildcards representing the old crates under vendor folder.
+    + Add copyright information for newer crates under vendor
+    + Add ARCHITECTURE.* to copyright.
+  * debian/patches:
+    + Rename patches to follow patch naming guidelines mentioned in
+      debian/patches/README.
+    + Add patch 1001 to fix spelling errors in cargo output messages.
+    + Make patch 2003 DEP-3 compliant.
+    + Adjust make_orig_multi.sh to renamed clean-cargo-deps.patch
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Mon, 18 Sep 2017 21:32:21 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 23 Sep 2017 10:41:07 +0530
 
 cargo (0.20.0-2) unstable; urgency=medium
 
