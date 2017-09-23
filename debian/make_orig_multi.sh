@@ -38,8 +38,8 @@ cd cargo
 
 # Trim the list of dependencies
 echo ""
-echo "Applying clean-cargo-deps.patch... If this fails, remember to refresh the patch first!"
-patch -p1 < ${WORKDIR}/debian/patches/clean-cargo-deps.patch
+echo "Applying 2004_clean-cargo-deps.patch... If this fails, remember to refresh the patch first!"
+patch -p1 < ${WORKDIR}/debian/patches/2004_clean-cargo-deps.patch
 
 # Download build-deps via cargo-vendor
 export GIT_AUTHOR_NAME="deb-build"

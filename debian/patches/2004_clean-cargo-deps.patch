@@ -1,12 +1,14 @@
-From: Luca Bruno <lucab@debian.org>
-From: Ximin Luo <infinity0@debian.org>
 Description: Remove stage1 extra dependencies (cargo 0.17)
  Fetching extra dev-dependencies is not yet supported by bootstrap.py
  and they are not need to build. However, cargo will try to download
  them before building stage1.
  .
  For patches for earlier versions of cargo, see the git history for this file.
+From: Luca Bruno <lucab@debian.org>
+From: Ximin Luo <infinity0@debian.org>
 Forwarded: not-needed
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/Cargo.toml
 +++ b/Cargo.toml
 @@ -51,12 +51,12 @@

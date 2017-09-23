@@ -1,4 +1,4 @@
-clean-cargo-deps.patch
+2004_clean-cargo-deps.patch
 2003_local-jquery.patch
 2001_use-system-libgit2.patch
 2002_disable-net-tests.patch
