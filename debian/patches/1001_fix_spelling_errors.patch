@@ -1,0 +1,75 @@
+Description: Fix spelling errors in cargo messages.
+Author: Vasudev Kamath <vasudev@copyninja.info>
+Forwarded: no
+Last-Update: 2017-09-23
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/src/bin/search.rs
++++ b/src/bin/search.rs
+@@ -26,7 +26,7 @@
+ Options:
+     -h, --help               Print this message
+     --index INDEX            Registry index to search in
+-    --host HOST              DEPRICATED, renamed to '--index'
++    --host HOST              DEPRECATED, renamed to '--index'
+     -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
+     -q, --quiet              No output printed to stdout
+     --color WHEN             Coloring: auto, always, never
+--- a/src/cargo/util/toml/mod.rs
++++ b/src/cargo/util/toml/mod.rs
+@@ -676,19 +676,19 @@
+             bail!("virtual manifests do not define [package]");
+         }
+         if me.lib.is_some() {
+-            bail!("virtual manifests do not specifiy [lib]");
++            bail!("virtual manifests do not specify [lib]");
+         }
+         if me.bin.is_some() {
+-            bail!("virtual manifests do not specifiy [[bin]]");
++            bail!("virtual manifests do not specify [[bin]]");
+         }
+         if me.example.is_some() {
+-            bail!("virtual manifests do not specifiy [[example]]");
++            bail!("virtual manifests do not specify [[example]]");
+         }
+         if me.test.is_some() {
+-            bail!("virtual manifests do not specifiy [[test]]");
++            bail!("virtual manifests do not specify [[test]]");
+         }
+         if me.bench.is_some() {
+-            bail!("virtual manifests do not specifiy [[bench]]");
++            bail!("virtual manifests do not specify [[bench]]");
+         }
+ 
+         let mut nested_paths = Vec::new();
+--- a/src/etc/man/cargo-pkgid.1
++++ b/src/etc/man/cargo-pkgid.1
+@@ -43,7 +43,7 @@
+ .RE
+ .SH EXAMPLES
+ .PP
+-Retrive package specification for foo package
++Retrieve package specification for foo package
+ .IP
+ .nf
+ \f[C]
+@@ -59,7 +59,7 @@
+ \f[]
+ .fi
+ .PP
+-Retrive package specification for foo from crates.io
++Retrieve package specification for foo from crates.io
+ .IP
+ .nf
+ \f[C]
+--- a/vendor/url-1.5.1/src/parser.rs
++++ b/vendor/url-1.5.1/src/parser.rs
+@@ -683,7 +683,7 @@
+                         self.syntax_violation("unencoded @ sign in username or password")
+                     } else {
+                         self.syntax_violation(
+-                            "embedding authentification information (username or password) \
++                            "embedding authentication information (username or password) \
+                             in an URL is not recommended")
+                     }
+                     last_at = Some((char_count, remaining.clone()))
