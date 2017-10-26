@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fmt::{self, Formatter};
 use std::hash::Hash;
 use std::hash;
+use std::path::Path;
 use std::sync::Arc;
 
 use semver;
@@ -131,6 +132,20 @@ impl PackageId {
             }),
         }
     }
+
+    pub fn stable_hash<'a>(&'a self, workspace: &'a Path) -> PackageIdStableHash<'a> {
+        PackageIdStableHash(&self, workspace)
+    }
+}
+
+pub struct PackageIdStableHash<'a>(&'a PackageId, &'a Path);
+
+impl<'a> Hash for PackageIdStableHash<'a> {
+    fn hash<S: hash::Hasher>(&self, state: &mut S) {
+        self.0.inner.name.hash(state);
+        self.0.inner.version.hash(state);
+        self.0.inner.source_id.stable_hash(self.1, state);
+    }
 }
 
 impl fmt::Display for PackageId {
@@ -165,7 +180,7 @@ mod tests {
     #[test]
     fn invalid_version_handled_nicely() {
         let loc = CRATES_IO.to_url().unwrap();
-        let repo = SourceId::for_registry(&loc);
+        let repo = SourceId::for_registry(&loc).unwrap();
 
         assert!(PackageId::new("foo", "1.0", &repo).is_err());
         assert!(PackageId::new("foo", "1", &repo).is_err());

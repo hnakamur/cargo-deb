@@ -28,10 +28,13 @@ pub struct Options {
     flag_tests: bool,
     flag_bench: Vec<String>,
     flag_benches: bool,
+    flag_all_targets: bool,
     flag_locked: bool,
     flag_frozen: bool,
     flag_all: bool,
     flag_exclude: Vec<String>,
+    #[serde(rename = "flag_Z")]
+    flag_z: Vec<String>,
 }
 
 pub const USAGE: &'static str = "
@@ -55,6 +58,7 @@ Options:
     --tests                      Build all tests
     --bench NAME                 Build only the specified bench target
     --benches                    Build all benches
+    --all-targets                Build all targets (lib and bin targets by default)
     --release                    Build artifacts in release mode, with optimizations
     --features FEATURES          Space-separated list of features to also build
     --all-features               Build all available features
@@ -67,6 +71,7 @@ Options:
     --message-format FMT         Error format: human, json [default: human]
     --frozen                     Require Cargo.lock and cache are up to date
     --locked                     Require Cargo.lock is up to date
+    -Z FLAG ...                  Unstable (nightly-only) flags to Cargo
 
 If the --package argument is given, then SPEC is a package id specification
 which indicates which package should be built. If it is not given, then the
@@ -89,11 +94,14 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
                      options.flag_quiet,
                      &options.flag_color,
                      options.flag_frozen,
-                     options.flag_locked)?;
+                     options.flag_locked,
+                     &options.flag_z)?;
 
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
+    let ws = Workspace::new(&root, config)?;
 
-    let spec = Packages::from_flags(options.flag_all,
+    let spec = Packages::from_flags(ws.is_virtual(),
+                                    options.flag_all,
                                     &options.flag_exclude,
                                     &options.flag_package)?;
 
@@ -111,13 +119,13 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
                                         &options.flag_bin, options.flag_bins,
                                         &options.flag_test, options.flag_tests,
                                         &options.flag_example, options.flag_examples,
-                                        &options.flag_bench, options.flag_benches,),
+                                        &options.flag_bench, options.flag_benches,
+                                        options.flag_all_targets),
         message_format: options.flag_message_format,
         target_rustdoc_args: None,
         target_rustc_args: None,
     };
 
-    let ws = Workspace::new(&root, config)?;
     ops::compile(&ws, &opts)?;
     Ok(())
 }

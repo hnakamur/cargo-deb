@@ -22,7 +22,7 @@ pub struct Options {
     flag_frozen: bool,
     flag_locked: bool,
 
-    arg_crate: Option<String>,
+    arg_crate: Vec<String>,
     flag_vers: Option<String>,
 
     flag_git: Option<String>,
@@ -31,13 +31,15 @@ pub struct Options {
     flag_rev: Option<String>,
 
     flag_path: Option<String>,
+    #[serde(rename = "flag_Z")]
+    flag_z: Vec<String>,
 }
 
 pub const USAGE: &'static str = "
 Install a Rust binary
 
 Usage:
-    cargo install [options] [<crate>]
+    cargo install [options] [<crate>...]
     cargo install [options] --list
 
 Specifying what crate to install:
@@ -66,6 +68,7 @@ Build and install options:
     --color WHEN              Coloring: auto, always, never
     --frozen                  Require Cargo.lock and cache are up to date
     --locked                  Require Cargo.lock is up to date
+    -Z FLAG ...               Unstable (nightly-only) flags to Cargo
 
 This command manages Cargo's local set of installed binary crates. Only packages
 which have [[bin]] targets can be installed, and all binaries are installed into
@@ -103,7 +106,8 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
                      options.flag_quiet,
                      &options.flag_color,
                      options.flag_frozen,
-                     options.flag_locked)?;
+                     options.flag_locked,
+                     &options.flag_z)?;
 
     let compile_opts = ops::CompileOptions {
         config: config,
@@ -119,7 +123,8 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
                                         &options.flag_bin, options.flag_bins,
                                         &[], false,
                                         &options.flag_example, options.flag_examples,
-                                        &[], false),
+                                        &[], false,
+                                        false),
         message_format: ops::MessageFormat::Human,
         target_rustc_args: None,
         target_rustdoc_args: None,
@@ -136,23 +141,23 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
         } else {
             GitReference::Branch("master".to_string())
         };
-        SourceId::for_git(&url, gitref)
+        SourceId::for_git(&url, gitref)?
     } else if let Some(path) = options.flag_path {
         SourceId::for_path(&config.cwd().join(path))?
-    } else if options.arg_crate == None {
+    } else if options.arg_crate.is_empty() {
         SourceId::for_path(&config.cwd())?
     } else {
         SourceId::crates_io(config)?
     };
 
-    let krate = options.arg_crate.as_ref().map(|s| &s[..]);
+    let krates = options.arg_crate.iter().map(|s| &s[..]).collect::<Vec<_>>();
     let vers = options.flag_vers.as_ref().map(|s| &s[..]);
     let root = options.flag_root.as_ref().map(|s| &s[..]);
 
     if options.flag_list {
         ops::install_list(root, config)?;
     } else {
-        ops::install(root, krate, &source, vers, &compile_opts, options.flag_force)?;
+        ops::install(root, krates, &source, vers, &compile_opts, options.flag_force)?;
     }
     Ok(())
 }

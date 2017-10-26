@@ -268,12 +268,14 @@ fn plan_new_source_file(bin: bool, project_name: String) -> SourceFileInformatio
 pub fn new(opts: NewOptions, config: &Config) -> CargoResult<()> {
     let path = config.cwd().join(opts.path);
     if fs::metadata(&path).is_ok() {
-        bail!("destination `{}` already exists",
-              path.display())
+        bail!("destination `{}` already exists\n\n\
+            Use `cargo init` to initialize the directory\
+            ", path.display()
+        )
     }
 
     if opts.lib && opts.bin {
-        bail!("can't specify both lib and binary outputs");
+        bail!("can't specify both lib and binary outputs")
     }
 
     let name = get_name(&path, &opts, config)?;
@@ -390,11 +392,18 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
     let path = opts.path;
     let name = opts.name;
     let cfg = global_config(config)?;
+    // Please ensure that ignore and hgignore are in sync.
     let ignore = ["/target/\n", "**/*.rs.bk\n",
         if !opts.bin { "Cargo.lock\n" } else { "" }]
         .concat();
+    // Mercurial glob ignores can't be rooted, so just sticking a 'syntax: glob' at the top of the
+    // file will exclude too much. Instead, use regexp-based ignores. See 'hg help ignore' for
+    // more.
+    let hgignore = ["^target/\n", "glob:*.rs.bk\n",
+        if !opts.bin { "glob:Cargo.lock\n" } else { "" }]
+        .concat();
 
-    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap(), config.cwd());
+    let in_existing_vcs_repo = existing_vcs_repo(path.parent().unwrap_or(path), config.cwd());
     let vcs = match (opts.version_control, cfg.version_control, in_existing_vcs_repo) {
         (None, None, false) => VersionControl::Git,
         (None, Some(option), false) => option,
@@ -412,8 +421,7 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
             if !fs::metadata(&path.join(".hg")).is_ok() {
                 HgRepo::init(path, config.cwd())?;
             }
-            let ignore = format!("syntax: glob\n{}", ignore);
-            paths::append(&path.join(".hgignore"), ignore.as_bytes())?;
+            paths::append(&path.join(".hgignore"), hgignore.as_bytes())?;
         },
         VersionControl::Pijul => {
             if !fs::metadata(&path.join(".pijul")).is_ok() {
@@ -500,6 +508,7 @@ fn main() {
 mod tests {
     #[test]
     fn it_works() {
+        assert_eq!(2 + 2, 4);
     }
 }
 "

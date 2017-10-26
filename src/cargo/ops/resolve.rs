@@ -15,7 +15,7 @@ use util::errors::{CargoResult, CargoResultExt};
 /// lockfile.
 pub fn resolve_ws<'a>(ws: &Workspace<'a>) -> CargoResult<(PackageSet<'a>, Resolve)> {
     let mut registry = PackageRegistry::new(ws.config())?;
-    let resolve = resolve_with_registry(ws, &mut registry)?;
+    let resolve = resolve_with_registry(ws, &mut registry, true)?;
     let packages = get_resolved_packages(&resolve, registry);
     Ok((packages, resolve))
 }
@@ -44,7 +44,7 @@ pub fn resolve_ws_precisely<'a>(ws: &Workspace<'a>,
     let resolve = if ws.require_optional_deps() {
         // First, resolve the root_package's *listed* dependencies, as well as
         // downloading and updating all remotes and such.
-        let resolve = resolve_with_registry(ws, &mut registry)?;
+        let resolve = resolve_with_registry(ws, &mut registry, false)?;
 
         // Second, resolve with precisely what we're doing. Filter out
         // transitive dependencies if necessary, specify features, handle
@@ -79,19 +79,19 @@ pub fn resolve_ws_precisely<'a>(ws: &Workspace<'a>,
     let resolved_with_overrides =
     ops::resolve_with_previous(&mut registry, ws,
                                method, resolve.as_ref(), None,
-                               specs)?;
+                               specs, true)?;
 
     let packages = get_resolved_packages(&resolved_with_overrides, registry);
 
     Ok((packages, resolved_with_overrides))
 }
 
-fn resolve_with_registry(ws: &Workspace, registry: &mut PackageRegistry)
+fn resolve_with_registry(ws: &Workspace, registry: &mut PackageRegistry, warn: bool)
                          -> CargoResult<Resolve> {
     let prev = ops::load_pkg_lockfile(ws)?;
     let resolve = resolve_with_previous(registry, ws,
                                         Method::Everything,
-                                        prev.as_ref(), None, &[])?;
+                                        prev.as_ref(), None, &[], warn)?;
 
     if !ws.is_ephemeral() {
         ops::write_pkg_lockfile(ws, &resolve)?;
@@ -114,7 +114,8 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
                                  method: Method,
                                  previous: Option<&'a Resolve>,
                                  to_avoid: Option<&HashSet<&'a PackageId>>,
-                                 specs: &[PackageIdSpec])
+                                 specs: &[PackageIdSpec],
+                                 warn: bool)
                                  -> CargoResult<Resolve> {
     // Here we place an artificial limitation that all non-registry sources
     // cannot be locked at more than one revision. This means that if a git
@@ -129,6 +130,13 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
                                         .map(|p| p.source_id())
                                         .filter(|s| !s.is_registry()));
     }
+
+    let ref keep = |p: &&'a PackageId| {
+        !to_avoid_sources.contains(&p.source_id()) && match to_avoid {
+            Some(set) => !set.contains(p),
+            None => true,
+        }
+    };
 
     // In the case where a previous instance of resolve is available, we
     // want to lock as many packages as possible to the previous version
@@ -153,12 +161,35 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
     //    still matches the locked version.
     if let Some(r) = previous {
         trace!("previous: {:?}", r);
-        for node in r.iter().filter(|p| keep(p, to_avoid, &to_avoid_sources)) {
+        for node in r.iter().filter(keep) {
             let deps = r.deps_not_replaced(node)
-                        .filter(|p| keep(p, to_avoid, &to_avoid_sources))
+                        .filter(keep)
                         .cloned().collect();
             registry.register_lock(node.clone(), deps);
         }
+    }
+
+    for (url, patches) in ws.root_patch() {
+        let previous = match previous {
+            Some(r) => r,
+            None => {
+                registry.patch(url, patches)?;
+                continue
+            }
+        };
+        let patches = patches.iter().map(|dep| {
+            let unused = previous.unused_patches();
+            let candidates = previous.iter().chain(unused);
+            match candidates.filter(keep).find(|id| dep.matches_id(id)) {
+                Some(id) => {
+                    let mut dep = dep.clone();
+                    dep.lock_to(id);
+                    dep
+                }
+                None => dep.clone(),
+            }
+        }).collect::<Vec<_>>();
+        registry.patch(url, &patches)?;
     }
 
     let mut summaries = Vec::new();
@@ -214,9 +245,7 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
         Some(r) => {
             root_replace.iter().map(|&(ref spec, ref dep)| {
                 for (key, val) in r.replacements().iter() {
-                    if spec.matches(key) &&
-                       dep.matches_id(val) &&
-                       keep(&val, to_avoid, &to_avoid_sources) {
+                    if spec.matches(key) && dep.matches_id(val) && keep(&val) {
                         let mut dep = dep.clone();
                         dep.lock_to(val);
                         return (spec.clone(), dep)
@@ -228,21 +257,20 @@ pub fn resolve_with_previous<'a>(registry: &mut PackageRegistry,
         None => root_replace.to_vec(),
     };
 
-    let mut resolved = resolver::resolve(&summaries, &replace, registry)?;
+    let config = if warn {
+        Some(ws.config())
+    } else {
+        None
+    };
+    let mut resolved = resolver::resolve(&summaries,
+                                         &replace,
+                                         registry,
+                                         config)?;
+    resolved.register_used_patches(registry.patches());
     if let Some(previous) = previous {
         resolved.merge_from(previous)?;
     }
     return Ok(resolved);
-
-    fn keep<'a>(p: &&'a PackageId,
-                to_avoid_packages: Option<&HashSet<&'a PackageId>>,
-                to_avoid_sources: &HashSet<&'a SourceId>)
-                -> bool {
-        !to_avoid_sources.contains(&p.source_id()) && match to_avoid_packages {
-            Some(set) => !set.contains(p),
-            None => true,
-        }
-    }
 }
 
 /// Read the `paths` configuration variable to discover all path overrides that

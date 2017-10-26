@@ -44,10 +44,13 @@ pub fn publish(ws: &Workspace, opts: &PublishOpts) -> CargoResult<()> {
         bail!("some crates cannot be published.\n\
                `{}` is marked as unpublishable", pkg.name());
     }
+    if pkg.manifest().patch().len() > 0 {
+        bail!("published crates cannot contain [patch] sections");
+    }
 
     let (mut registry, reg_id) = registry(opts.config,
-                                               opts.token.clone(),
-                                               opts.index.clone())?;
+                                          opts.token.clone(),
+                                          opts.index.clone())?;
     verify_dependencies(pkg, &reg_id)?;
 
     // Prepare a tarball, with a non-surpressable warning if metadata
@@ -192,7 +195,7 @@ pub fn registry(config: &Config,
     } = registry_configuration(config)?;
     let token = token.or(token_config);
     let sid = match index {
-        Some(index) => SourceId::for_registry(&index.to_url()?),
+        Some(index) => SourceId::for_registry(&index.to_url()?)?,
         None => SourceId::crates_io(config)?,
     };
     let api_host = {
@@ -315,11 +318,11 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
 
     if let Some(ref v) = opts.to_add {
         let v = v.iter().map(|s| &s[..]).collect::<Vec<_>>();
-        config.shell().status("Owner", format!("adding {:?} to crate {}",
-                                                    v, name))?;
-        registry.add_owners(&name, &v).map_err(|e| {
-            CargoError::from(format!("failed to add owners to crate {}: {}", name, e))
+        let msg = registry.add_owners(&name, &v).map_err(|e| {
+            CargoError::from(format!("failed to invite owners to crate {}: {}", name, e))
         })?;
+
+        config.shell().status("Owner", msg)?;
     }
 
     if let Some(ref v) = opts.to_remove {

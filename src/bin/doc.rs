@@ -1,3 +1,5 @@
+use std::env;
+
 use cargo::core::Workspace;
 use cargo::ops::{self, MessageFormat, Packages};
 use cargo::util::{CliResult, Config};
@@ -25,6 +27,8 @@ pub struct Options {
     flag_frozen: bool,
     flag_locked: bool,
     flag_all: bool,
+    #[serde(rename = "flag_Z")]
+    flag_z: Vec<String>,
 }
 
 pub const USAGE: &'static str = "
@@ -55,6 +59,7 @@ Options:
     --message-format FMT         Error format: human, json [default: human]
     --frozen                     Require Cargo.lock and cache are up to date
     --locked                     Require Cargo.lock is up to date
+    -Z FLAG ...                  Unstable (nightly-only) flags to Cargo
 
 By default the documentation for the local package and all dependencies is
 built. The output is all placed in `target/doc` in rustdoc's usual format.
@@ -69,15 +74,20 @@ the `cargo help pkgid` command.
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult {
+    debug!("executing; cmd=cargo-check; args={:?}",
+           env::args().collect::<Vec<_>>());
+
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
                      options.flag_frozen,
-                     options.flag_locked)?;
+                     options.flag_locked,
+                     &options.flag_z)?;
 
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
+    let ws = Workspace::new(&root, config)?;
 
-    let spec = if options.flag_all {
+    let spec = if options.flag_all || (ws.is_virtual() && options.flag_package.is_empty()) {
         Packages::All
     } else {
         Packages::Packages(&options.flag_package)
@@ -98,7 +108,8 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
                                             &options.flag_bin, options.flag_bins,
                                             &empty, false,
                                             &empty, false,
-                                            &empty, false),
+                                            &empty, false,
+                                            false),
             message_format: options.flag_message_format,
             release: options.flag_release,
             mode: ops::CompileMode::Doc {
@@ -109,7 +120,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
         },
     };
 
-    let ws = Workspace::new(&root, config)?;
     ops::doc(&ws, &doc_opts)?;
     Ok(())
 }

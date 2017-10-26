@@ -1,4 +1,5 @@
 extern crate cargo;
+#[macro_use]
 extern crate cargotest;
 extern crate hamcrest;
 
@@ -743,7 +744,7 @@ fn dev_deps_no_rebuild_lib() {
                 doctest = false
         "#)
         .file("src/lib.rs", r#"
-            #[cfg(test)] extern crate bar;
+            #[cfg(test)] #[allow(unused_extern_crates)] extern crate bar;
             #[cfg(not(test))] pub fn foo() { env!("FOO"); }
         "#)
         .file("bar/Cargo.toml", r#"
@@ -783,6 +784,8 @@ fn custom_target_no_rebuild() {
             authors = []
             [dependencies]
             a = { path = "a" }
+            [workspace]
+            members = ["a", "b"]
         "#)
         .file("src/lib.rs", "")
         .file("a/Cargo.toml", r#"
@@ -810,9 +813,10 @@ fn custom_target_no_rebuild() {
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 "));
 
+    t!(fs::rename(p.root().join("target"), p.root().join("target_moved")));
     assert_that(p.cargo("build")
                  .arg("--manifest-path=b/Cargo.toml")
-                 .env("CARGO_TARGET_DIR", "target"),
+                 .env("CARGO_TARGET_DIR", "target_moved"),
                 execs().with_status(0)
                        .with_stderr("\
 [COMPILING] b v0.5.0 ([..])

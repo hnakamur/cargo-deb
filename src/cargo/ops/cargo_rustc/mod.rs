@@ -6,13 +6,14 @@ use std::io::{self, Write};
 use std::path::{self, PathBuf};
 use std::sync::Arc;
 
+use same_file::is_same_file;
 use serde_json;
 
 use core::{Package, PackageId, PackageSet, Target, Resolve};
 use core::{Profile, Profiles, Workspace};
 use core::shell::ColorChoice;
 use util::{self, ProcessBuilder, machine_message};
-use util::{Config, internal, profile, join_paths, short_hash};
+use util::{Config, internal, profile, join_paths};
 use util::errors::{CargoResult, CargoResultExt};
 use util::Freshness;
 
@@ -65,11 +66,18 @@ pub type PackagesToBuild<'a> = [(&'a Package, Vec<(&'a Target, &'a Profile)>)];
 /// directly, we'll use an Executor, giving clients an opportunity to intercept
 /// the build calls.
 pub trait Executor: Send + Sync + 'static {
-    fn init(&self, _cx: &Context) {}
+    /// Called after a rustc process invocation is prepared up-front for a given
+    /// unit of work (may still be modified for runtime-known dependencies, when
+    /// the work is actually executed).
+    fn init(&self, _cx: &Context, _unit: &Unit) {}
 
-    /// If execution succeeds, the ContinueBuild value indicates whether Cargo
-    /// should continue with the build process for this package.
-    fn exec(&self, cmd: ProcessBuilder, _id: &PackageId) -> CargoResult<()> {
+    /// In case of an `Err`, Cargo will not continue with the build process for
+    /// this package.
+    fn exec(&self,
+            cmd: ProcessBuilder,
+            _id: &PackageId,
+            _target: &Target)
+            -> CargoResult<()> {
         cmd.exec()?;
         Ok(())
     }
@@ -77,6 +85,7 @@ pub trait Executor: Send + Sync + 'static {
     fn exec_json(&self,
                  cmd: ProcessBuilder,
                  _id: &PackageId,
+                 _target: &Target,
                  handle_stdout: &mut FnMut(&str) -> CargoResult<()>,
                  handle_stderr: &mut FnMut(&str) -> CargoResult<()>)
                  -> CargoResult<()> {
@@ -234,7 +243,7 @@ fn compile<'a, 'cfg: 'a>(cx: &mut Context<'a, 'cfg>,
         custom_build::prepare(cx, unit)?
     } else if unit.profile.doc && unit.profile.test {
         // we run these targets later, so this is just a noop for now
-        (Work::new(|_| Ok(())), Work::new(|_| Ok(())), Freshness::Fresh)
+        (Work::noop(), Work::noop(), Freshness::Fresh)
     } else {
         let (mut freshness, dirty, fresh) = fingerprint::prepare_target(cx, unit)?;
         let work = if unit.profile.doc {
@@ -314,7 +323,7 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
     let package_id = unit.pkg.package_id().clone();
     let target = unit.target.clone();
 
-    exec.init(cx);
+    exec.init(cx, &unit);
     let exec = exec.clone();
 
     let root_output = cx.target_root().to_path_buf();
@@ -357,7 +366,7 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
 
         state.running(&rustc);
         if json_messages {
-            exec.exec_json(rustc, &package_id,
+            exec.exec_json(rustc, &package_id, &target,
                 &mut |line| if !line.is_empty() {
                     Err(internal(&format!("compiler stdout is not empty: `{}`", line)))
                 } else {
@@ -386,7 +395,7 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
                 format!("Could not compile `{}`.", name)
             })?;
         } else {
-            exec.exec(rustc, &package_id).map_err(|e| e.into_internal()).chain_err(|| {
+            exec.exec(rustc, &package_id, &target).map_err(|e| e.into_internal()).chain_err(|| {
                 format!("Could not compile `{}`.", name)
             })?;
         }
@@ -496,6 +505,9 @@ fn link_targets<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
             destinations.push(dst.display().to_string());
 
             debug!("linking {} to {}", src.display(), dst.display());
+            if is_same_file(src, dst).unwrap_or(false) {
+                continue
+            }
             if dst.exists() {
                 fs::remove_file(&dst).chain_err(|| {
                     format!("failed to remove: {}", dst.display())
@@ -802,7 +814,7 @@ fn build_base_args(cx: &mut Context,
             cmd.arg("-C").arg(&format!("extra-filename=-{}", m));
         }
         None => {
-            cmd.arg("-C").arg(&format!("metadata={}", short_hash(unit.pkg)));
+            cmd.arg("-C").arg(&format!("metadata={}", cx.target_short_hash(unit)));
         }
     }
 
