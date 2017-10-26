@@ -11,9 +11,9 @@ Forwarded: not-needed
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -51,12 +51,12 @@
- [target.'cfg(unix)'.dependencies]
- openssl = "0.9"
+@@ -58,12 +58,12 @@
+ [target.'cfg(target_os = "macos")'.dependencies]
+ core-foundation = { version = "0.4.4", features = ["mac_os_10_7_support"] }
  
 -[target.'cfg(windows)'.dependencies]
 -advapi32-sys = "0.2"
