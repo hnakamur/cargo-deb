@@ -33,3 +33,7 @@ itoa-*/performance.png
 dtoa-*/performance.png
 backtrace-sys-*/src/libbacktrace/configure
 unicode-normalization-*/src/tables.rs
+conv-*/src/errors.rs
+conv-*/src/macros.rs
+conv-*/src/impls.rs
+conv-*/src/lib.rs
