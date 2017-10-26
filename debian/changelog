@@ -1,3 +1,23 @@
+cargo (0.22.0-1~exp1) UNRELEASED; urgency=medium
+
+  * New upstream release.
+    + Can now install multiple crates with cargo install.
+    + cargo commands inside a virtual workspace will now implicitly pass
+      --all.
+    + Added [patch] section to Cargo.toml to handle prepublication
+      dependencies RFC 1969.
+    + include and exclude fields in Cargo.toml now accept gitignore like
+      patterns.
+    + Added --all-target option.
+    + Using required dependencies as a feature is now deprecated and emits
+      a warning.
+  * Put upstream PR url for patch 1001.
+  * Add conv crate file to unsuspicious files.
+  * Refresh patches 1001, 2002 and 2004 with new upstream release.
+  * Mark package compliance with Debian Policy 4.1.1.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Thu, 26 Oct 2017 22:32:10 +0530
+
 cargo (0.21.1-2) unstable; urgency=medium
 
   * Upload to unstable.
