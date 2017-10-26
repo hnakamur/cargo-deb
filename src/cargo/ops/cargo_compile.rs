@@ -36,6 +36,7 @@ use util::{CargoResult, profile};
 use util::errors::{CargoResultExt, CargoError};
 
 /// Contains information about how a package should be compiled.
+#[derive(Debug)]
 pub struct CompileOptions<'a> {
     pub config: &'a Config,
     /// Number of concurrent jobs to use.
@@ -79,7 +80,7 @@ impl<'a> CompileOptions<'a> {
             spec: ops::Packages::Packages(&[]),
             mode: mode,
             release: false,
-            filter: CompileFilter::Everything { required_features_filterable: false },
+            filter: CompileFilter::Default { required_features_filterable: false },
             message_format: MessageFormat::Human,
             target_rustdoc_args: None,
             target_rustc_args: None,
@@ -97,7 +98,7 @@ pub enum CompileMode {
     Doctest,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum MessageFormat {
     Human,
     Json
@@ -111,9 +112,11 @@ pub enum Packages<'a> {
 }
 
 impl<'a> Packages<'a> {
-    pub fn from_flags(all: bool, exclude: &'a Vec<String>, package: &'a Vec<String>)
+    pub fn from_flags(virtual_ws: bool, all: bool, exclude: &'a Vec<String>, package: &'a Vec<String>)
         -> CargoResult<Self>
     {
+        let all = all || (virtual_ws && package.is_empty());
+
         let packages = match (all, &exclude) {
             (true, exclude) if exclude.is_empty() => Packages::All,
             (true, exclude) => Packages::OptOut(exclude),
@@ -148,14 +151,15 @@ impl<'a> Packages<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum FilterRule<'a> {
     All,
     Just (&'a [String]),
 }
 
+#[derive(Debug)]
 pub enum CompileFilter<'a> {
-    Everything {
+    Default {
         /// Flag whether targets can be safely skipped when required-features are not satisfied.
         required_features_filterable: bool,
     },
@@ -228,6 +232,7 @@ pub fn compile_ws<'a>(ws: &Workspace<'a>,
         }
     } else {
         let root_package = ws.current()?;
+        root_package.manifest().print_teapot(ws.config());
         let all_features = resolve_all_features(&resolve_with_overrides,
                                                 root_package.package_id());
         generate_targets(root_package, profiles, mode, filter, &all_features, release)?;
@@ -375,13 +380,20 @@ impl<'a> CompileFilter<'a> {
                bins: &'a [String], all_bins: bool,
                tsts: &'a [String], all_tsts: bool,
                exms: &'a [String], all_exms: bool,
-               bens: &'a [String], all_bens: bool) -> CompileFilter<'a> {
+               bens: &'a [String], all_bens: bool,
+               all_targets: bool) -> CompileFilter<'a> {
         let rule_bins = FilterRule::new(bins, all_bins);
         let rule_tsts = FilterRule::new(tsts, all_tsts);
         let rule_exms = FilterRule::new(exms, all_exms);
         let rule_bens = FilterRule::new(bens, all_bens);
 
-        if lib_only || rule_bins.is_specific() || rule_tsts.is_specific()
+        if all_targets {
+            CompileFilter::Only {
+                lib: true, bins: FilterRule::All,
+                examples: FilterRule::All, benches: FilterRule::All,
+                tests: FilterRule::All,
+            }
+        } else if lib_only || rule_bins.is_specific() || rule_tsts.is_specific()
                     || rule_exms.is_specific() || rule_bens.is_specific() {
             CompileFilter::Only {
                 lib: lib_only, bins: rule_bins,
@@ -389,7 +401,7 @@ impl<'a> CompileFilter<'a> {
                 tests: rule_tsts,
             }
         } else {
-            CompileFilter::Everything {
+            CompileFilter::Default {
                 required_features_filterable: true,
             }
         }
@@ -397,7 +409,7 @@ impl<'a> CompileFilter<'a> {
 
     pub fn matches(&self, target: &Target) -> bool {
         match *self {
-            CompileFilter::Everything { .. } => true,
+            CompileFilter::Default { .. } => true,
             CompileFilter::Only { lib, bins, examples, tests, benches } => {
                 let rule = match *target.kind() {
                     TargetKind::Bin => bins,
@@ -415,7 +427,7 @@ impl<'a> CompileFilter<'a> {
 
     pub fn is_specific(&self) -> bool {
         match *self {
-            CompileFilter::Everything { .. } => false,
+            CompileFilter::Default { .. } => false,
             CompileFilter::Only { .. } => true,
         }
     }
@@ -597,7 +609,7 @@ fn generate_targets<'a>(pkg: &'a Package,
     };
 
     let targets = match *filter {
-        CompileFilter::Everything { required_features_filterable } => {
+        CompileFilter::Default { required_features_filterable } => {
             let deps = if release {
                 &profiles.bench_deps
             } else {

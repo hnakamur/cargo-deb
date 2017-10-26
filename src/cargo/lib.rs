@@ -2,7 +2,6 @@
 #![cfg_attr(test, deny(warnings))]
 #![recursion_limit="128"]
 
-#[cfg(test)] extern crate hamcrest;
 #[macro_use] extern crate error_chain;
 #[macro_use] extern crate log;
 #[macro_use] extern crate scoped_tls;
@@ -19,10 +18,13 @@ extern crate fs2;
 extern crate git2;
 extern crate glob;
 extern crate hex;
+extern crate home;
+extern crate ignore;
 extern crate jobserver;
 extern crate libc;
 extern crate libgit2_sys;
 extern crate num_cpus;
+extern crate same_file;
 extern crate semver;
 extern crate serde;
 extern crate serde_ignored;
@@ -32,6 +34,8 @@ extern crate tempdir;
 extern crate termcolor;
 extern crate toml;
 extern crate url;
+#[cfg(target_os = "macos")]
+extern crate core_foundation;
 
 use std::fmt;
 use std::error::Error;
@@ -207,7 +211,6 @@ fn handle_cause<E, EKind>(cargo_err: E, shell: &mut Shell) -> bool
 
     true
 }
-
 
 pub fn version() -> VersionInfo {
     macro_rules! env_str {

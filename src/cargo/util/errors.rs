@@ -16,6 +16,7 @@ use semver;
 use serde_json;
 use toml;
 use registry;
+use ignore;
 
 error_chain! {
     types {
@@ -29,6 +30,7 @@ error_chain! {
     foreign_links {
         ParseSemver(semver::ReqParseError);
         Semver(semver::SemVerError);
+        Ignore(ignore::Error);
         Io(io::Error);
         SerdeJson(serde_json::Error);
         TomlSer(toml::ser::Error);
@@ -76,6 +78,7 @@ impl CargoError {
             &CargoErrorKind::CrateRegistry(_) => true,
             &CargoErrorKind::ParseSemver(_) |
             &CargoErrorKind::Semver(_) |
+            &CargoErrorKind::Ignore(_) |
             &CargoErrorKind::Io(_) |
             &CargoErrorKind::SerdeJson(_) |
             &CargoErrorKind::ParseInt(_) |
@@ -83,8 +86,7 @@ impl CargoError {
             &CargoErrorKind::Parse(_) |
             &CargoErrorKind::Git(_) |
             &CargoErrorKind::Internal(_) |
-            &CargoErrorKind::CargoTestErrorKind(_) |
-            &CargoErrorKind::__Nonexhaustive { .. } => false
+            &CargoErrorKind::CargoTestErrorKind(_) => false
         }
     }
 }

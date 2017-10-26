@@ -5,10 +5,13 @@ use std::rc::Rc;
 
 use semver::Version;
 use serde::ser;
+use url::Url;
 
 use core::{Dependency, PackageId, Summary, SourceId, PackageIdSpec};
-use core::WorkspaceConfig;
+use core::{WorkspaceConfig, Features, Feature};
+use util::Config;
 use util::toml::TomlManifest;
+use util::errors::*;
 
 pub enum EitherManifest {
     Real(Manifest),
@@ -16,7 +19,7 @@ pub enum EitherManifest {
 }
 
 /// Contains all the information about a package, as loaded from a Cargo.toml.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Manifest {
     summary: Summary,
     targets: Vec<Target>,
@@ -28,8 +31,11 @@ pub struct Manifest {
     profiles: Profiles,
     publish: bool,
     replace: Vec<(PackageIdSpec, Dependency)>,
+    patch: HashMap<Url, Vec<Dependency>>,
     workspace: WorkspaceConfig,
     original: Rc<TomlManifest>,
+    features: Features,
+    im_a_teapot: Option<bool>,
 }
 
 /// When parsing `Cargo.toml`, some warnings should silenced
@@ -44,6 +50,7 @@ pub struct DelayedWarning {
 #[derive(Clone, Debug)]
 pub struct VirtualManifest {
     replace: Vec<(PackageIdSpec, Dependency)>,
+    patch: HashMap<Url, Vec<Dependency>>,
     workspace: WorkspaceConfig,
     profiles: Profiles,
 }
@@ -234,7 +241,10 @@ impl Manifest {
                profiles: Profiles,
                publish: bool,
                replace: Vec<(PackageIdSpec, Dependency)>,
+               patch: HashMap<Url, Vec<Dependency>>,
                workspace: WorkspaceConfig,
+               features: Features,
+               im_a_teapot: Option<bool>,
                original: Rc<TomlManifest>) -> Manifest {
         Manifest {
             summary: summary,
@@ -247,8 +257,11 @@ impl Manifest {
             profiles: profiles,
             publish: publish,
             replace: replace,
+            patch: patch,
             workspace: workspace,
+            features: features,
             original: original,
+            im_a_teapot: im_a_teapot,
         }
     }
 
@@ -266,12 +279,17 @@ impl Manifest {
     pub fn publish(&self) -> bool { self.publish }
     pub fn replace(&self) -> &[(PackageIdSpec, Dependency)] { &self.replace }
     pub fn original(&self) -> &TomlManifest { &self.original }
+    pub fn patch(&self) -> &HashMap<Url, Vec<Dependency>> { &self.patch }
     pub fn links(&self) -> Option<&str> {
         self.links.as_ref().map(|s| &s[..])
     }
 
     pub fn workspace_config(&self) -> &WorkspaceConfig {
         &self.workspace
+    }
+
+    pub fn features(&self) -> &Features {
+        &self.features
     }
 
     pub fn add_warning(&mut self, s: String) {
@@ -293,14 +311,36 @@ impl Manifest {
             ..self
         }
     }
+
+    pub fn feature_gate(&self) -> CargoResult<()> {
+        if self.im_a_teapot.is_some() {
+            self.features.require(Feature::test_dummy_unstable()).chain_err(|| {
+                "the `im-a-teapot` manifest key is unstable and may not work \
+                 properly in England"
+            })?;
+        }
+
+        Ok(())
+    }
+
+    // Just a helper function to test out `-Z` flags on Cargo
+    pub fn print_teapot(&self, config: &Config) {
+        if let Some(teapot) = self.im_a_teapot {
+            if config.cli_unstable().print_im_a_teapot {
+                println!("im-a-teapot = {}", teapot);
+            }
+        }
+    }
 }
 
 impl VirtualManifest {
     pub fn new(replace: Vec<(PackageIdSpec, Dependency)>,
+               patch: HashMap<Url, Vec<Dependency>>,
                workspace: WorkspaceConfig,
                profiles: Profiles) -> VirtualManifest {
         VirtualManifest {
             replace: replace,
+            patch: patch,
             workspace: workspace,
             profiles: profiles,
         }
@@ -308,6 +348,10 @@ impl VirtualManifest {
 
     pub fn replace(&self) -> &[(PackageIdSpec, Dependency)] {
         &self.replace
+    }
+
+    pub fn patch(&self) -> &HashMap<Url, Vec<Dependency>> {
+        &self.patch
     }
 
     pub fn workspace_config(&self) -> &WorkspaceConfig {

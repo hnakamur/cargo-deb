@@ -1,3 +1,5 @@
+use std::env;
+
 use cargo::core::Workspace;
 use cargo::ops::{self, MessageFormat, Packages};
 use cargo::util::{CliResult, CliError, Config, CargoErrorKind};
@@ -24,6 +26,7 @@ pub struct Options {
     flag_tests: bool,
     flag_bench: Vec<String>,
     flag_benches: bool,
+    flag_all_targets: bool,
     flag_verbose: u32,
     flag_quiet: Option<bool>,
     flag_color: Option<String>,
@@ -34,6 +37,8 @@ pub struct Options {
     flag_locked: bool,
     flag_all: bool,
     flag_exclude: Vec<String>,
+    #[serde(rename = "flag_Z")]
+    flag_z: Vec<String>,
 }
 
 pub const USAGE: &'static str = "
@@ -54,6 +59,7 @@ Options:
     --tests                      Test all tests
     --bench NAME ...             Test only the specified bench target
     --benches                    Test all benches
+    --all-targets                Test all targets (default)
     --no-run                     Compile, but don't run tests
     -p SPEC, --package SPEC ...  Package to run tests for
     --all                        Test all packages in the workspace
@@ -72,6 +78,7 @@ Options:
     --no-fail-fast               Run all tests regardless of failure
     --frozen                     Require Cargo.lock and cache are up to date
     --locked                     Require Cargo.lock is up to date
+    -Z FLAG ...                  Unstable (nightly-only) flags to Cargo
 
 All of the trailing arguments are passed to the test binaries generated for
 filtering tests and generally providing options configuring how they run. For
@@ -109,30 +116,38 @@ To get the list of all options available for the test binaries use this:
 ";
 
 pub fn execute(options: Options, config: &Config) -> CliResult {
+    debug!("executing; cmd=cargo-test; args={:?}",
+           env::args().collect::<Vec<_>>());
+
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
                      options.flag_frozen,
-                     options.flag_locked)?;
+                     options.flag_locked,
+                     &options.flag_z)?;
 
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
+    let ws = Workspace::new(&root, config)?;
 
     let empty = Vec::new();
     let (mode, filter);
     if options.flag_doc {
         mode = ops::CompileMode::Doctest;
         filter = ops::CompileFilter::new(true, &empty, false, &empty, false,
-                                               &empty, false, &empty, false);
+                                               &empty, false, &empty, false,
+                                         false);
     } else {
         mode = ops::CompileMode::Test;
         filter = ops::CompileFilter::new(options.flag_lib,
                                          &options.flag_bin, options.flag_bins,
                                          &options.flag_test, options.flag_tests,
                                          &options.flag_example, options.flag_examples,
-                                         &options.flag_bench, options.flag_benches);
+                                         &options.flag_bench, options.flag_benches,
+                                         options.flag_all_targets);
     }
 
-    let spec = Packages::from_flags(options.flag_all,
+    let spec = Packages::from_flags(ws.is_virtual(),
+                                    options.flag_all,
                                     &options.flag_exclude,
                                     &options.flag_package)?;
 
@@ -157,7 +172,6 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
         },
     };
 
-    let ws = Workspace::new(&root, config)?;
     let err = ops::run_tests(&ws, &ops, &options.arg_args)?;
     match err {
         None => Ok(()),

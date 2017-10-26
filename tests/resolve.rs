@@ -32,7 +32,7 @@ fn resolve(pkg: PackageId, deps: Vec<Dependency>, registry: &[Summary])
     let mut registry = MyRegistry(registry);
     let summary = Summary::new(pkg.clone(), deps, HashMap::new()).unwrap();
     let method = Method::Everything;
-    let resolve = resolver::resolve(&[(summary, method)], &[], &mut registry)?;
+    let resolve = resolver::resolve(&[(summary, method)], &[], &mut registry, None)?;
     let res = resolve.iter().cloned().collect();
     Ok(res)
 }
@@ -44,7 +44,7 @@ trait ToDep {
 impl ToDep for &'static str {
     fn to_dep(self) -> Dependency {
         let url = "http://example.com".to_url().unwrap();
-        let source_id = SourceId::for_registry(&url);
+        let source_id = SourceId::for_registry(&url).unwrap();
         Dependency::parse_no_deprecated(self, Some("1.0.0"), &source_id).unwrap()
     }
 }
@@ -86,7 +86,7 @@ macro_rules! pkg {
 
 fn registry_loc() -> SourceId {
     let remote = "http://example.com".to_url().unwrap();
-    SourceId::for_registry(&remote)
+    SourceId::for_registry(&remote).unwrap()
 }
 
 fn pkg(name: &str) -> Summary {
@@ -100,7 +100,7 @@ fn pkg_id(name: &str) -> PackageId {
 fn pkg_id_loc(name: &str, loc: &str) -> PackageId {
     let remote = loc.to_url();
     let master = GitReference::Branch("master".to_string());
-    let source_id = SourceId::for_git(&remote.unwrap(), master);
+    let source_id = SourceId::for_git(&remote.unwrap(), master).unwrap();
 
     PackageId::new(name, "1.0.0", &source_id).unwrap()
 }
@@ -112,14 +112,14 @@ fn pkg_loc(name: &str, loc: &str) -> Summary {
 fn dep(name: &str) -> Dependency { dep_req(name, "1.0.0") }
 fn dep_req(name: &str, req: &str) -> Dependency {
     let url = "http://example.com".to_url().unwrap();
-    let source_id = SourceId::for_registry(&url);
+    let source_id = SourceId::for_registry(&url).unwrap();
     Dependency::parse_no_deprecated(name, Some(req), &source_id).unwrap()
 }
 
 fn dep_loc(name: &str, location: &str) -> Dependency {
     let url = location.to_url().unwrap();
     let master = GitReference::Branch("master".to_string());
-    let source_id = SourceId::for_git(&url, master);
+    let source_id = SourceId::for_git(&url, master).unwrap();
     Dependency::parse_no_deprecated(name, Some("1.0.0"), &source_id).unwrap()
 }
 fn dep_kind(name: &str, kind: Kind) -> Dependency {
@@ -392,7 +392,6 @@ fn resolving_cycle() {
 
 #[test]
 fn hard_equality() {
-    extern crate env_logger;
     let reg = registry(vec![
         pkg!(("foo", "1.0.1")),
         pkg!(("foo", "1.0.0")),

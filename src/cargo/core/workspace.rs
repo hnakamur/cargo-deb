@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::slice;
 
 use glob::glob;
+use url::Url;
 
 use core::{Package, VirtualManifest, EitherManifest, SourceId};
 use core::{PackageIdSpec, Dependency, Profile, Profiles};
@@ -17,6 +18,7 @@ use util::toml::read_manifest;
 /// A workspace is often created very early on and then threaded through all
 /// other functions. It's typically through this object that the current
 /// package is loaded and/or learned about.
+#[derive(Debug)]
 pub struct Workspace<'cfg> {
     config: &'cfg Config,
 
@@ -56,11 +58,13 @@ pub struct Workspace<'cfg> {
 
 // Separate structure for tracking loaded packages (to avoid loading anything
 // twice), and this is separate to help appease the borrow checker.
+#[derive(Debug)]
 struct Packages<'cfg> {
     config: &'cfg Config,
     packages: HashMap<PathBuf, MaybePackage>,
 }
 
+#[derive(Debug)]
 enum MaybePackage {
     Package(Package),
     Virtual(VirtualManifest),
@@ -178,6 +182,13 @@ impl<'cfg> Workspace<'cfg> {
         }
     }
 
+    pub fn is_virtual(&self) -> bool {
+        match *self.packages.get(&self.current_manifest) {
+            MaybePackage::Package(..) => false,
+            MaybePackage::Virtual(..) => true
+        }
+    }
+
     /// Returns the `Config` this workspace is associated with.
     pub fn config(&self) -> &'cfg Config {
         self.config
@@ -219,6 +230,20 @@ impl<'cfg> Workspace<'cfg> {
         match *self.packages.get(path) {
             MaybePackage::Package(ref p) => p.manifest().replace(),
             MaybePackage::Virtual(ref v) => v.replace(),
+        }
+    }
+
+    /// Returns the root [patch] section of this workspace.
+    ///
+    /// This may be from a virtual crate or an actual crate.
+    pub fn root_patch(&self) -> &HashMap<Url, Vec<Dependency>> {
+        let path = match self.root_manifest {
+            Some(ref p) => p,
+            None => &self.current_manifest,
+        };
+        match *self.packages.get(path) {
+            MaybePackage::Package(ref p) => p.manifest().patch(),
+            MaybePackage::Virtual(ref v) => v.patch(),
         }
     }
 

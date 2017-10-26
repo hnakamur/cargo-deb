@@ -1,5 +1,4 @@
 extern crate cargo;
-extern crate url;
 extern crate env_logger;
 extern crate git2_curl;
 extern crate toml;
@@ -31,6 +30,8 @@ pub struct Flags {
     arg_args: Vec<String>,
     flag_locked: bool,
     flag_frozen: bool,
+    #[serde(rename = "flag_Z")]
+    flag_z: Vec<String>,
 }
 
 const USAGE: &'static str = "
@@ -50,6 +51,7 @@ Options:
     --color WHEN        Coloring: auto, always, never
     --frozen            Require Cargo.lock and cache are up to date
     --locked            Require Cargo.lock is up to date
+    -Z FLAG ...         Unstable (nightly-only) flags to Cargo
 
 Some common cargo commands are (see all commands with --list):
     build       Compile the current project
@@ -65,6 +67,7 @@ Some common cargo commands are (see all commands with --list):
     search      Search registry for crates
     publish     Package and upload this project to the registry
     install     Install a Rust binary
+    uninstall   Uninstall a Rust binary
 
 See 'cargo help <command>' for more information on a specific command.
 ";
@@ -148,7 +151,8 @@ fn execute(flags: Flags, config: &Config) -> CliResult {
                    flags.flag_quiet,
                    &flags.flag_color,
                    flags.flag_frozen,
-                   flags.flag_locked)?;
+                   flags.flag_locked,
+                   &flags.flag_z)?;
 
     init_git_transports(config);
     let _token = cargo::util::job::setup();

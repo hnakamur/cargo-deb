@@ -1,19 +1,21 @@
 #![allow(deprecated)]
 
 use std::collections::{HashSet, HashMap, BTreeSet};
+use std::collections::hash_map::Entry;
 use std::env;
 use std::fmt;
 use std::hash::{Hasher, Hash, SipHasher};
 use std::path::{Path, PathBuf};
 use std::str::{self, FromStr};
 use std::sync::Arc;
+use std::cell::RefCell;
 
 use jobserver::Client;
 
 use core::{Package, PackageId, PackageSet, Resolve, Target, Profile};
 use core::{TargetKind, Profiles, Dependency, Workspace};
 use core::dependency::Kind as DepKind;
-use util::{self, internal, Config, profile, Cfg, CfgExpr};
+use util::{self, ProcessBuilder, internal, Config, profile, Cfg, CfgExpr};
 use util::errors::{CargoResult, CargoResultExt};
 
 use super::TargetConfig;
@@ -58,8 +60,26 @@ pub struct Context<'a, 'cfg: 'a> {
 
 #[derive(Clone, Default)]
 struct TargetInfo {
-    crate_types: HashMap<String, Option<(String, String)>>,
+    crate_type_process: Option<ProcessBuilder>,
+    crate_types: RefCell<HashMap<String, Option<(String, String)>>>,
     cfg: Option<Vec<Cfg>>,
+}
+
+impl TargetInfo {
+    fn discover_crate_type(&self, crate_type: &str) -> CargoResult<Option<(String, String)>> {
+        let mut process = self.crate_type_process.clone().unwrap();
+
+        process.arg("--crate-type").arg(crate_type);
+
+        let output = process.exec_with_output().chain_err(|| {
+            format!("failed to run `rustc` to learn about \
+                     crate-type {} information", crate_type)
+        })?;
+
+        let error = str::from_utf8(&output.stderr).unwrap();
+        let output = str::from_utf8(&output.stdout).unwrap();
+        Ok(parse_crate_type(crate_type, error, &mut output.lines())?)
+    }
 }
 
 #[derive(Clone)]
@@ -220,11 +240,14 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                .args(&rustflags)
                .env_remove("RUST_LOG");
 
-        for crate_type in crate_types {
-            process.arg("--crate-type").arg(crate_type);
-        }
         if kind == Kind::Target {
             process.arg("--target").arg(&self.target_triple());
+        }
+
+        let crate_type_process = process.clone();
+
+        for crate_type in crate_types {
+            process.arg("--crate-type").arg(crate_type);
         }
 
         let mut with_cfg = process.clone();
@@ -245,29 +268,8 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         let mut lines = output.lines();
         let mut map = HashMap::new();
         for crate_type in crate_types {
-            let not_supported = error.lines().any(|line| {
-                (line.contains("unsupported crate type") ||
-                 line.contains("unknown crate type")) &&
-                line.contains(crate_type)
-            });
-            if not_supported {
-                map.insert(crate_type.to_string(), None);
-                continue;
-            }
-            let line = match lines.next() {
-                Some(line) => line,
-                None => bail!("malformed output when learning about \
-                               target-specific information from rustc"),
-            };
-            let mut parts = line.trim().split("___");
-            let prefix = parts.next().unwrap();
-            let suffix = match parts.next() {
-                Some(part) => part,
-                None => bail!("output of --print=file-names has changed in \
-                               the compiler, cannot parse"),
-            };
-
-            map.insert(crate_type.to_string(), Some((prefix.to_string(), suffix.to_string())));
+            let out = parse_crate_type(crate_type, error, &mut lines)?;
+            map.insert(crate_type.to_string(), out);
         }
 
         if has_cfg_and_sysroot {
@@ -303,7 +305,8 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             Kind::Target => &mut self.target_info,
             Kind::Host => &mut self.host_info,
         };
-        info.crate_types = map;
+        info.crate_type_process = Some(crate_type_process);
+        info.crate_types = RefCell::new(map);
         info.cfg = cfg;
         Ok(())
     }
@@ -407,7 +410,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         let name = unit.pkg.package_id().name();
         match self.target_metadata(unit) {
             Some(meta) => format!("{}-{}", name, meta),
-            None => format!("{}-{}", name, util::short_hash(unit.pkg)),
+            None => format!("{}-{}", name, self.target_short_hash(unit)),
         }
     }
 
@@ -426,6 +429,13 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         self.build_config.requested_target.as_ref().map(|s| &s[..])
     }
 
+    /// Get the short hash based only on the PackageId
+    /// Used for the metadata when target_metadata returns None
+    pub fn target_short_hash(&self, unit: &Unit) -> String {
+        let hashable = unit.pkg.package_id().stable_hash(self.ws.root());
+        util::short_hash(&hashable)
+    }
+
     /// Get the metadata for a target in a specific profile
     /// We build to the path: "{filename}-{target_metadata}"
     /// We use a linking step to link/copy to a predictable filename
@@ -435,7 +445,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         // - OSX encodes the dylib name in the executable
         // - Windows rustc multiple files of which we can't easily link all of them
         //
-        // Two expeptions
+        // Two exceptions
         // 1) Upstream dependencies (we aren't exporting + need to resolve name conflict)
         // 2) __CARGO_DEFAULT_LIB_METADATA env var
         //
@@ -460,7 +470,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
         // Unique metadata per (name, source, version) triple. This'll allow us
         // to pull crates from anywhere w/o worrying about conflicts
-        unit.pkg.package_id().hash(&mut hasher);
+        unit.pkg.package_id().stable_hash(self.ws.root()).hash(&mut hasher);
 
         // Add package properties which map to environment variables
         // exposed by Cargo
@@ -589,8 +599,17 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             } else {
                 let mut add = |crate_type: &str, linkable: bool| -> CargoResult<()> {
                     let crate_type = if crate_type == "lib" {"rlib"} else {crate_type};
-                    match info.crate_types.get(crate_type) {
-                        Some(&Some((ref prefix, ref suffix))) => {
+                    let mut crate_types = info.crate_types.borrow_mut();
+                    let entry = crate_types.entry(crate_type.to_string());
+                    let crate_type_info = match entry {
+                        Entry::Occupied(o) => &*o.into_mut(),
+                        Entry::Vacant(v) => {
+                            let value = info.discover_crate_type(&v.key())?;
+                            &*v.insert(value)
+                        }
+                    };
+                    match *crate_type_info {
+                        Some((ref prefix, ref suffix)) => {
                             let filename = out_dir.join(format!("{}{}{}", prefix, stem, suffix));
                             let link_dst = link_stem.clone().map(|(ld, ls)| {
                                 ld.join(format!("{}{}{}", prefix, ls, suffix))
@@ -599,13 +618,9 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                             Ok(())
                         }
                         // not supported, don't worry about it
-                        Some(&None) => {
+                        None => {
                             unsupported.push(crate_type.to_string());
                             Ok(())
-                        }
-                        None => {
-                            bail!("failed to learn about crate-type `{}` early on",
-                                  crate_type)
                         }
                     }
                 };
@@ -1087,4 +1102,33 @@ impl fmt::Display for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:016x}", self.0)
     }
+}
+
+fn parse_crate_type(
+    crate_type: &str,
+    error: &str,
+    lines: &mut str::Lines,
+) -> CargoResult<Option<(String, String)>> {
+    let not_supported = error.lines().any(|line| {
+        (line.contains("unsupported crate type") ||
+         line.contains("unknown crate type")) &&
+        line.contains(crate_type)
+    });
+    if not_supported {
+        return Ok(None);
+    }
+    let line = match lines.next() {
+        Some(line) => line,
+        None => bail!("malformed output when learning about \
+            crate-type {} information", crate_type),
+    };
+    let mut parts = line.trim().split("___");
+    let prefix = parts.next().unwrap();
+    let suffix = match parts.next() {
+        Some(part) => part,
+        None => bail!("output of --print=file-names has changed in \
+            the compiler, cannot parse"),
+    };
+
+    Ok(Some((prefix.to_string(), suffix.to_string())))
 }

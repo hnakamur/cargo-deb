@@ -5,15 +5,16 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::str;
 
-use toml;
 use semver::{self, VersionReq};
 use serde::ser;
 use serde::de::{self, Deserialize};
 use serde_ignored;
+use toml;
+use url::Url;
 
 use core::{SourceId, Profiles, PackageIdSpec, GitReference, WorkspaceConfig};
 use core::{Summary, Manifest, Target, Dependency, PackageId};
-use core::{EitherManifest, VirtualManifest};
+use core::{EitherManifest, VirtualManifest, Features};
 use core::dependency::{Kind, Platform};
 use core::manifest::{LibKind, Profile, ManifestMetadata};
 use sources::CRATES_IO;
@@ -141,7 +142,7 @@ type TomlExampleTarget = TomlTarget;
 type TomlTestTarget = TomlTarget;
 type TomlBenchTarget = TomlTarget;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum TomlDependency {
     Simple(String),
@@ -180,7 +181,7 @@ impl<'de> de::Deserialize<'de> for TomlDependency {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct DetailedTomlDependency {
     version: Option<String>,
     path: Option<String>,
@@ -196,7 +197,7 @@ pub struct DetailedTomlDependency {
     default_features2: Option<bool>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TomlManifest {
     package: Option<Box<TomlProject>>,
     project: Option<Box<TomlProject>>,
@@ -218,11 +219,12 @@ pub struct TomlManifest {
     features: Option<HashMap<String, Vec<String>>>,
     target: Option<HashMap<String, TomlPlatform>>,
     replace: Option<HashMap<String, TomlDependency>>,
+    patch: Option<HashMap<String, HashMap<String, TomlDependency>>>,
     workspace: Option<TomlWorkspace>,
     badges: Option<HashMap<String, HashMap<String, String>>>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct TomlProfiles {
     test: Option<TomlProfile>,
     doc: Option<TomlProfile>,
@@ -231,7 +233,7 @@ pub struct TomlProfiles {
     release: Option<TomlProfile>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TomlOptLevel(String);
 
 impl<'de> de::Deserialize<'de> for TomlOptLevel {
@@ -280,7 +282,7 @@ impl ser::Serialize for TomlOptLevel {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub enum U32OrBool {
     U32(u32),
@@ -323,7 +325,7 @@ impl<'de> de::Deserialize<'de> for U32OrBool {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct TomlProfile {
     #[serde(rename = "opt-level")]
     opt_level: Option<TomlOptLevel>,
@@ -376,7 +378,7 @@ impl<'de> de::Deserialize<'de> for StringOrBool {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct TomlProject {
     name: String,
     version: semver::Version,
@@ -387,6 +389,10 @@ pub struct TomlProject {
     include: Option<Vec<String>>,
     publish: Option<bool>,
     workspace: Option<String>,
+    #[serde(rename = "cargo-features")]
+    cargo_features: Option<Vec<String>>,
+    #[serde(rename = "im-a-teapot")]
+    im_a_teapot: Option<bool>,
 
     // package metadata
     description: Option<String>,
@@ -402,7 +408,7 @@ pub struct TomlProject {
     metadata: Option<toml::Value>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TomlWorkspace {
     members: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
@@ -463,6 +469,7 @@ impl TomlManifest {
                 }).collect()
             }),
             replace: None,
+            patch: None,
             workspace: None,
             badges: self.badges.clone(),
         };
@@ -532,6 +539,7 @@ impl TomlManifest {
 
         let mut deps = Vec::new();
         let replace;
+        let patch;
 
         {
 
@@ -587,6 +595,7 @@ impl TomlManifest {
             }
 
             replace = me.replace(&mut cx)?;
+            patch = me.patch(&mut cx)?;
         }
 
         {
@@ -639,6 +648,9 @@ impl TomlManifest {
         };
         let profiles = build_profiles(&me.profile);
         let publish = project.publish.unwrap_or(true);
+        let empty = Vec::new();
+        let cargo_features = project.cargo_features.as_ref().unwrap_or(&empty);
+        let features = Features::new(&cargo_features, &mut warnings)?;
         let mut manifest = Manifest::new(summary,
                                          targets,
                                          exclude,
@@ -648,7 +660,10 @@ impl TomlManifest {
                                          profiles,
                                          publish,
                                          replace,
+                                         patch,
                                          workspace_config,
+                                         features,
+                                         project.im_a_teapot,
                                          me.clone());
         if project.license_file.is_some() && project.license.is_some() {
             manifest.add_warning("only one of `license` or \
@@ -660,6 +675,8 @@ impl TomlManifest {
         for error in errors {
             manifest.add_critical_warning(error);
         }
+
+        manifest.feature_gate()?;
 
         Ok((manifest, nested_paths))
     }
@@ -694,16 +711,19 @@ impl TomlManifest {
         let mut nested_paths = Vec::new();
         let mut warnings = Vec::new();
         let mut deps = Vec::new();
-        let replace = me.replace(&mut Context {
-            pkgid: None,
-            deps: &mut deps,
-            source_id: source_id,
-            nested_paths: &mut nested_paths,
-            config: config,
-            warnings: &mut warnings,
-            platform: None,
-            root: root
-        })?;
+        let (replace, patch) = {
+            let mut cx = Context {
+                pkgid: None,
+                deps: &mut deps,
+                source_id: source_id,
+                nested_paths: &mut nested_paths,
+                config: config,
+                warnings: &mut warnings,
+                platform: None,
+                root: root
+            };
+            (me.replace(&mut cx)?, me.patch(&mut cx)?)
+        };
         let profiles = build_profiles(&me.profile);
         let workspace_config = match me.workspace {
             Some(ref config) => {
@@ -716,11 +736,14 @@ impl TomlManifest {
                 bail!("virtual manifests must be configured with [workspace]");
             }
         };
-        Ok((VirtualManifest::new(replace, workspace_config, profiles), nested_paths))
+        Ok((VirtualManifest::new(replace, patch, workspace_config, profiles), nested_paths))
     }
 
     fn replace(&self, cx: &mut Context)
                -> CargoResult<Vec<(PackageIdSpec, Dependency)>> {
+        if self.patch.is_some() && self.replace.is_some() {
+            bail!("cannot specify both [replace] and [patch]");
+        }
         let mut replace = Vec::new();
         for (spec, replacement) in self.replace.iter().flat_map(|x| x) {
             let mut spec = PackageIdSpec::parse(spec).chain_err(|| {
@@ -753,6 +776,21 @@ impl TomlManifest {
             replace.push((spec, dep));
         }
         Ok(replace)
+    }
+
+    fn patch(&self, cx: &mut Context)
+             -> CargoResult<HashMap<Url, Vec<Dependency>>> {
+        let mut patch = HashMap::new();
+        for (url, deps) in self.patch.iter().flat_map(|x| x) {
+            let url = match &url[..] {
+                "crates-io" => CRATES_IO.parse().unwrap(),
+                _ => url.to_url()?,
+            };
+            patch.insert(url, deps.iter().map(|(name, dep)| {
+                dep.to_dependency(name, cx, None)
+            }).collect::<CargoResult<Vec<_>>>()?);
+        }
+        Ok(patch)
     }
 
     fn maybe_custom_build(&self,
@@ -854,7 +892,7 @@ impl TomlDependency {
                     .or_else(|| details.rev.clone().map(GitReference::Rev))
                     .unwrap_or_else(|| GitReference::Branch("master".to_string()));
                 let loc = git.to_url()?;
-                SourceId::for_git(&loc, reference)
+                SourceId::for_git(&loc, reference)?
             },
             (None, Some(path)) => {
                 cx.nested_paths.push(PathBuf::from(path));
@@ -944,7 +982,7 @@ impl ser::Serialize for PathValue {
 }
 
 /// Corresponds to a `target` entry, but `TomlTarget` is already used.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct TomlPlatform {
     dependencies: Option<HashMap<String, TomlDependency>>,
     #[serde(rename = "build-dependencies")]

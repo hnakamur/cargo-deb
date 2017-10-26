@@ -30,7 +30,7 @@ Versioning](http://semver.org/), so make sure you follow some basic rules:
 
 ## The `build` field (optional)
 
-This field specifies a file in the repository which is a [build script][1] for
+This field specifies a file in the project root which is a [build script][1] for
 building native code. More information can be found in the build script
 [guide][1].
 
@@ -47,6 +47,16 @@ build = "build.rs"
 This field specifies a URL to a website hosting the crate's documentation.
 If no URL is specified in the manifest file, [crates.io][cratesio] will
 automatically link your crate to the corresponding [docs.rs][docsrs] page.
+
+Documentation links from specific hosts are blacklisted. Hosts are added
+to the blacklist if they are known to not be hosting documentation and are
+possibly of malicious intent e.g. ad tracking networks. URLs from the
+following hosts are blacklisted:
+
+* rust-ci.org
+
+Documentation URLs from blacklisted hosts will not appear on crates.io, and
+may be replaced by docs.rs links.
 
 [docsrs]: https://docs.rs/
 [cratesio]: https://crates.io/
@@ -81,10 +91,24 @@ necessary source files may not be included.
 
 [globs]: http://doc.rust-lang.org/glob/glob/struct.Pattern.html
 
+### Migrating to `gitignore`-like pattern matching
+
+The current interpretation of these configs is based on UNIX Globs, as
+implemented in the [`glob` crate](https://crates.io/crates/glob). We want
+Cargo's `include` and `exclude` configs to work as similar to `gitignore` as
+possible. [The `gitignore` specification](https://git-scm.com/docs/gitignore) is
+also based on Globs, but has a bunch of additional features that enable easier
+pattern writing and more control. Therefore, we are migrating the interpretation
+for the rules of these configs to use the [`ignore`
+crate](https://crates.io/crates/ignore), and treat them each rule as a single
+line in a `gitignore` file. See [the tracking
+issue](https://github.com/rust-lang/cargo/issues/4268) for more details on the
+migration.
+
 ## The `publish`  field (optional)
 
 The `publish` field can be used to prevent a package from being published to a
-repository by mistake.
+package repository (like *crates.io*) by mistake.
 
 ```toml
 [package]
@@ -101,7 +125,7 @@ Cargo.toml with `[workspace]` upwards in the filesystem.
 ```toml
 [package]
 # ...
-workspace = "path/to/root"
+workspace = "path/to/workspace/root"
 ```
 
 For more information, see the documentation for the workspace table below.
@@ -119,15 +143,15 @@ There are a number of optional metadata fields also accepted under the
 # uploaded to crates.io (aka this is not markdown).
 description = "..."
 
-# These URLs point to more information about the repository. These are
+# These URLs point to more information about the package. These are
 # intended to be webviews of the relevant data, not necessarily compatible
 # with VCS tools and the like.
 documentation = "..."
 homepage = "..."
 repository = "..."
 
-# This points to a file in the repository (relative to this `Cargo.toml`). The
-# contents of this file are stored and indexed in the registry.
+# This points to a file under the package root (relative to this `Cargo.toml`).
+# The contents of this file are stored and indexed in the registry.
 readme = "..."
 
 # This is a list of up to five keywords that describe this crate. Keywords
@@ -151,31 +175,49 @@ license = "..."
 # (similar to the readme key).
 license-file = "..."
 
-# Optional specification of badges to be displayed on crates.io. The badges
-# currently available are Travis CI, Appveyor, and GitLab latest build status,
-# specified using the following parameters:
+# Optional specification of badges to be displayed on crates.io. The badges 
+# pertaining to build status that are currently available are Appveyor, CircleCI,
+# GitLab, and TravisCI. Available badges pertaining to code test coverage are
+# Codecov and Coveralls. There are also maintenance-related badges which state
+# the issue resolution time, percent of open issues, and future maintenance
+# intentions.
 [badges]
-# Travis CI: `repository` is required. `branch` is optional; default is `master`
-travis-ci = { repository = "...", branch = "master" }
+
 # Appveyor: `repository` is required. `branch` is optional; default is `master`
 # `service` is optional; valid values are `github` (default), `bitbucket`, and
 # `gitlab`.
 appveyor = { repository = "...", branch = "master", service = "github" }
-# GitLab: `repository` is required. `branch` is optional; default is `master`
-gitlab = { repository = "...", branch = "master" }
+
 # Circle CI: `repository` is required. `branch` is optiona; default is `master`
 circle-ci = { repository = "...", branch = "master" }
-# Is it maintained resolution time: `repository` is required.
-is-it-maintained-issue-resolution = { repository = "..." }
-# Is it maintained percentage of open issues: `repository` is required.
-is-it-maintained-open-issues = { repository = "..." }
+
+# GitLab: `repository` is required. `branch` is optional; default is `master`
+gitlab = { repository = "...", branch = "master" }
+
+# Travis CI: `repository` in format "<user>/<project>" is required.
+# `branch` is optional; default is `master`
+travis-ci = { repository = "...", branch = "master" }
+
 # Codecov: `repository` is required. `branch` is optional; default is `master`
 # `service` is optional; valid values are `github` (default), `bitbucket`, and
 # `gitlab`.
 codecov = { repository = "...", branch = "master", service = "github" }
+
 # Coveralls: `repository` is required. `branch` is optional; default is `master`
 # `service` is optional; valid values are `github` (default) and `bitbucket`.
 coveralls = { repository = "...", branch = "master", service = "github" }
+
+# Is it maintained resolution time: `repository` is required.
+is-it-maintained-issue-resolution = { repository = "..." }
+
+# Is it maintained percentage of open issues: `repository` is required.
+is-it-maintained-open-issues = { repository = "..." }
+
+# Maintenance: `status` is required Available options are `actively-developed`,
+# `passively-maintained`, `as-is`, `none`, `experimental`, `looking-for-maintainer`
+# and `deprecated`.
+maintenance = { status = "none" }
+
 ```
 
 The [crates.io](https://crates.io) registry will render the description, display
@@ -206,8 +248,8 @@ assets = "path/to/static"
 # Dependency sections
 
 See the [specifying dependencies page](specifying-dependencies.html) for
-information on the `[dependencies]`, `[dev-dependencies]`, and target-specific
-`[target.*.dependencies]` sections.
+information on the `[dependencies]`, `[dev-dependencies]`,
+`[build-dependencies]`, and target-specific `[target.*.dependencies]` sections.
 
 # The `[profile.*]` sections
 
@@ -224,14 +266,20 @@ along with the defaults for each profile.
 ```toml
 # The development profile, used for `cargo build`.
 [profile.dev]
-opt-level = 0      # controls the `--opt-level` the compiler builds with
-debug = true       # controls whether the compiler passes `-C debuginfo`
-                   # a value of `true` is equivalent to `2`
-rpath = false      # controls whether the compiler passes `-C rpath`
-lto = false        # controls `-C lto` for binaries and staticlibs
+opt-level = 0      # controls the `--opt-level` the compiler builds with.
+                   # 0-1 is good for debugging. 2 is well-optimized. Max is 3.
+debug = true       # include debug information (debug symbols). Equivalent to
+                   # `-C debuginfo=2` compiler flag.
+rpath = false      # controls whether compiler should set loader paths.
+                   # If true, passes `-C rpath` flag to the compiler.
+lto = false        # Link Time Optimization usually reduces size of binaries
+                   # and static libraries. Increases compilation time.
+                   # If true, passes `-C lto` flag to the compiler.
 debug-assertions = true # controls whether debug assertions are enabled
-codegen-units = 1  # controls whether the compiler passes `-C codegen-units`
-                   # `codegen-units` is ignored when `lto = true`
+                   # (e.g. debug_assert!() and arithmetic overflow checks)
+codegen-units = 1  # if > 1 enables parallel code generation which improves
+                   # compile times, but prevents some optimizations.
+                   # Passes `-C codegen-units`. Ignored when `lto = true`.
 panic = 'unwind'   # panic strategy (`-C panic=...`), can also be 'abort'
 
 # The release profile, used for `cargo build --release`.
@@ -416,23 +464,22 @@ members = ["path/to/member1", "path/to/member2", "path/to/member3/*"]
 exclude = ["path1", "path/to/dir2"]
 ```
 
-Workspaces were added to Cargo as part [RFC 1525] and have a number of
+Workspaces were added to Cargo as part of [RFC 1525] and have a number of
 properties:
 
-* A workspace can contain multiple crates where one of them is the root crate.
-* The root crate's `Cargo.toml` contains the `[workspace]` table, but is not
+* A workspace can contain multiple crates where one of them is the *root crate*.
+* The *root crate*'s `Cargo.toml` contains the `[workspace]` table, but is not
   required to have other configuration.
-* Whenever any crate in the workspace is compiled, output is placed next to the
-  root crate's `Cargo.toml`.
-* The lock file for all crates in the workspace resides next to the root crate's
-  `Cargo.toml`.
-* The `[replace]` section in `Cargo.toml` is only recognized at the workspace
-  root crate, it's ignored in member crates' manifests.
+* Whenever any crate in the workspace is compiled, output is placed in the
+  *workspace root*. i.e. next to the *root crate*'s `Cargo.toml`.
+* The lock file for all crates in the workspace resides in the *workspace root*.
+* The `[patch]` and `[replace]` sections in `Cargo.toml` are only recognized
+  in the *root crate*'s manifest, and ignored in member crates' manifests.
 
 [RFC 1525]: https://github.com/rust-lang/rfcs/blob/master/text/1525-cargo-workspace.md
 
-The root crate of a workspace, indicated by the presence of `[workspace]` in its
-manifest, is responsible for defining the entire workspace. All `path`
+The *root crate* of a workspace, indicated by the presence of `[workspace]` in
+its manifest, is responsible for defining the entire workspace. All `path`
 dependencies residing in the workspace directory become members. You can add
 additional packages to the workspace by listing them in the `members` key. Note
 that members of the workspaces listed explicitly will also have their path
@@ -454,6 +501,18 @@ and also be a member crate of another workspace (contain `package.workspace`).
 
 Most of the time workspaces will not need to be dealt with as `cargo new` and
 `cargo init` will handle workspace configuration automatically.
+
+## Virtual Manifest
+
+In workspace manifests, if the `package` table is present, the workspace root
+crate will be treated as a normal package, as well as a worksapce. If the
+`package` table is not present in a worksapce manifest, it is called a *virtual
+manifest*.
+
+When working with *virtual manifests*, package-related cargo commands, like
+`cargo build`, won't be available anymore. But, most of such commands support
+the `--all` option, will execute the command for all the non-virtual manifest in
+the workspace.
 
 # The project layout
 
@@ -489,15 +548,18 @@ integration tests, and benchmarks respectively.
   *.rs
 ```
 
-To structure your code after you've created the files and folders for your project, you should remember to use Rust's module system, which you can read about in [the book](https://doc.rust-lang.org/book/crates-and-modules.html).
+To structure your code after you've created the files and folders for your
+project, you should remember to use Rust's module system, which you can read
+about in [the book](https://doc.rust-lang.org/book/crates-and-modules.html).
 
 # Examples
 
 Files located under `examples` are example uses of the functionality provided by
 the library. When compiled, they are placed in the `target/examples` directory.
 
-They can compile either as executables (with a `main()` function) or libraries and pull in the library by using `extern crate <library-name>`. They are compiled when you run
-your tests to protect them from bitrotting.
+They can compile either as executables (with a `main()` function) or libraries
+and pull in the library by using `extern crate <library-name>`. They are
+compiled when you run your tests to protect them from bitrotting.
 
 You can run individual executable examples with the command `cargo run --example
 <example-name>`.
@@ -510,7 +572,8 @@ name = "foo"
 crate-type = ["staticlib"]
 ```
 
-You can build individual library examples with the command `cargo build --example <example-name>`.
+You can build individual library examples with the command
+`cargo build --example <example-name>`.
 
 # Tests
 
@@ -631,6 +694,42 @@ includes them.
 You can read more about the different crate types in the
 [Rust Reference Manual](https://doc.rust-lang.org/reference/linkage.html)
 
+# The `[patch]` Section
+
+This section of Cargo.toml can be used to [override dependencies][replace] with
+other copies. The syntax is similar to the `[dependencies]` section:
+
+```toml
+[patch.crates-io]
+foo = { git = 'https://github.com/example/foo' }
+bar = { path = 'my/local/bar' }
+```
+
+The `[patch]` table is made of dependency-like sub-tables. Each key after
+`[patch]` is a URL of the source that's being patched, or `crates-io` if
+you're modifying the https://crates.io registry. In the example above
+`crates-io` could be replaced with a git URL such as
+`https://github.com/rust-lang-nursery/log`.
+
+Each entry in these tables is a normal dependency specification, the same as
+found in the `[dependencies]` section of the manifest. The dependencies listed
+in the `[patch]` section are resolved and used to patch the source at the
+URL specified. The above manifest snippet patches the `crates-io` source (e.g.
+crates.io itself) with the `foo` crate and `bar` crate.
+
+Sources can be patched with versions of crates that do not exist, and they can
+also be patched with versions of crates that already exist. If a source is
+patched with a crate version that already exists in the source, then the
+source's original crate is replaced.
+
+More information about overriding dependencies can be found in the [overriding
+dependencies][replace] section of the documentation and [RFC 1969] for the
+technical specification of this feature. Note that the `[patch]` feature will
+first become available in Rust 1.20, set to be released on 2017-08-31.
+
+[RFC 1969]: https://github.com/rust-lang/rfcs/pull/1969
+[replace]: specifying-dependencies.html#overriding-dependencies
+
 # The `[replace]` Section
 
 This section of Cargo.toml can be used to [override dependencies][replace] with
@@ -652,5 +751,3 @@ source (e.g. git or a local path).
 
 More information about overriding dependencies can be found in the [overriding
 dependencies][replace] section of the documentation.
-
-[replace]: specifying-dependencies.html#overriding-dependencies

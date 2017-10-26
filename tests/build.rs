@@ -1,4 +1,5 @@
 extern crate cargo;
+#[macro_use]
 extern crate cargotest;
 extern crate hamcrest;
 extern crate tempdir;
@@ -8,7 +9,7 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 
 use cargo::util::paths::dylib_path_envvar;
-use cargo::util::process;
+use cargo::util::{process, ProcessBuilder};
 use cargotest::{is_nightly, rustc_host, sleep_ms};
 use cargotest::support::paths::{CargoPathExt,root};
 use cargotest::support::{ProjectBuilder};
@@ -985,6 +986,18 @@ fn crate_authors_env_vars() {
                 execs().with_status(0));
 }
 
+// The tester may already have LD_LIBRARY_PATH=::/foo/bar which leads to a false positive error
+fn setenv_for_removing_empty_component(mut p: ProcessBuilder) -> ProcessBuilder {
+    let v = dylib_path_envvar();
+    if let Ok(search_path) = env::var(v) {
+        let new_search_path =
+            env::join_paths(env::split_paths(&search_path).filter(|e| !e.as_os_str().is_empty()))
+                .expect("join_paths");
+        p.env(v, new_search_path); // build_command() will override LD_LIBRARY_PATH accordingly
+    }
+    p
+}
+
 // Regression test for #4277
 #[test]
 fn crate_library_path_env_var() {
@@ -1004,7 +1017,8 @@ fn crate_library_path_env_var() {
             }}
         "##, dylib_path_envvar()));
 
-    assert_that(p.cargo_process("run"), execs().with_status(0));
+    assert_that(setenv_for_removing_empty_component(p.cargo_process("run")),
+                execs().with_status(0));
 }
 
 // Regression test for #4277
@@ -1023,7 +1037,8 @@ fn build_with_fake_libc_not_loading() {
         .file("src/lib.rs", r#" "#)
         .file("libc.so.6", r#""#);
 
-    assert_that(p.cargo_process("build"), execs().with_status(0));
+    assert_that(setenv_for_removing_empty_component(p.cargo_process("build")),
+                execs().with_status(0));
 }
 
 // this is testing that src/<pkg-name>.rs still works (for now)
@@ -1047,7 +1062,7 @@ fn many_crate_types_old_style_lib_location() {
             pub fn foo() {}
         "#);
     assert_that(p.cargo_process("build"), execs().with_status(0).with_stderr_contains("\
-[WARNING] path `src[/]foo.rs` was erroneously implicitly accepted for library foo,
+[WARNING] path `[..]src[/]foo.rs` was erroneously implicitly accepted for library `foo`,
 please rename the file to `src/lib.rs` or set lib.path in Cargo.toml"));
 
     assert_that(&p.root().join("target/debug/libfoo.rlib"), existing_file());
@@ -1402,7 +1417,7 @@ fn legacy_binary_paths_warinigs() {
         .file("src/main.rs", "fn main() {}");
 
     assert_that(p.cargo_process("build").arg("-v"), execs().with_status(0).with_stderr_contains("\
-[WARNING] path `src[/]main.rs` was erroneously implicitly accepted for binary bar,
+[WARNING] path `[..]src[/]main.rs` was erroneously implicitly accepted for binary `bar`,
 please set bin.path in Cargo.toml"));
 
     let mut p = project("world");
@@ -1419,7 +1434,7 @@ please set bin.path in Cargo.toml"));
         .file("src/bin/main.rs", "fn main() {}");
 
     assert_that(p.cargo_process("build").arg("-v"), execs().with_status(0).with_stderr_contains("\
-[WARNING] path `src[/]bin[/]main.rs` was erroneously implicitly accepted for binary bar,
+[WARNING] path `[..]src[/]bin[/]main.rs` was erroneously implicitly accepted for binary `bar`,
 please set bin.path in Cargo.toml"));
 
     let mut p = project("world");
@@ -1435,7 +1450,7 @@ please set bin.path in Cargo.toml"));
         .file("src/bar.rs", "fn main() {}");
 
     assert_that(p.cargo_process("build").arg("-v"), execs().with_status(0).with_stderr_contains("\
-[WARNING] path `src[/]bar.rs` was erroneously implicitly accepted for binary bar,
+[WARNING] path `[..]src[/]bar.rs` was erroneously implicitly accepted for binary `bar`,
 please set bin.path in Cargo.toml"));
 }
 
@@ -3025,6 +3040,73 @@ fn build_all_virtual_manifest() {
 }
 
 #[test]
+fn build_virtual_manifest_all_implied() {
+    let p = project("workspace")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["foo", "bar"]
+        "#)
+        .file("foo/Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+        "#)
+        .file("foo/src/lib.rs", r#"
+            pub fn foo() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+        "#)
+        .file("bar/src/lib.rs", r#"
+            pub fn bar() {}
+        "#);
+
+    // The order in which foo and bar are built is not guaranteed
+    assert_that(p.cargo_process("build"),
+                execs().with_status(0)
+                       .with_stderr_contains("[..] Compiling bar v0.1.0 ([..])")
+                       .with_stderr_contains("[..] Compiling foo v0.1.0 ([..])")
+                       .with_stderr("[..] Compiling [..] v0.1.0 ([..])\n\
+                       [..] Compiling [..] v0.1.0 ([..])\n\
+                       [..] Finished dev [unoptimized + debuginfo] target(s) in [..]\n"));
+}
+
+#[test]
+fn build_virtual_manifest_one_project() {
+    let p = project("workspace")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["foo", "bar"]
+        "#)
+        .file("foo/Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+        "#)
+        .file("foo/src/lib.rs", r#"
+            pub fn foo() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+        "#)
+        .file("bar/src/lib.rs", r#"
+            pub fn bar() {}
+        "#);
+
+    assert_that(p.cargo_process("build")
+                 .arg("-p").arg("foo"),
+                execs().with_status(0)
+                       .with_stderr_does_not_contain("bar")
+                       .with_stderr_contains("[..] Compiling foo v0.1.0 ([..])")
+                       .with_stderr("[..] Compiling [..] v0.1.0 ([..])\n\
+                       [..] Finished dev [unoptimized + debuginfo] target(s) in [..]\n"));
+}
+
+#[test]
 fn build_all_virtual_manifest_implicit_examples() {
     let p = project("foo")
         .file("Cargo.toml", r#"
@@ -3413,7 +3495,7 @@ fn dir_and_file_with_same_name_in_bin() {
         .file("src/bin/foo.rs", "fn main() {}")
         .file("src/bin/foo/main.rs", "fn main() {}");
 
-    assert_that(p.cargo_process("build"),
+    assert_that(p.cargo_process("build"), 
                 execs().with_status(101)
                        .with_stderr_contains("\
 [..]found duplicate binary name foo, but all binary targets must have a unique name[..]
@@ -3437,4 +3519,65 @@ fn inferred_path_in_src_bin_foo() {
 
     assert_that(p.cargo_process("build"), execs().with_status(0));
     assert_that(&p.bin("bar"), existing_file());
+}
+
+#[test]
+fn same_metadata_different_directory() {
+    // A top-level crate built in two different workspaces should have the
+    // same metadata hash.
+    let p = project("foo1")
+        .file("Cargo.toml", &basic_bin_manifest("foo"))
+        .file("src/foo.rs", &main_file(r#""i am foo""#, &[]));
+    let output = t!(String::from_utf8(
+        t!(p.cargo_process("build").arg("-v").exec_with_output())
+            .stderr,
+    ));
+    let metadata = output
+        .split_whitespace()
+        .filter(|arg| arg.starts_with("metadata="))
+        .next()
+        .unwrap();
+
+    let p = project("foo2")
+        .file("Cargo.toml", &basic_bin_manifest("foo"))
+        .file("src/foo.rs", &main_file(r#""i am foo""#, &[]));
+
+    assert_that(
+        p.cargo_process("build").arg("-v"),
+        execs().with_status(0).with_stderr_contains(
+            format!("[..]{}[..]", metadata),
+        ),
+    );
+}
+
+#[test]
+fn building_a_dependent_crate_witout_bin_should_fail() {
+    Package::new("testless", "0.1.0")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "testless"
+            version = "0.1.0"
+
+            [[bin]]
+            name = "a_bin"
+        "#)
+        .file("src/lib.rs", "")
+        .publish();
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+
+            [dependencies]
+            testless = "0.1.0"
+        "#)
+        .file("src/lib.rs", "");
+    p.build();
+
+    assert_that(p.cargo("build"),
+                execs().with_status(101).with_stderr_contains(
+                    "[..]can't find `a_bin` bin, specify bin.path"
+                ));
 }

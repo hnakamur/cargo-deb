@@ -53,9 +53,11 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use semver;
+use url::Url;
 
 use core::{PackageId, Registry, SourceId, Summary, Dependency};
 use core::PackageIdSpec;
+use util::config::Config;
 use util::Graph;
 use util::errors::{CargoResult, CargoError};
 use util::profile;
@@ -78,6 +80,7 @@ pub struct Resolve {
     features: HashMap<PackageId, HashSet<String>>,
     checksums: HashMap<PackageId, Option<String>>,
     metadata: Metadata,
+    unused_patches: Vec<PackageId>,
 }
 
 pub struct Deps<'a> {
@@ -111,6 +114,16 @@ struct Candidate {
 }
 
 impl Resolve {
+    pub fn register_used_patches(&mut self,
+                                 patches: &HashMap<Url, Vec<Summary>>) {
+        for summary in patches.values().flat_map(|v| v) {
+            if self.iter().any(|id| id == summary.package_id()) {
+                continue
+            }
+            self.unused_patches.push(summary.package_id().clone());
+        }
+    }
+
     pub fn merge_from(&mut self, previous: &Resolve) -> CargoResult<()> {
         // Given a previous instance of resolve, it should be forbidden to ever
         // have a checksums which *differ*. If the same package id has differing
@@ -224,6 +237,10 @@ unable to verify that `{0}` is the same as when the lockfile was generated
     pub fn query(&self, spec: &str) -> CargoResult<&PackageId> {
         PackageIdSpec::query_str(spec, self.iter())
     }
+
+    pub fn unused_patches(&self) -> &[PackageId] {
+        &self.unused_patches
+    }
 }
 
 impl fmt::Debug for Resolve {
@@ -314,6 +331,9 @@ struct Context<'a> {
     resolve_replacements: RcList<(PackageId, PackageId)>,
 
     replacements: &'a [(PackageIdSpec, Dependency)],
+
+    // These warnings are printed after resolution.
+    warnings: RcList<String>,
 }
 
 type Activations = HashMap<String, HashMap<SourceId, Vec<Summary>>>;
@@ -321,13 +341,15 @@ type Activations = HashMap<String, HashMap<SourceId, Vec<Summary>>>;
 /// Builds the list of all packages required to build the first argument.
 pub fn resolve(summaries: &[(Summary, Method)],
                replacements: &[(PackageIdSpec, Dependency)],
-               registry: &mut Registry) -> CargoResult<Resolve> {
+               registry: &mut Registry,
+               config: Option<&Config>) -> CargoResult<Resolve> {
     let cx = Context {
         resolve_graph: RcList::new(),
         resolve_features: HashMap::new(),
         resolve_replacements: RcList::new(),
         activations: HashMap::new(),
         replacements: replacements,
+        warnings: RcList::new(),
     };
     let _p = profile::start(format!("resolving"));
     let cx = activate_deps_loop(cx, registry, summaries)?;
@@ -341,6 +363,7 @@ pub fn resolve(summaries: &[(Summary, Method)],
         features: cx.resolve_features.iter().map(|(k, v)| {
             (k.clone(), v.clone())
         }).collect(),
+        unused_patches: Vec::new(),
     };
 
     for summary in cx.activations.values()
@@ -351,8 +374,18 @@ pub fn resolve(summaries: &[(Summary, Method)],
     }
 
     check_cycles(&resolve, &cx.activations)?;
-
     trace!("resolved: {:?}", resolve);
+
+    // If we have a shell, emit warnings about required deps used as feature.
+    if let Some(config) = config {
+        let mut shell = config.shell();
+        let mut warnings = &cx.warnings;
+        while let Some(ref head) = warnings.head {
+            shell.warn(&head.0)?;
+            warnings = &head.1;
+        }
+    }
+
     Ok(resolve)
 }
 
@@ -810,13 +843,15 @@ fn compatible(a: &semver::Version, b: &semver::Version) -> bool {
 //
 // The feature dependencies map is a mapping of package name to list of features
 // enabled. Each package should be enabled, and each package should have the
-// specified set of features enabled.
+// specified set of features enabled.  The boolean indicates whether this
+// package was specifically requested (rather than just requesting features
+// *within* this package).
 //
 // The all used features set is the set of features which this local package had
 // enabled, which is later used when compiling to instruct the code what
 // features were enabled.
 fn build_features<'a>(s: &'a Summary, method: &'a Method)
-                      -> CargoResult<(HashMap<&'a str, Vec<String>>, HashSet<&'a str>)> {
+                      -> CargoResult<(HashMap<&'a str, (bool, Vec<String>)>, HashSet<&'a str>)> {
     let mut deps = HashMap::new();
     let mut used = HashSet::new();
     let mut visited = HashSet::new();
@@ -850,7 +885,7 @@ fn build_features<'a>(s: &'a Summary, method: &'a Method)
 
     fn add_feature<'a>(s: &'a Summary,
                        feat: &'a str,
-                       deps: &mut HashMap<&'a str, Vec<String>>,
+                       deps: &mut HashMap<&'a str, (bool, Vec<String>)>,
                        used: &mut HashSet<&'a str>,
                        visited: &mut HashSet<&'a str>) -> CargoResult<()> {
         if feat.is_empty() { return Ok(()) }
@@ -867,8 +902,8 @@ fn build_features<'a>(s: &'a Summary, method: &'a Method)
                 let package = feat_or_package;
                 used.insert(package);
                 deps.entry(package)
-                    .or_insert(Vec::new())
-                    .push(feat.to_string());
+                    .or_insert((false, Vec::new()))
+                    .1.push(feat.to_string());
             }
             None => {
                 let feat = feat_or_package;
@@ -879,12 +914,14 @@ fn build_features<'a>(s: &'a Summary, method: &'a Method)
                 used.insert(feat);
                 match s.features().get(feat) {
                     Some(recursive) => {
+                        // This is a feature, add it recursively.
                         for f in recursive {
                             add_feature(s, f, deps, used, visited)?;
                         }
                     }
                     None => {
-                        deps.entry(feat).or_insert(Vec::new());
+                        // This is a dependency, mark it as explicitly requested.
+                        deps.entry(feat).or_insert((false, Vec::new())).0 = true;
                     }
                 }
                 visited.remove(feat);
@@ -1040,8 +1077,9 @@ impl<'a> Context<'a> {
             .unwrap_or(&[])
     }
 
+    /// Return all dependencies and the features we want from them.
     fn resolve_features<'b>(&mut self,
-                            candidate: &'b Summary,
+                            s: &'b Summary,
                             method: &'b Method)
                             -> CargoResult<Vec<(Dependency, Vec<String>)>> {
         let dev_deps = match *method {
@@ -1050,21 +1088,31 @@ impl<'a> Context<'a> {
         };
 
         // First, filter by dev-dependencies
-        let deps = candidate.dependencies();
+        let deps = s.dependencies();
         let deps = deps.iter().filter(|d| d.is_transitive() || dev_deps);
 
-        let (mut feature_deps, used_features) = build_features(candidate,
-                                                               method)?;
+        let (mut feature_deps, used_features) = build_features(s, method)?;
         let mut ret = Vec::new();
 
-        // Next, sanitize all requested features by whitelisting all the
-        // requested features that correspond to optional dependencies
+        // Next, collect all actually enabled dependencies and their features.
         for dep in deps {
-            // weed out optional dependencies, but not those required
+            // Skip optional dependencies, but not those enabled through a feature
             if dep.is_optional() && !feature_deps.contains_key(dep.name()) {
                 continue
             }
-            let mut base = feature_deps.remove(dep.name()).unwrap_or(vec![]);
+            // So we want this dependency.  Move the features we want from `feature_deps`
+            // to `ret`.
+            let base = feature_deps.remove(dep.name()).unwrap_or((false, vec![]));
+            if !dep.is_optional() && base.0 {
+                self.warnings.push(
+                    format!("Package `{}` does not have feature `{}`. It has a required dependency \
+                       with that name, but only optional dependencies can be used as features. \
+                       This is currently a warning to ease the transition, but it will become an \
+                       error in the future.",
+                       s.package_id(), dep.name())
+                );
+            }
+            let mut base = base.1;
             base.extend(dep.features().iter().cloned());
             for feature in base.iter() {
                 if feature.contains("/") {
@@ -1074,23 +1122,20 @@ impl<'a> Context<'a> {
             ret.push((dep.clone(), base));
         }
 
-        // All features can only point to optional dependencies, in which case
-        // they should have all been weeded out by the above iteration. Any
-        // remaining features are bugs in that the package does not actually
-        // have those features.
+        // Any remaining entries in feature_deps are bugs in that the package does not actually
+        // have those dependencies.  We classified them as dependencies in the first place
+        // because there is no such feature, either.
         if !feature_deps.is_empty() {
             let unknown = feature_deps.keys().map(|s| &s[..])
                                       .collect::<Vec<&str>>();
-            if !unknown.is_empty() {
-                let features = unknown.join(", ");
-                bail!("Package `{}` does not have these features: `{}`",
-                      candidate.package_id(), features)
-            }
+            let features = unknown.join(", ");
+            bail!("Package `{}` does not have these features: `{}`",
+                    s.package_id(), features)
         }
 
         // Record what list of features is active for this package.
         if !used_features.is_empty() {
-            let pkgid = candidate.package_id();
+            let pkgid = s.package_id();
 
             let set = self.resolve_features.entry(pkgid.clone())
                               .or_insert_with(HashSet::new);
