@@ -77,6 +77,10 @@ Files: vendor/aho-corasick-*
        vendor/utf8-ranges-*
        vendor/wincolor-*
        vendor/termcolor-*
+       vendor/globset-*
+       vendor/ignore-*
+       vendor/same-file-*
+       vendor/walkdir-*
 Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
 License: MIT or Unlicense
 Comment: see upstream projects,
@@ -86,11 +90,17 @@ Comment: see upstream projects,
  * https://github.com/BurntSushi/utf8-ranges
  * https://github.com/BurntSushi/ripgrep/tree/master/wincolor
  * https://github.com/BurntSushi/ripgrep/tree/master/termcolor
+ * https://github.com/BurntSushi/ripgrep/tree/master/globset
+ * https://github.com/BurntSushi/ripgrep/tree/master/ignore
+ * https://github.com/BurntSushi/same-file
+ * https://github.com/BurntSushi/walkdir
 
 Files: vendor/dbghelp-sys-0*
        vendor/kernel32-*
        vendor/winapi-*
        vendor/ws2_32-sys-*
+       vendor/advapi32-sys-*
+       vendor/userenv-sys-*
 Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
            2014-2017 winapi-rs developers
 License: MIT
@@ -169,6 +179,17 @@ Copyright: 2015 Sean McArthur <sean.monstar@gmail.com>
 License: MIT
 Comment: see https://github.com/seanmonstar/num_cpus
 
+Files: vendor/conv-*
+Copyright: 2015, Daniel Keep <daniel.keep@gmail.com>
+License: MIT
+Comment: see https://github.com/DanielKeep/rust-conv
+
+Files: vendor/custom_derive-*
+Copyright: 2015-2016, Daniel Keep <daniel.keep@gmail.com>
+           2015-2016, rust-custom-derive contributors
+License: MIT or Apache-2.0
+Comment: see https://github.com/DanielKeep/rust-custom-derive
+
 Files: vendor/openssl-*
 Copyright: 2013-2015 Steven Fackler <sfackler@gmail.com>
            2013 Jack Lloyd
@@ -218,6 +239,13 @@ Files: vendor/unicode-bidi-*
 Copyright: 2015 The Servo Project Developers
 License: MIT or Apache-2.0
 Comment: see https://github.com/servo/unicode-bidi
+
+Files: vendor/core-foundation-*
+       vendor/core-foundation-sys-*
+Copyright: 2012-2013, The Servo Project Developers,
+ 2012-2013, Mozilla Foundation
+License: MIT or Apache-2.0
+Comment: see https://github.com/servo/core-foundation-rs
 
 Files: vendor/unicode-normalization-*
 Copyright: 2016 kwantam <kwantam@gmail.com>
@@ -279,6 +307,29 @@ Files: vendor/atty-*
 Copyright: 2015-2016, Doug Tangren
 License: MIT
 Comment: see https://github.com/softprops/atty
+
+Files: vendor/fnv-*
+Copyright: 2017, Alex Crichton <alex@alexcrichton.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/servo/rust-fnv/
+
+Files: vendor/home-*
+Copyright: Brian Anderson <andersb@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/brson/home
+
+Files: vendor/magneta-*
+       vendor/magnet-sys-*
+Copyright: Raph Levien <raph@google.com>
+           2016, The Fuchsia Authors
+License: BSD-3-Clause
+Comment: see https://fuchsia.googlesource.com/magenta-rs/
+
+Files: vendor/scopeguard-*
+Copyright: 2015, The Rust Project Developers
+           bluss
+License: MIT or Apache-2.0
+Comment: see https://github.com/bluss/scopeguard
 
 Files: vendor/vcpkg-0*
 Copyright: 2017-2017 Jim McGrath <jimmc2@gmail.com>
