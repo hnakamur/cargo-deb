@@ -1,7 +1,7 @@
 Description: Fix spelling errors in cargo messages.
 Author: Vasudev Kamath <vasudev@copyninja.info>
 Forwarded: https://github.com/rust-lang/cargo/pull/4532
-Last-Update: 2017-10-28
+Last-Update: 2017-09-23
 ---
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/src/bin/search.rs
@@ -15,15 +15,6 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
      -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
      -q, --quiet              No output printed to stdout
      --color WHEN             Coloring: auto, always, never
-@@ -62,7 +62,7 @@
-     let msg = "The flag '--host' is no longer valid.
- 
- Previous versions of Cargo accepted this flag, but it is being
--depricated. The flag is being renamed to 'index', as the flag
-+deprecated. The flag is being renamed to 'index', as the flag
- wants the location of the index in which to search. Please
- use '--index' instead.
- 
 --- a/src/cargo/util/toml/mod.rs
 +++ b/src/cargo/util/toml/mod.rs
 @@ -693,19 +693,19 @@
