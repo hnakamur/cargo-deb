@@ -1,4 +1,4 @@
-cargo (0.22.0-1~exp1) UNRELEASED; urgency=medium
+cargo (0.22.0-1~exp1) experimental; urgency=medium
 
   * New upstream release.
     + Can now install multiple crates with cargo install.
@@ -13,10 +13,17 @@ cargo (0.22.0-1~exp1) UNRELEASED; urgency=medium
       a warning.
   * Put upstream PR url for patch 1001.
   * Add conv crate file to unsuspicious files.
-  * Refresh patches 1001, 2002 and 2004 with new upstream release.
-  * Mark package compliance with Debian Policy 4.1.1.
+  * debian/patches:
+    + Refresh patches 1001, 2002 and 2004 with new upstream release.
+    + Fix typo in cargo search command and related tests.
+  * debian/control:
+    + Mark package compliance with Debian Policy 4.1.1.
+    + Mark priority for package as optional from extra. Priority extra is
+      deprecated from Debian Policy 4.0.1.
+  * debian/copyright:
+    + Add newly added vendor copyright information.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Thu, 26 Oct 2017 22:32:10 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 29 Oct 2017 19:50:42 +0530
 
 cargo (0.21.1-2) unstable; urgency=medium
 
