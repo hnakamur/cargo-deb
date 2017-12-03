@@ -1,3 +1,22 @@
+cargo (0.23.0-1) UNRELEASED; urgency=medium
+
+  * [upstream]
+    + Cargo will now build multi file examples in subdirectories of the
+      examples folder that have a main.rs file.
+    + Changed [root] to [package] in Cargo.lock. Old format packages will
+      continue to work and can be updated using cargo update.
+    + Supports vendoring git repositories.
+  * Refresh patch 2004 for new release.
+  * Audit logo.svg file from termion crate.
+  * debian/patches:
+    + Drop patch 1001, its merged upstream.
+    + Refresh patch 2002 with new upstream changes.
+    + Refresh patch 2001 with newer libgit2-sys changes.
+    + Add patch 2005 to prevent executing non-existing mdbook command
+      during build.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 03 Dec 2017 20:02:07 +0530
+
 cargo (0.22.0-1~exp1) experimental; urgency=medium
 
   * New upstream release.
