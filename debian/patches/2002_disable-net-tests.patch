@@ -14,7 +14,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn http_auth_offered() {
      let server = TcpListener::bind("127.0.0.1:0").unwrap();
      let addr = server.local_addr().unwrap();
-@@ -127,7 +127,7 @@
+@@ -129,7 +129,7 @@
  }
  
  // Boy, sure would be nice to have a TLS implementation in rust!
@@ -23,7 +23,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn https_something_happens() {
      let server = TcpListener::bind("127.0.0.1:0").unwrap();
      let addr = server.local_addr().unwrap();
-@@ -177,7 +177,7 @@
+@@ -180,7 +180,7 @@
  }
  
  // Boy, sure would be nice to have an SSH implementation in rust!
@@ -43,7 +43,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn net_retry_loads_from_config() {
      let p = project("foo")
          .file("Cargo.toml", r#"
-@@ -29,7 +29,7 @@
+@@ -30,7 +30,7 @@
  (1 tries remaining): [..]"));
  }
  
@@ -54,7 +54,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
          .file("Cargo.toml", r#"
 --- a/tests/test.rs
 +++ b/tests/test.rs
-@@ -2205,7 +2205,7 @@
+@@ -2260,7 +2260,7 @@
                  execs().with_status(0));
  }
  
