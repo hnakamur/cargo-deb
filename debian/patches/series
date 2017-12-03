@@ -3,3 +3,4 @@
 2001_use-system-libgit2.patch
 2002_disable-net-tests.patch
 1002_fix_typo_cargo_search.patch
+2005_dont_run_mdbook.patch

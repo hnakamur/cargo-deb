@@ -1,0 +1,19 @@
+Description: Don't run mdBook for book preview
+ Upstream script tries to show preview of generated document
+ the tool needed is missing and step is not needed during
+ package build.
+Author: Vasudev Kamath <vasudev@copyninja.info>
+Last-Update: 2017-12-03
+
+--- cargo-0.23.0.orig/src/ci/dox.sh
++++ cargo-0.23.0/src/ci/dox.sh
+@@ -28,6 +28,6 @@ for doc in $DOCS; do
+ done
+ 
+ # Temporary preview for mdBook docs
+-cd src/doc/book
+-$HOME/.cargo/bin/mdbook build --no-create --dest-dir ../../../target/doc/book
+-cd ../../../
++#cd src/doc/book
++#$HOME/.cargo/bin/mdbook build --no-create --dest-dir ../../../target/doc/book
++#cd ../../../
