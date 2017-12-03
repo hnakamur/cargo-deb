@@ -4,16 +4,16 @@ One of the goals of Cargo is simple integration with third-party tools, like
 IDEs and other build systems. To make integration easier, Cargo has several
 facilities:
 
-* `cargo metadata` command, which outputs project structure and dependencies
+* a `cargo metadata` command, which outputs project structure and dependencies
   information in JSON,
 
-* `--message-format` flag, which outputs information about a particular build,
+* a `--message-format` flag, which outputs information about a particular build,
+  and
 
 * support for custom subcommands.
 
 
 # Information about project structure
-
 
 You can use `cargo metadata` command to get information about project structure
 and dependencies. The output of the command looks like this:
@@ -86,7 +86,7 @@ Information about dependencies in the Makefile-compatible format is stored in
 the `.d` files alongside the artifacts.
 
 
-# Custom subcommands.
+# Custom subcommands
 
 Cargo is designed to be extensible with new subcommands without having to modify
 Cargo itself. This is achieved by translating a cargo invocation of the form

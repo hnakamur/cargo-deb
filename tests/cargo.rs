@@ -3,7 +3,6 @@ extern crate cargotest;
 extern crate hamcrest;
 
 use std::env;
-use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
@@ -11,7 +10,7 @@ use std::str;
 
 use cargotest::cargo_process;
 use cargotest::support::paths::{self, CargoPathExt};
-use cargotest::support::{execs, project, ProjectBuilder, basic_bin_manifest};
+use cargotest::support::{execs, project, Project, basic_bin_manifest};
 use hamcrest::{assert_that, existing_file};
 
 #[cfg_attr(windows,allow(dead_code))]
@@ -21,12 +20,12 @@ enum FakeKind<'a> {
 }
 
 /// Add an empty file with executable flags (and platform-dependent suffix).
-/// TODO: move this to `ProjectBuilder` if other cases using this emerge.
-fn fake_file(proj: ProjectBuilder, dir: &Path, name: &str, kind: FakeKind) -> ProjectBuilder {
+/// TODO: move this to `Project` if other cases using this emerge.
+fn fake_file(proj: Project, dir: &Path, name: &str, kind: &FakeKind) -> Project {
     let path = proj.root().join(dir).join(&format!("{}{}", name,
                                                    env::consts::EXE_SUFFIX));
     path.parent().unwrap().mkdir_p();
-    match kind {
+    match *kind {
         FakeKind::Executable => {
             File::create(&path).unwrap();
             make_executable(&path);
@@ -59,13 +58,13 @@ fn fake_file(proj: ProjectBuilder, dir: &Path, name: &str, kind: FakeKind) -> Pr
 }
 
 fn path() -> Vec<PathBuf> {
-    env::split_paths(&env::var_os("PATH").unwrap_or(OsString::new())).collect()
+    env::split_paths(&env::var_os("PATH").unwrap_or_default()).collect()
 }
 
 #[test]
 fn list_command_looks_at_path() {
-    let proj = project("list-non-overlapping");
-    let proj = fake_file(proj, Path::new("path-test"), "cargo-1", FakeKind::Executable);
+    let proj = project("list-non-overlapping").build();
+    let proj = fake_file(proj, Path::new("path-test"), "cargo-1", &FakeKind::Executable);
     let mut pr = cargo_process();
 
     let mut path = path();
@@ -84,9 +83,9 @@ fn list_command_looks_at_path() {
 fn list_command_resolves_symlinks() {
     use cargotest::support::cargo_exe;
 
-    let proj = project("list-non-overlapping");
+    let proj = project("list-non-overlapping").build();
     let proj = fake_file(proj, Path::new("path-test"), "cargo-2",
-                         FakeKind::Symlink{target:&cargo_exe()});
+                         &FakeKind::Symlink{target:&cargo_exe()});
     let mut pr = cargo_process();
 
     let mut path = path();
@@ -176,11 +175,12 @@ fn cargo_subcommand_env() {
 
     let p = project("cargo-envtest")
         .file("Cargo.toml", &basic_bin_manifest("cargo-envtest"))
-        .file("src/main.rs", &src);
+        .file("src/main.rs", &src)
+        .build();
 
     let target_dir = p.target_debug_dir();
 
-    assert_that(p.cargo_process("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs().with_status(0));
     assert_that(&p.bin("cargo-envtest"), existing_file());
 
     let mut pr = cargo_process();

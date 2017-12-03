@@ -2,12 +2,12 @@ set -ex
 
 DOCS="index faq config guide manifest build-script pkgid-spec crates-io \
       environment-variables specifying-dependencies source-replacement \
-      policies external-tools"
+      external-tools"
 ASSETS="CNAME images/noise.png images/forkme.png images/Cargo-Logo-Small.png \
         stylesheets/all.css stylesheets/normalize.css javascripts/prism.js \
         javascripts/all.js stylesheets/prism.css images/circle-with-i.png \
         images/search.png images/org-level-acl.png images/auth-level-acl.png \
-        favicon.ico"
+        favicon.ico policies.html"
 
 for asset in $ASSETS; do
   mkdir -p `dirname target/doc/$asset`
@@ -26,3 +26,8 @@ for doc in $DOCS; do
     -o target/doc \
     src/doc/$doc.md
 done
+
+# Temporary preview for mdBook docs
+cd src/doc/book
+$HOME/.cargo/bin/mdbook build --no-create --dest-dir ../../../target/doc/book
+cd ../../../

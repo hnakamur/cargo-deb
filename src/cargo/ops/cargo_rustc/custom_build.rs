@@ -34,8 +34,10 @@ pub struct BuildOutput {
     pub warnings: Vec<String>,
 }
 
+/// Map of packages to build info
 pub type BuildMap = HashMap<(PackageId, Kind), BuildOutput>;
 
+/// Build info and overrides
 pub struct BuildState {
     pub outputs: Mutex<BuildMap>,
     overrides: HashMap<(String, Kind), BuildOutput>,
@@ -77,7 +79,9 @@ pub fn prepare<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
                          -> CargoResult<(Work, Work, Freshness)> {
     let _p = profile::start(format!("build script prepare: {}/{}",
                                     unit.pkg, unit.target.name()));
-    let overridden = cx.build_state.has_override(unit);
+
+    let key = (unit.pkg.package_id().clone(), unit.kind);
+    let overridden = cx.build_script_overridden.contains(&key);
     let (work_dirty, work_fresh) = if overridden {
         (Work::noop(), Work::noop())
     } else {
@@ -172,7 +176,7 @@ fn build_work<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
         }).collect::<Vec<_>>()
     };
     let pkg_name = unit.pkg.to_string();
-    let build_state = cx.build_state.clone();
+    let build_state = Arc::clone(&cx.build_state);
     let id = unit.pkg.package_id().clone();
     let (output_file, err_file) = {
         let build_output_parent = build_output.parent().unwrap();
@@ -180,7 +184,7 @@ fn build_work<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
         let err_file = build_output_parent.join("stderr");
         (output_file, err_file)
     };
-    let all = (id.clone(), pkg_name.clone(), build_state.clone(),
+    let all = (id.clone(), pkg_name.clone(), Arc::clone(&build_state),
                output_file.clone());
     let build_scripts = super::load_build_deps(cx, unit);
     let kind = unit.kind;
@@ -268,7 +272,7 @@ fn build_work<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
             let library_paths = parsed_output.library_paths.iter().map(|l| {
                 l.display().to_string()
             }).collect::<Vec<_>>();
-            machine_message::emit(machine_message::BuildScript {
+            machine_message::emit(&machine_message::BuildScript {
                 package_id: &id,
                 linked_libs: &parsed_output.library_links,
                 linked_paths: &library_paths,
@@ -313,18 +317,6 @@ impl BuildState {
 
     fn insert(&self, id: PackageId, kind: Kind, output: BuildOutput) {
         self.outputs.lock().unwrap().insert((id, kind), output);
-    }
-
-    fn has_override(&self, unit: &Unit) -> bool {
-        let key = unit.pkg.manifest().links().map(|l| (l.to_string(), unit.kind));
-        match key.and_then(|k| self.overrides.get(&k)) {
-            Some(output) => {
-                self.insert(unit.pkg.package_id().clone(), unit.kind,
-                            output.clone());
-                true
-            }
-            None => false,
-        }
     }
 }
 
@@ -408,11 +400,7 @@ impl BuildOutput {
         let mut flags_iter = value.split(|c: char| c.is_whitespace())
                                   .filter(|w| w.chars().any(|c| !c.is_whitespace()));
         let (mut library_paths, mut library_links) = (Vec::new(), Vec::new());
-        loop {
-            let flag = match flags_iter.next() {
-                Some(f) => f,
-                None => break
-            };
+        while let Some(flag) = flags_iter.next() {
             if flag != "-l" && flag != "-L" {
                 bail!("Only `-l` and `-L` flags are allowed in {}: `{}`",
                       whence, value)
@@ -483,13 +471,27 @@ pub fn build_map<'b, 'cfg>(cx: &mut Context<'b, 'cfg>,
     // Recursive function to build up the map we're constructing. This function
     // memoizes all of its return values as it goes along.
     fn build<'a, 'b, 'cfg>(out: &'a mut HashMap<Unit<'b>, BuildScripts>,
-                           cx: &Context<'b, 'cfg>,
+                           cx: &mut Context<'b, 'cfg>,
                            unit: &Unit<'b>)
                            -> CargoResult<&'a BuildScripts> {
         // Do a quick pre-flight check to see if we've already calculated the
         // set of dependencies.
         if out.contains_key(unit) {
             return Ok(&out[unit])
+        }
+
+        {
+            let key = unit.pkg.manifest().links().map(|l| (l.to_string(), unit.kind));
+            let build_state = &cx.build_state;
+            if let Some(output) = key.and_then(|k| build_state.overrides.get(&k)) {
+                let key = (unit.pkg.package_id().clone(), unit.kind);
+                cx.build_script_overridden.insert(key.clone());
+                build_state
+                    .outputs
+                    .lock()
+                    .unwrap()
+                    .insert(key, output.clone());
+            }
         }
 
         let mut ret = BuildScripts::default();

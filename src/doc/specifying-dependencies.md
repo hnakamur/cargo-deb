@@ -47,9 +47,9 @@ be allowed with them:
 ^0 := >=0.0.0 <1.0.0
 ```
 
-This compatibility convention is different from SemVer in the way it treats 
-versions before 1.0.0. While SemVer says there is no compatibility before 
-1.0.0, Cargo considers `0.x.y` to be compatible with `0.x.z`, where `y ≥ z` 
+This compatibility convention is different from SemVer in the way it treats
+versions before 1.0.0. While SemVer says there is no compatibility before
+1.0.0, Cargo considers `0.x.y` to be compatible with `0.x.z`, where `y ≥ z`
 and `x > 0`.
 
 ## Tilde requirements
@@ -155,8 +155,7 @@ all of its own dependencies, and others can also start using the crate as well.
 However, crates that use dependencies specified with only a path are not
 permitted on [crates.io]. If we wanted to publish our `hello_world` crate, we
 would need to publish a version of `hello_utils` to [crates.io](https://crates.io)
-(or specify a `git` repository location) and specify its version in
-the dependencies line as well:
+and specify its version in the dependencies line as well:
 
 ```toml
 [dependencies]
@@ -189,10 +188,10 @@ example:
   of the crate to avoid blocking on the bug fix getting merged.
 
 These scenarios are currently all solved with the [`[patch]` manifest
-section][patch-section]. Note that the `[patch]` feature is not yet currently
-stable and will be released on 2017-08-31. Historically some of these scenarios
-have been solved with [the `[replace]` section][replace-section], but we'll
-document the `[patch]` section here.
+section][patch-section]. (Note that the `[patch]` feature will first become
+available in Rust 1.21, set to be released on 2017-10-12.) Historically some of
+these scenarios have been solved with [the `[replace]` section][replace-section],
+but we'll document the `[patch]` section here.
 
 [patch-section]: manifest.html#the-patch-section
 [replace-section]: manifest.html#the-replace-section

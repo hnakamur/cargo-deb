@@ -101,7 +101,7 @@ the more explicit `install --path .`.
 The `--list` option will list all installed packages (and their versions).
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult {
+pub fn execute(options: Options, config: &mut Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
@@ -145,7 +145,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
     } else if let Some(path) = options.flag_path {
         SourceId::for_path(&config.cwd().join(path))?
     } else if options.arg_crate.is_empty() {
-        SourceId::for_path(&config.cwd())?
+        SourceId::for_path(config.cwd())?
     } else {
         SourceId::crates_io(config)?
     };

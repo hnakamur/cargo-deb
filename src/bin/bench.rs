@@ -48,13 +48,13 @@ Usage:
 Options:
     -h, --help                   Print this message
     --lib                        Benchmark only this package's library
-    --bin NAME                   Benchmark only the specified binary
+    --bin NAME ...               Benchmark only the specified binary
     --bins                       Benchmark all binaries
-    --example NAME               Benchmark only the specified example
+    --example NAME ...           Benchmark only the specified example
     --examples                   Benchmark all examples
-    --test NAME                  Benchmark only the specified test target
+    --test NAME ...              Benchmark only the specified test target
     --tests                      Benchmark all tests
-    --bench NAME                 Benchmark only the specified bench target
+    --bench NAME ...             Benchmark only the specified bench target
     --benches                    Benchmark all benches
     --all-targets                Benchmark all targets (default)
     --no-run                     Compile, but don't run benchmarks
@@ -86,7 +86,8 @@ the current package is benchmarked. For more information on SPEC and its format,
 see the `cargo help pkgid` command.
 
 All packages in the workspace are benchmarked if the `--all` flag is supplied. The
-`--all` flag may be supplied in the presence of a virtual manifest.
+`--all` flag is automatically assumed for a virtual manifest.
+Note that `--exclude` has to be specified in conjunction with the `--all` flag.
 
 The --jobs argument affects the building of the benchmark executable but does
 not affect how many jobs are used when running the benchmarks.
@@ -94,7 +95,7 @@ not affect how many jobs are used when running the benchmarks.
 Compilation can be customized with the `bench` profile in the manifest.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult {
+pub fn execute(options: Options, config: &mut Config) -> CliResult {
     debug!("executing; cmd=cargo-bench; args={:?}",
            env::args().collect::<Vec<_>>());
 

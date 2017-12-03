@@ -1,6 +1,6 @@
 [package]
 name = "cargo"
-version = "0.22.0"
+version = "0.23.0"
 authors = ["Yehuda Katz <wycats@gmail.com>",
            "Carl Lerche <me@carllerche.com>",
            "Alex Crichton <alex@alexcrichton.com>"]
@@ -18,8 +18,9 @@ path = "src/cargo/lib.rs"
 
 [dependencies]
 atty = "0.2"
-crates-io = { path = "src/crates-io", version = "0.11" }
-crossbeam = "0.2"
+crates-io = { path = "src/crates-io", version = "0.12" }
+crossbeam = "0.3"
+crypto-hash = "0.3"
 curl = "0.4.6"
 docopt = "0.8.1"
 env_logger = "0.4"
@@ -40,10 +41,10 @@ log = "0.3"
 num_cpus = "1.0"
 same-file = "0.1"
 scoped-tls = "0.1"
-semver = { version = "0.7.0", features = ["serde"] }
+semver = { version = "0.8.0", features = ["serde"] }
 serde = "1.0"
 serde_derive = "1.0"
-serde_ignored = "0.0.3"
+serde_ignored = "0.0.4"
 serde_json = "1.0"
 shell-escape = "0.1"
 tar = { version = "0.4", default-features = false }
@@ -52,14 +53,10 @@ termcolor = "0.3"
 toml = "0.4"
 url = "1.1"
 
-[target.'cfg(unix)'.dependencies]
-openssl = "0.9"
-
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = { version = "0.4.4", features = ["mac_os_10_7_support"] }
 
 [target.'cfg(windows)'.dependencies]
-advapi32-sys = "0.2"
 kernel32-sys = "0.2"
 miow = "0.2"
 psapi-sys = "0.1"

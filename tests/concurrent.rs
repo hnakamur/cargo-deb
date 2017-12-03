@@ -1,4 +1,3 @@
-extern crate cargo;
 extern crate cargotest;
 extern crate git2;
 extern crate hamcrest;
@@ -41,7 +40,7 @@ fn multiple_installs() {
             version = "0.0.0"
         "#)
         .file("b/src/main.rs", "fn main() {}");
-    p.build();
+    let p = p.build();
 
     let mut a = p.cargo("install").cwd(p.root().join("a")).build_command();
     let mut b = p.cargo("install").cwd(p.root().join("b")).build_command();
@@ -108,7 +107,7 @@ fn one_install_should_be_bad() {
             version = "0.0.0"
         "#)
         .file("b/src/main.rs", "fn main() {}");
-    p.build();
+    let p = p.build();
 
     let mut a = p.cargo("install").cwd(p.root().join("a")).build_command();
     let mut b = p.cargo("install").cwd(p.root().join("b")).build_command();
@@ -164,7 +163,7 @@ fn multiple_registry_fetches() {
             bar = "*"
         "#)
         .file("b/src/main.rs", "fn main() {}");
-    p.build();
+    let p = p.build();
 
     let mut a = p.cargo("build").cwd(p.root().join("a")).build_command();
     let mut b = p.cargo("build").cwd(p.root().join("b")).build_command();
@@ -229,7 +228,7 @@ fn git_same_repo_different_tags() {
             dep = {{ git = '{}', tag = 'tag2' }}
         "#, a.url()))
         .file("b/src/main.rs", "extern crate dep; fn main() { dep::tag2(); }");
-    p.build();
+    let p = p.build();
 
     let mut a = p.cargo("build").arg("-v").cwd(p.root().join("a")).build_command();
     let mut b = p.cargo("build").arg("-v").cwd(p.root().join("b")).build_command();
@@ -279,7 +278,7 @@ fn git_same_branch_different_revs() {
             dep = {{ git = '{}' }}
         "#, a.url()))
         .file("b/src/main.rs", "extern crate dep; fn main() { dep::f2(); }");
-    p.build();
+    let p = p.build();
 
     // Generate a Cargo.lock pointing at the current rev, then clear out the
     // target directory
@@ -323,7 +322,7 @@ fn same_project() {
         "#)
         .file("src/main.rs", "fn main() {}")
         .file("src/lib.rs", "");
-    p.build();
+    let p = p.build();
 
     let mut a = p.cargo("build").build_command();
     let mut b = p.cargo("build").build_command();
@@ -367,7 +366,7 @@ fn killing_cargo_releases_the_lock() {
                 }
             }
         "#);
-    p.build();
+    let p = p.build();
 
     // Our build script will connect to our local TCP socket to inform us that
     // it's started  and that's how we know that `a` will have the lock
@@ -408,7 +407,7 @@ fn debug_release_ok() {
             version = "0.0.0"
         "#)
         .file("src/main.rs", "fn main() {}");
-    p.build();
+    let p = p.build();
 
     assert_that(p.cargo("build"), execs().with_status(0));
     fs::remove_dir_all(p.root().join("target")).unwrap();
@@ -465,7 +464,7 @@ fn no_deadlock_with_git_dependencies() {
             dep2 = {{ git = '{}' }}
         "#, dep1.url(), dep2.url()))
         .file("src/main.rs", "fn main() { }");
-    p.build();
+    let p = p.build();
 
     let n_concurrent_builds = 5;
 

@@ -2,20 +2,42 @@
 
 # Installing
 
-The easiest way to get Cargo is to get the current stable release of Rust by
+### Install Stable Rust and Cargo
+
+The easiest way to get Cargo is to get the current stable release of [Rust] by
 using the `rustup` script:
 
 ```shell
 $ curl -sSf https://static.rust-lang.org/rustup.sh | sh
 ```
 
-This will get you the current stable release of Rust for your platform along
-with the latest Cargo.
+After this, you can use the `rustup` command to also install `beta` or `nightly`
+channels for Rust and Cargo.
 
-If you are on Windows, you can directly download the latest 32bit ([Rust](https://static.rust-lang.org/dist/rust-1.0.0-i686-pc-windows-gnu.msi)
-and [Cargo](https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-pc-windows-gnu.tar.gz)) or 64bit ([Rust](https://static.rust-lang.org/dist/rust-1.0.0-x86_64-pc-windows-gnu.msi) and [Cargo](https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-pc-windows-gnu.tar.gz)) Rust stable releases or Cargo nightlies.
+### Install Nightly Cargo
 
-Alternatively, you can build Cargo from source.
+To install just Cargo, the current recommended installation method is through
+the official nightly builds. Note that Cargo will also require that [Rust] is
+already installed on the system.
+
+| Platform         | 64-bit            | 32-bit            |
+|------------------|-------------------|-------------------|
+| Linux binaries   | [tar.gz][linux64] | [tar.gz][linux32] |
+| MacOS binaries   | [tar.gz][mac64]   | [tar.gz][mac32]   |
+| Windows binaries | [tar.gz][win64]   | [tar.gz][win32]   |
+
+### Build and Install Cargo from Source
+
+Alternatively, you can [build Cargo from source][compiling-from-source].
+
+[rust]: https://www.rust-lang.org/
+[linux64]: https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknown-linux-gnu.tar.gz
+[linux32]: https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-unknown-linux-gnu.tar.gz
+[mac64]: https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-apple-darwin.tar.gz
+[mac32]: https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-apple-darwin.tar.gz
+[win64]: https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-pc-windows-gnu.tar.gz
+[win32]: https://static.rust-lang.org/cargo-dist/cargo-nightly-i686-pc-windows-gnu.tar.gz
+[compiling-from-source]: https://github.com/rust-lang/cargo#compiling-from-source
 
 # Let’s get started
 
@@ -63,9 +85,10 @@ fn main() {
 
 Cargo generated a “hello world” for us. Let’s compile it:
 
-<pre><code class="language-shell">$ cargo build
-<span style="font-weight: bold"
-class="s1">   Compiling</span> hello_world v0.1.0 (file:///path/to/project/hello_world)</code></pre>
+```shell
+$ cargo build
+   Compiling hello_world v0.1.0 (file:///path/to/project/hello_world)
+```
 
 And then run it:
 
@@ -76,12 +99,12 @@ Hello, world!
 
 We can also use `cargo run` to compile and then run it, all in one step:
 
-<pre><code class="language-shell">$ cargo run
-<span style="font-weight: bold"
-class="s1">     Fresh</span> hello_world v0.1.0 (file:///path/to/project/hello_world)
-<span style="font-weight: bold"
-class="s1">   Running</span> `target/hello_world`
-Hello, world!</code></pre>
+```shell
+$ cargo run
+     Fresh hello_world v0.1.0 (file:///path/to/project/hello_world)
+   Running `target/hello_world`
+Hello, world!
+```
 
 # Going further
 

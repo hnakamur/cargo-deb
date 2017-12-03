@@ -28,7 +28,7 @@ Usage:
 Options:
     -h, --help               Print this message
     --index INDEX            Registry index to search in
-    --host HOST              DEPRICATED, renamed to '--index'
+    --host HOST              DEPRECATED, renamed to '--index'
     -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
     -q, --quiet              No output printed to stdout
     --color WHEN             Coloring: auto, always, never
@@ -38,7 +38,7 @@ Options:
     -Z FLAG ...              Unstable (nightly-only) flags to Cargo
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult {
+pub fn execute(options: Options, config: &mut Config) -> CliResult {
     config.configure(options.flag_verbose,
                      options.flag_quiet,
                      &options.flag_color,
