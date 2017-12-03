@@ -43,7 +43,7 @@ Options:
     -Z FLAG ...         Unstable (nightly-only) flags to Cargo
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult {
+pub fn execute(options: Options, config: &mut Config) -> CliResult {
     debug!("executing; cmd=cargo-new; args={:?}", env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,
                      options.flag_quiet,
@@ -61,7 +61,7 @@ pub fn execute(options: Options, config: &Config) -> CliResult {
                                     flag_name.as_ref().map(|s| s.as_ref()));
 
     let opts_lib = opts.lib;
-    ops::new(opts, config)?;
+    ops::new(&opts, config)?;
 
     config.shell().status("Created", format!("{} `{}` project",
                                              if opts_lib { "library" }

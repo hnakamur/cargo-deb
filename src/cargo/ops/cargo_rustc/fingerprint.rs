@@ -18,7 +18,7 @@ use util::errors::{CargoResult, CargoResultExt};
 use util::paths;
 
 use super::job::Work;
-use super::context::{Context, Unit};
+use super::context::{Context, Unit, TargetFileType};
 use super::custom_build::BuildDeps;
 
 /// A tuple result of the `prepare_foo` functions in this module.
@@ -87,7 +87,10 @@ pub fn prepare_target<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
         missing_outputs = !root.join(unit.target.crate_name())
                                .join("index.html").exists();
     } else {
-        for &(ref src, ref link_dst, _) in cx.target_filenames(unit)?.iter() {
+        for &(ref src, ref link_dst, file_type) in cx.target_filenames(unit)?.iter() {
+            if file_type == TargetFileType::DebugInfo {
+                continue;
+            }
             missing_outputs |= !src.exists();
             if let Some(ref link_dst) = *link_dst {
                 missing_outputs |= !link_dst.exists();
@@ -144,7 +147,7 @@ pub struct Fingerprint {
     rustflags: Vec<String>,
 }
 
-fn serialize_deps<S>(deps: &Vec<(String, Arc<Fingerprint>)>, ser: S)
+fn serialize_deps<S>(deps: &[(String, Arc<Fingerprint>)], ser: S)
                      -> Result<S::Ok, S::Error>
     where S: ser::Serializer,
 {
@@ -297,7 +300,14 @@ impl hash::Hash for Fingerprint {
             memoized_hash: _,
             ref rustflags,
         } = *self;
-        (rustc, features, target, profile, deps, local, rustflags).hash(h)
+        (rustc, features, target, profile, local, rustflags).hash(h);
+
+        h.write_usize(deps.len());
+        for &(ref name, ref fingerprint) in deps {
+            name.hash(h);
+            // use memoized dep hashes to avoid exponential blowup
+            h.write_u64(Fingerprint::hash(fingerprint));
+        }
     }
 }
 
@@ -343,7 +353,7 @@ impl<'de> de::Deserialize<'de> for MtimeSlot {
 fn calculate<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
                        -> CargoResult<Arc<Fingerprint>> {
     if let Some(s) = cx.fingerprints.get(unit) {
-        return Ok(s.clone())
+        return Ok(Arc::clone(s))
     }
 
     // Next, recursively calculate the fingerprint for all of our dependencies.
@@ -388,7 +398,7 @@ fn calculate<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
         memoized_hash: Mutex::new(None),
         rustflags: extra_flags,
     });
-    cx.fingerprints.insert(*unit, fingerprint.clone());
+    cx.fingerprints.insert(*unit, Arc::clone(&fingerprint));
     Ok(fingerprint)
 }
 
@@ -452,7 +462,7 @@ pub fn prepare_build_cmd<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>)
     // Hence, if there were some `rerun-if-changed` directives forcibly change
     // the kind of fingerprint by reinterpreting the dependencies output by the
     // build script.
-    let state = cx.build_state.clone();
+    let state = Arc::clone(&cx.build_state);
     let key = (unit.pkg.package_id().clone(), unit.kind);
     let root = unit.pkg.root().to_path_buf();
     let write_fingerprint = Work::new(move |_| {
@@ -525,20 +535,20 @@ fn local_fingerprints_deps(deps: &BuildDeps, root: &Path) -> Vec<LocalFingerprin
         local.push(LocalFingerprint::EnvBased(var.clone(), val));
     }
 
-    return local
+    local
 }
 
 fn write_fingerprint(loc: &Path, fingerprint: &Fingerprint) -> CargoResult<()> {
     let hash = fingerprint.hash();
     debug!("write fingerprint: {}", loc.display());
-    paths::write(&loc, util::to_hex(hash).as_bytes())?;
+    paths::write(loc, util::to_hex(hash).as_bytes())?;
     paths::write(&loc.with_extension("json"),
                  &serde_json::to_vec(&fingerprint).unwrap())?;
     Ok(())
 }
 
 /// Prepare for work when a package starts to build
-pub fn prepare_init(cx: &mut Context, unit: &Unit) -> CargoResult<()> {
+pub fn prepare_init<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult<()> {
     let new1 = cx.fingerprint_dir(unit);
 
     if fs::metadata(&new1).is_err() {
@@ -548,7 +558,7 @@ pub fn prepare_init(cx: &mut Context, unit: &Unit) -> CargoResult<()> {
     Ok(())
 }
 
-pub fn dep_info_loc(cx: &mut Context, unit: &Unit) -> PathBuf {
+pub fn dep_info_loc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> PathBuf {
     cx.fingerprint_dir(unit).join(&format!("dep-{}", filename(cx, unit)))
 }
 
@@ -563,7 +573,7 @@ fn compare_old_fingerprint(loc: &Path, new_fingerprint: &Fingerprint)
 
     let old_fingerprint_json = paths::read(&loc.with_extension("json"))?;
     let old_fingerprint = serde_json::from_str(&old_fingerprint_json)
-        .chain_err(|| internal(format!("failed to deserialize json")))?;
+        .chain_err(|| internal("failed to deserialize json"))?;
     new_fingerprint.compare(&old_fingerprint)
 }
 
@@ -670,7 +680,7 @@ fn mtime_if_fresh<I>(output: &Path, paths: I) -> Option<FileTime>
     }
 }
 
-fn filename(cx: &mut Context, unit: &Unit) -> String {
+fn filename<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> String {
     // file_stem includes metadata hash. Thus we have a different
     // fingerprint for every metadata hash version. This works because
     // even if the package is fresh, we'll still link the fresh target

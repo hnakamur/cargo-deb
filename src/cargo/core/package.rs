@@ -1,5 +1,5 @@
 use std::cell::{Ref, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::fmt;
 use std::hash;
 use std::path::{Path, PathBuf};
@@ -20,12 +20,13 @@ use util::errors::{CargoResult, CargoResultExt};
 // TODO: Is manifest_path a relic?
 #[derive(Clone, Debug)]
 pub struct Package {
-    // The package's manifest
+    /// The package's manifest
     manifest: Manifest,
-    // The root of the package
+    /// The root of the package
     manifest_path: PathBuf,
 }
 
+/// A Package in a form where `Serialize` can be derived.
 #[derive(Serialize)]
 struct SerializedPackage<'a> {
     name: &'a str,
@@ -37,7 +38,7 @@ struct SerializedPackage<'a> {
     source: &'a SourceId,
     dependencies: &'a [Dependency],
     targets: &'a [Target],
-    features: &'a HashMap<String, Vec<String>>,
+    features: &'a BTreeMap<String, Vec<String>>,
     manifest_path: &'a str,
 }
 
@@ -53,7 +54,7 @@ impl ser::Serialize for Package {
         let description = manmeta.description.as_ref().map(String::as_ref);
 
         SerializedPackage {
-            name: &package_id.name(),
+            name: package_id.name(),
             version: &package_id.version().to_string(),
             id: package_id,
             license: license,
@@ -61,7 +62,7 @@ impl ser::Serialize for Package {
             description: description,
             source: summary.source_id(),
             dependencies: summary.dependencies(),
-            targets: &self.manifest.targets(),
+            targets: self.manifest.targets(),
             features: summary.features(),
             manifest_path: &self.manifest_path.display().to_string(),
         }.serialize(s)
@@ -69,6 +70,7 @@ impl ser::Serialize for Package {
 }
 
 impl Package {
+    /// Create a package from a manifest and its location
     pub fn new(manifest: Manifest,
                manifest_path: &Path) -> Package {
         Package {
@@ -77,26 +79,38 @@ impl Package {
         }
     }
 
+    /// Calculate the Package from the manifest path (and cargo configuration).
     pub fn for_path(manifest_path: &Path, config: &Config) -> CargoResult<Package> {
         let path = manifest_path.parent().unwrap();
         let source_id = SourceId::for_path(path)?;
-        let (pkg, _) = ops::read_package(&manifest_path, &source_id,
-                                         config)?;
+        let (pkg, _) = ops::read_package(manifest_path, &source_id, config)?;
         Ok(pkg)
     }
 
+    /// Get the manifest dependencies
     pub fn dependencies(&self) -> &[Dependency] { self.manifest.dependencies() }
+    /// Get the manifest
     pub fn manifest(&self) -> &Manifest { &self.manifest }
+    /// Get the path to the manifest
     pub fn manifest_path(&self) -> &Path { &self.manifest_path }
+    /// Get the name of the package
     pub fn name(&self) -> &str { self.package_id().name() }
+    /// Get the PackageId object for the package (fully defines a packge)
     pub fn package_id(&self) -> &PackageId { self.manifest.package_id() }
+    /// Get the root folder of the package
     pub fn root(&self) -> &Path { self.manifest_path.parent().unwrap() }
+    /// Get the summary for the package
     pub fn summary(&self) -> &Summary { self.manifest.summary() }
+    /// Get the targets specified in the manifest
     pub fn targets(&self) -> &[Target] { self.manifest.targets() }
+    /// Get the current package version
     pub fn version(&self) -> &Version { self.package_id().version() }
+    /// Get the package authors
     pub fn authors(&self) -> &Vec<String> { &self.manifest.metadata().authors }
+    /// Whether the package is set to publish
     pub fn publish(&self) -> bool { self.manifest.publish() }
 
+    /// Whether the package uses a custom build script for any target
     pub fn has_custom_build(&self) -> bool {
         self.targets().iter().any(|t| t.is_custom_build())
     }
@@ -162,7 +176,7 @@ impl hash::Hash for Package {
 }
 
 pub struct PackageSet<'cfg> {
-    packages: Vec<(PackageId, LazyCell<Package>)>,
+    packages: HashMap<PackageId, LazyCell<Package>>,
     sources: RefCell<SourceMap<'cfg>>,
 }
 
@@ -178,14 +192,13 @@ impl<'cfg> PackageSet<'cfg> {
     }
 
     pub fn package_ids<'a>(&'a self) -> Box<Iterator<Item=&'a PackageId> + 'a> {
-        Box::new(self.packages.iter().map(|&(ref p, _)| p))
+        Box::new(self.packages.keys())
     }
 
     pub fn get(&self, id: &PackageId) -> CargoResult<&Package> {
-        let slot = self.packages.iter().find(|p| p.0 == *id).ok_or_else(|| {
+        let slot = self.packages.get(id).ok_or_else(|| {
             internal(format!("couldn't find `{}` in package set", id))
         })?;
-        let slot = &slot.1;
         if let Some(pkg) = slot.borrow() {
             return Ok(pkg)
         }

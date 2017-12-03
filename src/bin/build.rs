@@ -79,7 +79,7 @@ current package is built. For more information on SPEC and its format, see the
 `cargo help pkgid` command.
 
 All packages in the workspace are built if the `--all` flag is supplied. The
-`--all` flag may be supplied in the presence of a virtual manifest.
+`--all` flag is automatically assumed for a virtual manifest.
 Note that `--exclude` has to be specified in conjunction with the `--all` flag.
 
 Compilation can be configured via the use of profiles which are configured in
@@ -87,7 +87,7 @@ the manifest. The default profile for this command is `dev`, but passing
 the --release flag will use the `release` profile instead.
 ";
 
-pub fn execute(options: Options, config: &Config) -> CliResult {
+pub fn execute(options: Options, config: &mut Config) -> CliResult {
     debug!("executing; cmd=cargo-build; args={:?}",
            env::args().collect::<Vec<_>>());
     config.configure(options.flag_verbose,

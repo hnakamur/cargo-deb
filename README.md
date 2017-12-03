@@ -34,12 +34,6 @@ With `cargo` already installed, you can simply run:
 cargo build --release
 ```
 
-## Running the tests
-
-To run cargo's tests, use `cargo test`. If you do not have the cross-compilers
-installed locally, ignore the cross-compile test failures, or disable them by
-using `CFG_DISABLE_CROSS_TESTS=1 cargo test`.
-
 ## Adding new subcommands to Cargo
 
 Cargo is designed to be extensible with new subcommands without having to modify
@@ -48,16 +42,6 @@ a list of known community-developed subcommands.
 
 [third-party-subcommands]: https://github.com/rust-lang/cargo/wiki/Third-party-cargo-subcommands
 
-## Contributing to the Docs
-
-To contribute to the docs, all you need to do is change the markdown files in
-the `src/doc` directory. To view the rendered version of changes you have
-made locally, run:
-
-```sh
-sh src/ci/dox.sh
-open target/doc/index.html
-```
 
 ## Releases
 
@@ -66,34 +50,19 @@ Cargo releases coincide with Rust releases.
 
 [rel]: https://github.com/rust-lang/rust/blob/master/RELEASES.md
 
-<details>
-    <summary>Table of Rust versions with their Cargo versions</summary>
-
-Rust version | Cargo version
--------------|--------------|
-   1.12.0    |    0.13.0    |
-   1.11.0    |    0.12.0    |
-   1.10.0    |    0.11.0    |
-   1.9.0     |    0.10.0    |
-   1.8.0     |    0.9.0     |
-   1.7.0     |    0.8.0     |
-   1.6.0     |    0.7.0     |
-   1.5.0     |    0.6.0     |
-   1.4.0     |    0.5.0     |
-   1.3.0     |    0.4.0     |
-   1.2.0     |    0.3.0     |
-   1.1.0     |    0.2.0     |
-   1.0.0     |    0.1.0     |
-
-</details>
-
-## Reporting Issues
+## Reporting issues
 
 Found a bug? We'd love to know about it!
 
 Please report all issues on the github [issue tracker][issues].
 
 [issues]: https://github.com/rust-lang/cargo/issues
+
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md)
+
 
 ## License
 

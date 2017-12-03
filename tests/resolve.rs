@@ -3,7 +3,7 @@
 extern crate hamcrest;
 extern crate cargo;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use hamcrest::{assert_that, equal_to, contains, not};
 
@@ -13,7 +13,7 @@ use cargo::core::{Dependency, PackageId, Summary, Registry};
 use cargo::util::{CargoResult, ToUrl};
 use cargo::core::resolver::{self, Method};
 
-fn resolve(pkg: PackageId, deps: Vec<Dependency>, registry: &[Summary])
+fn resolve(pkg: &PackageId, deps: Vec<Dependency>, registry: &[Summary])
     -> CargoResult<Vec<PackageId>>
 {
     struct MyRegistry<'a>(&'a [Summary]);
@@ -28,9 +28,11 @@ fn resolve(pkg: PackageId, deps: Vec<Dependency>, registry: &[Summary])
             }
             Ok(())
         }
+        fn supports_checksums(&self) -> bool { false }
+        fn requires_precise(&self) -> bool { false }
     }
     let mut registry = MyRegistry(registry);
-    let summary = Summary::new(pkg.clone(), deps, HashMap::new()).unwrap();
+    let summary = Summary::new(pkg.clone(), deps, BTreeMap::new()).unwrap();
     let method = Method::Everything;
     let resolve = resolver::resolve(&[(summary, method)], &[], &mut registry, None)?;
     let res = resolve.iter().cloned().collect();
@@ -76,11 +78,11 @@ macro_rules! pkg {
     ($pkgid:expr => [$($deps:expr),+]) => ({
         let d: Vec<Dependency> = vec![$($deps.to_dep()),+];
 
-        Summary::new($pkgid.to_pkgid(), d, HashMap::new()).unwrap()
+        Summary::new($pkgid.to_pkgid(), d, BTreeMap::new()).unwrap()
     });
 
     ($pkgid:expr) => (
-        Summary::new($pkgid.to_pkgid(), Vec::new(), HashMap::new()).unwrap()
+        Summary::new($pkgid.to_pkgid(), Vec::new(), BTreeMap::new()).unwrap()
     )
 }
 
@@ -90,7 +92,7 @@ fn registry_loc() -> SourceId {
 }
 
 fn pkg(name: &str) -> Summary {
-    Summary::new(pkg_id(name), Vec::new(), HashMap::new()).unwrap()
+    Summary::new(pkg_id(name), Vec::new(), BTreeMap::new()).unwrap()
 }
 
 fn pkg_id(name: &str) -> PackageId {
@@ -106,7 +108,7 @@ fn pkg_id_loc(name: &str, loc: &str) -> PackageId {
 }
 
 fn pkg_loc(name: &str, loc: &str) -> Summary {
-    Summary::new(pkg_id_loc(name, loc), Vec::new(), HashMap::new()).unwrap()
+    Summary::new(pkg_id_loc(name, loc), Vec::new(), BTreeMap::new()).unwrap()
 }
 
 fn dep(name: &str) -> Dependency { dep_req(name, "1.0.0") }
@@ -141,8 +143,8 @@ fn loc_names(names: &[(&'static str, &'static str)]) -> Vec<PackageId> {
 
 #[test]
 fn test_resolving_empty_dependency_list() {
-    let res = resolve(pkg_id("root"), Vec::new(),
-                      &mut registry(vec![])).unwrap();
+    let res = resolve(&pkg_id("root"), Vec::new(),
+                      &registry(vec![])).unwrap();
 
     assert_that(&res, equal_to(&names(&["root"])));
 }
@@ -150,7 +152,7 @@ fn test_resolving_empty_dependency_list() {
 #[test]
 fn test_resolving_only_package() {
     let reg = registry(vec![pkg("foo")]);
-    let res = resolve(pkg_id("root"), vec![dep("foo")], &reg);
+    let res = resolve(&pkg_id("root"), vec![dep("foo")], &reg);
 
     assert_that(&res.unwrap(), contains(names(&["root", "foo"])).exactly());
 }
@@ -158,7 +160,7 @@ fn test_resolving_only_package() {
 #[test]
 fn test_resolving_one_dep() {
     let reg = registry(vec![pkg("foo"), pkg("bar")]);
-    let res = resolve(pkg_id("root"), vec![dep("foo")], &reg);
+    let res = resolve(&pkg_id("root"), vec![dep("foo")], &reg);
 
     assert_that(&res.unwrap(), contains(names(&["root", "foo"])).exactly());
 }
@@ -166,7 +168,7 @@ fn test_resolving_one_dep() {
 #[test]
 fn test_resolving_multiple_deps() {
     let reg = registry(vec![pkg!("foo"), pkg!("bar"), pkg!("baz")]);
-    let res = resolve(pkg_id("root"), vec![dep("foo"), dep("baz")],
+    let res = resolve(&pkg_id("root"), vec![dep("foo"), dep("baz")],
                       &reg).unwrap();
 
     assert_that(&res, contains(names(&["root", "foo", "baz"])).exactly());
@@ -175,7 +177,7 @@ fn test_resolving_multiple_deps() {
 #[test]
 fn test_resolving_transitive_deps() {
     let reg = registry(vec![pkg!("foo"), pkg!("bar" => ["foo"])]);
-    let res = resolve(pkg_id("root"), vec![dep("bar")], &reg).unwrap();
+    let res = resolve(&pkg_id("root"), vec![dep("bar")], &reg).unwrap();
 
     assert_that(&res, contains(names(&["root", "foo", "bar"])));
 }
@@ -183,7 +185,7 @@ fn test_resolving_transitive_deps() {
 #[test]
 fn test_resolving_common_transitive_deps() {
     let reg = registry(vec![pkg!("foo" => ["bar"]), pkg!("bar")]);
-    let res = resolve(pkg_id("root"), vec![dep("foo"), dep("bar")],
+    let res = resolve(&pkg_id("root"), vec![dep("foo"), dep("bar")],
                       &reg).unwrap();
 
     assert_that(&res, contains(names(&["root", "foo", "bar"])));
@@ -195,7 +197,7 @@ fn test_resolving_with_same_name() {
                     pkg_loc("bar", "http://second.example.com")];
 
     let reg = registry(list);
-    let res = resolve(pkg_id("root"),
+    let res = resolve(&pkg_id("root"),
                       vec![dep_loc("foo", "http://first.example.com"),
                            dep_loc("bar", "http://second.example.com")],
                       &reg);
@@ -217,7 +219,7 @@ fn test_resolving_with_dev_deps() {
         pkg!("bat")
     ]);
 
-    let res = resolve(pkg_id("root"),
+    let res = resolve(&pkg_id("root"),
                       vec![dep("foo"), dep_kind("baz", Development)],
                       &reg).unwrap();
 
@@ -231,7 +233,7 @@ fn resolving_with_many_versions() {
         pkg!(("foo", "1.0.2")),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![dep("foo")], &reg).unwrap();
+    let res = resolve(&pkg_id("root"), vec![dep("foo")], &reg).unwrap();
 
     assert_that(&res, contains(names(&[("root", "1.0.0"),
                                        ("foo", "1.0.2")])));
@@ -244,7 +246,7 @@ fn resolving_with_specific_version() {
         pkg!(("foo", "1.0.2")),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![dep_req("foo", "=1.0.1")],
+    let res = resolve(&pkg_id("root"), vec![dep_req("foo", "=1.0.1")],
                       &reg).unwrap();
 
     assert_that(&res, contains(names(&[("root", "1.0.0"),
@@ -261,7 +263,7 @@ fn test_resolving_maximum_version_with_transitive_deps() {
         pkg!("bar" => [dep_req("util", ">=1.0.1")]),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![dep_req("foo", "1.0.0"), dep_req("bar", "1.0.0")],
+    let res = resolve(&pkg_id("root"), vec![dep_req("foo", "1.0.0"), dep_req("bar", "1.0.0")],
                       &reg).unwrap();
 
     assert_that(&res, contains(names(&[("root", "1.0.0"),
@@ -280,7 +282,7 @@ fn resolving_incompat_versions() {
         pkg!("bar" => [dep_req("foo", "=1.0.2")]),
     ]);
 
-    assert!(resolve(pkg_id("root"), vec![
+    assert!(resolve(&pkg_id("root"), vec![
         dep_req("foo", "=1.0.1"),
         dep("bar"),
     ], &reg).is_err());
@@ -295,7 +297,7 @@ fn resolving_backtrack() {
         pkg!("baz"),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![
+    let res = resolve(&pkg_id("root"), vec![
         dep_req("foo", "^1"),
     ], &reg).unwrap();
 
@@ -319,7 +321,7 @@ fn resolving_allows_multiple_compatible_versions() {
         pkg!("d4" => [dep_req("foo", "0.2")]),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![
+    let res = resolve(&pkg_id("root"), vec![
         dep("bar"),
     ], &reg).unwrap();
 
@@ -352,7 +354,7 @@ fn resolving_with_deep_backtracking() {
         pkg!(("dep_req", "2.0.0")),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![
+    let res = resolve(&pkg_id("root"), vec![
         dep_req("foo", "1"),
     ], &reg).unwrap();
 
@@ -367,7 +369,7 @@ fn resolving_but_no_exists() {
     let reg = registry(vec![
     ]);
 
-    let res = resolve(pkg_id("root"), vec![
+    let res = resolve(&pkg_id("root"), vec![
         dep_req("foo", "1"),
     ], &reg);
     assert!(res.is_err());
@@ -385,7 +387,7 @@ fn resolving_cycle() {
         pkg!("foo" => ["foo"]),
     ]);
 
-    let _ = resolve(pkg_id("root"), vec![
+    let _ = resolve(&pkg_id("root"), vec![
         dep_req("foo", "1"),
     ], &reg);
 }
@@ -399,7 +401,7 @@ fn hard_equality() {
         pkg!(("bar", "1.0.0") => [dep_req("foo", "1.0.0")]),
     ]);
 
-    let res = resolve(pkg_id("root"), vec![
+    let res = resolve(&pkg_id("root"), vec![
         dep_req("bar", "1"),
         dep_req("foo", "=1.0.0"),
     ], &reg).unwrap();

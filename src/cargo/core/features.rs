@@ -18,7 +18,7 @@
 //!    the `Manifest::feature_gate` function, but otherwise you may wish to
 //!    place the feature gate elsewhere in Cargo.
 //!
-//! 3. Do actually perform the feature gate, you'll want to have code that looks
+//! 3. To actually perform the feature gate, you'll want to have code that looks
 //!    like:
 //!
 //! ```rust,ignore
@@ -148,7 +148,7 @@ impl Features {
         };
 
         if *slot {
-            bail!("the cargo feature `{}` has already bene activated", feature);
+            bail!("the cargo feature `{}` has already been activated", feature);
         }
 
         match status {
@@ -200,7 +200,7 @@ impl Features {
     }
 }
 
-/// A parsed represetnation of all unstable flags that Cargo accepts.
+/// A parsed representation of all unstable flags that Cargo accepts.
 ///
 /// Cargo, like `rustc`, accepts a suite of `-Z` flags which are intended for
 /// gating unstable functionality to Cargo. These flags are only available on
@@ -232,7 +232,7 @@ pub struct CliUnstable {
 
 impl CliUnstable {
     pub fn parse(&mut self, flags: &[String]) -> CargoResult<()> {
-        if flags.len() > 0 && !nightly_features_allowed() {
+        if !flags.is_empty() && !nightly_features_allowed() {
             bail!("the `-Z` flag is only accepted on the nightly channel of Cargo")
         }
         for flag in flags {
@@ -267,7 +267,7 @@ impl CliUnstable {
 fn channel() -> String {
     env::var("__CARGO_TEST_CHANNEL_OVERRIDE_DO_NOT_USE_THIS").unwrap_or_else(|_| {
         ::version().cfg_info.map(|c| c.release_channel)
-            .unwrap_or(String::from("dev"))
+            .unwrap_or_else(|| String::from("dev"))
     })
 }
 

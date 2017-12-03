@@ -1,4 +1,4 @@
-use std::cell::{RefCell, RefMut, Cell, Ref};
+use std::cell::{RefCell, RefMut};
 use std::collections::HashSet;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::hash_map::HashMap;
@@ -12,34 +12,54 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Once, ONCE_INIT};
 
-use core::{Shell, CliUnstable};
-use core::shell::Verbosity;
+use curl::easy::Easy;
 use jobserver;
 use serde::{Serialize, Serializer};
 use toml;
+
+use core::shell::Verbosity;
+use core::{Shell, CliUnstable};
+use ops;
 use util::Rustc;
 use util::errors::{CargoResult, CargoResultExt, CargoError, internal};
 use util::paths;
-use util::{Filesystem, LazyCell};
-
 use util::toml as cargo_toml;
+use util::{Filesystem, LazyCell};
 
 use self::ConfigValue as CV;
 
+/// Configuration information for cargo. This is not specific to a build, it is information
+/// relating to cargo itself.
+///
+/// This struct implements `Default`: all fields can be inferred.
 #[derive(Debug)]
 pub struct Config {
+    /// The location of the users's 'home' directory. OS-dependent.
     home_path: Filesystem,
+    /// Information about how to write messages to the shell
     shell: RefCell<Shell>,
+    /// Information on how to invoke the compiler (rustc)
     rustc: LazyCell<Rustc>,
+    /// A collection of configuration options
     values: LazyCell<HashMap<String, ConfigValue>>,
+    /// The current working directory of cargo
     cwd: PathBuf,
+    /// The location of the cargo executable (path to current process)
     cargo_exe: LazyCell<PathBuf>,
+    /// The location of the rustdoc executable
     rustdoc: LazyCell<PathBuf>,
-    extra_verbose: Cell<bool>,
-    frozen: Cell<bool>,
-    locked: Cell<bool>,
+    /// Whether we are printing extra verbose messages
+    extra_verbose: bool,
+    /// `frozen` is set if we shouldn't access the network
+    frozen: bool,
+    /// `locked` is set if we should not update lock files
+    locked: bool,
+    /// A global static IPC control mechanism (used for managing parallel builds)
     jobserver: Option<jobserver::Client>,
-    cli_flags: RefCell<CliUnstable>,
+    /// Cli flags of the form "-Z something"
+    cli_flags: CliUnstable,
+    /// A handle on curl easy mode for http calls
+    easy: LazyCell<RefCell<Easy>>,
 }
 
 impl Config {
@@ -65,9 +85,9 @@ impl Config {
             values: LazyCell::new(),
             cargo_exe: LazyCell::new(),
             rustdoc: LazyCell::new(),
-            extra_verbose: Cell::new(false),
-            frozen: Cell::new(false),
-            locked: Cell::new(false),
+            extra_verbose: false,
+            frozen: false,
+            locked: false,
             jobserver: unsafe {
                 if GLOBAL_JOBSERVER.is_null() {
                     None
@@ -75,7 +95,8 @@ impl Config {
                     Some((*GLOBAL_JOBSERVER).clone())
                 }
             },
-            cli_flags: RefCell::new(CliUnstable::default()),
+            cli_flags: CliUnstable::default(),
+            easy: LazyCell::new(),
         }
     }
 
@@ -91,37 +112,46 @@ impl Config {
         Ok(Config::new(shell, cwd, homedir))
     }
 
+    /// The user's cargo home directory (OS-dependent)
     pub fn home(&self) -> &Filesystem { &self.home_path }
 
+    /// The cargo git directory (`<cargo_home>/git`)
     pub fn git_path(&self) -> Filesystem {
         self.home_path.join("git")
     }
 
+    /// The cargo registry index directory (`<cargo_home>/registry/index`)
     pub fn registry_index_path(&self) -> Filesystem {
         self.home_path.join("registry").join("index")
     }
 
+    /// The cargo registry cache directory (`<cargo_home>/registry/path`)
     pub fn registry_cache_path(&self) -> Filesystem {
         self.home_path.join("registry").join("cache")
     }
 
+    /// The cargo registry source directory (`<cargo_home>/registry/src`)
     pub fn registry_source_path(&self) -> Filesystem {
         self.home_path.join("registry").join("src")
     }
 
+    /// Get a reference to the shell, for e.g. writing error messages
     pub fn shell(&self) -> RefMut<Shell> {
         self.shell.borrow_mut()
     }
 
+    /// Get the path to the `rustdoc` executable
     pub fn rustdoc(&self) -> CargoResult<&Path> {
         self.rustdoc.get_or_try_init(|| self.get_tool("rustdoc")).map(AsRef::as_ref)
     }
 
+    /// Get the path to the `rustc` executable
     pub fn rustc(&self) -> CargoResult<&Rustc> {
         self.rustc.get_or_try_init(|| Rustc::new(self.get_tool("rustc")?,
                                                  self.maybe_get_tool("rustc_wrapper")?))
     }
 
+    /// Get the path to the `cargo` executable
     pub fn cargo_exe(&self) -> CargoResult<&Path> {
         self.cargo_exe.get_or_try_init(||
             env::current_exe().and_then(|path| path.canonicalize())
@@ -368,7 +398,7 @@ impl Config {
         })
     }
 
-    pub fn configure(&self,
+    pub fn configure(&mut self,
                      verbose: u32,
                      quiet: Option<bool>,
                      color: &Option<String>,
@@ -382,7 +412,7 @@ impl Config {
         let cfg_verbose = self.get_bool("term.verbose").unwrap_or(None).map(|v| v.val);
         let cfg_color = self.get_string("term.color").unwrap_or(None).map(|v| v.val);
 
-        let color = color.as_ref().or(cfg_color.as_ref());
+        let color = color.as_ref().or_else(|| cfg_color.as_ref());
 
         let verbosity = match (verbose, cfg_verbose, quiet) {
             (Some(true), _, None) |
@@ -410,30 +440,31 @@ impl Config {
 
         self.shell().set_verbosity(verbosity);
         self.shell().set_color_choice(color.map(|s| &s[..]))?;
-        self.extra_verbose.set(extra_verbose);
-        self.frozen.set(frozen);
-        self.locked.set(locked);
-        self.cli_flags.borrow_mut().parse(unstable_flags)?;
+        self.extra_verbose = extra_verbose;
+        self.frozen = frozen;
+        self.locked = locked;
+        self.cli_flags.parse(unstable_flags)?;
 
         Ok(())
     }
 
-    pub fn cli_unstable(&self) -> Ref<CliUnstable> {
-        self.cli_flags.borrow()
+    pub fn cli_unstable(&self) -> &CliUnstable {
+        &self.cli_flags
     }
 
     pub fn extra_verbose(&self) -> bool {
-        self.extra_verbose.get()
+        self.extra_verbose
     }
 
     pub fn network_allowed(&self) -> bool {
-        !self.frozen.get()
+        !self.frozen
     }
 
     pub fn lock_update_allowed(&self) -> bool {
-        !self.frozen.get() && !self.locked.get()
+        !self.frozen && !self.locked
     }
 
+    /// Loads configuration from the filesystem
     pub fn load_values(&self) -> CargoResult<HashMap<String, ConfigValue>> {
         let mut cfg = CV::Table(HashMap::new(), PathBuf::from("."));
 
@@ -445,12 +476,12 @@ impl Config {
                               path.display())
             })?;
             let toml = cargo_toml::parse(&contents,
-                                         &path,
+                                         path,
                                          self).chain_err(|| {
                 format!("could not parse TOML configuration in `{}`",
                         path.display())
             })?;
-            let value = CV::from_toml(&path, toml).chain_err(|| {
+            let value = CV::from_toml(path, toml).chain_err(|| {
                 format!("failed to load TOML configuration from `{}`",
                         path.display())
             })?;
@@ -467,6 +498,7 @@ impl Config {
         }
     }
 
+    /// Loads credentials config from the credentials file into the ConfigValue object, if present.
     fn load_credentials(&self, cfg: &mut ConfigValue) -> CargoResult<()> {
         let home_path = self.home_path.clone().into_path_unlocked();
         let credentials = home_path.join("credentials");
@@ -496,12 +528,14 @@ impl Config {
         };
 
         let registry = cfg.entry("registry".into())
-                          .or_insert(CV::Table(HashMap::new(), PathBuf::from(".")));
+                          .or_insert_with(|| CV::Table(HashMap::new(), PathBuf::from(".")));
 
         match (registry, value) {
             (&mut CV::Table(ref mut old, _), CV::Table(ref mut new, _)) => {
+                // Take ownership of `new` by swapping it with an empty hashmap, so we can move
+                // into an iterator.
                 let new = mem::replace(new, HashMap::new());
-                for (key, value) in new.into_iter() {
+                for (key, value) in new {
                     old.insert(key, value);
                 }
             }
@@ -531,11 +565,17 @@ impl Config {
     /// as a path.
     fn get_tool(&self, tool: &str) -> CargoResult<PathBuf> {
         self.maybe_get_tool(tool)
-            .map(|t| t.unwrap_or(PathBuf::from(tool)))
+            .map(|t| t.unwrap_or_else(|| PathBuf::from(tool)))
     }
 
     pub fn jobserver_from_env(&self) -> Option<&jobserver::Client> {
         self.jobserver.as_ref()
+    }
+
+    pub fn http(&self) -> CargoResult<&RefCell<Easy>> {
+        self.easy.get_or_try_init(|| {
+            ops::http_handle(self).map(RefCell::new)
+        })
     }
 }
 
@@ -655,7 +695,7 @@ impl ConfigValue {
             }
             (&mut CV::Table(ref mut old, _), CV::Table(ref mut new, _)) => {
                 let new = mem::replace(new, HashMap::new());
-                for (key, value) in new.into_iter() {
+                for (key, value) in new {
                     match old.entry(key.clone()) {
                         Occupied(mut entry) => {
                             let path = value.definition_path().to_path_buf();

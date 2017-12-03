@@ -24,7 +24,7 @@ fn setup() {
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     fs::create_dir_all(&api_path().join("api/v1")).unwrap();
 
-    repo(&registry_path())
+    let _ = repo(&registry_path())
         .file("config.json", &format!(r#"{{
             "dl": "{0}",
             "api": "{0}"
@@ -35,7 +35,7 @@ fn setup() {
 fn cargo_process(s: &str) -> ProcessBuilder {
     let mut b = cargotest::cargo_process();
     b.arg(s);
-    return b
+    b
 }
 
 #[test]

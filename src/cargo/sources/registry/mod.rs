@@ -159,7 +159,7 @@
 //! ```
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::File;
 use std::path::{PathBuf, Path};
@@ -206,7 +206,7 @@ struct RegistryPackage<'a> {
     name: Cow<'a, str>,
     vers: Version,
     deps: DependencyList,
-    features: HashMap<String, Vec<String>>,
+    features: BTreeMap<String, Vec<String>>,
     cksum: String,
     yanked: Option<bool>,
 }
@@ -313,9 +313,33 @@ impl<'cfg> RegistrySource<'cfg> {
 
         let gz = GzDecoder::new(tarball.file())?;
         let mut tar = Archive::new(gz);
-        tar.unpack(dst.parent().unwrap())?;
+        let prefix = dst.file_name().unwrap();
+        let parent = dst.parent().unwrap();
+        for entry in tar.entries()? {
+            let mut entry = entry.chain_err(|| "failed to iterate over archive")?;
+            let entry_path = entry.path()
+                .chain_err(|| "failed to read entry path")?
+                .into_owned();
+
+            // We're going to unpack this tarball into the global source
+            // directory, but we want to make sure that it doesn't accidentally
+            // (or maliciously) overwrite source code from other crates. Cargo
+            // itself should never generate a tarball that hits this error, and
+            // crates.io should also block uploads with these sorts of tarballs,
+            // but be extra sure by adding a check here as well.
+            if !entry_path.starts_with(prefix) {
+                return Err(format!("invalid tarball downloaded, contains \
+                                    a file at {:?} which isn't under {:?}",
+                                   entry_path, prefix).into())
+            }
+
+            // Once that's verified, unpack the entry as usual.
+            entry.unpack_in(parent).chain_err(|| {
+                format!("failed to unpack entry at `{}`", entry_path.display())
+            })?;
+        }
         File::create(&ok)?;
-        Ok(dst)
+        Ok(dst.clone())
     }
 
     fn do_update(&mut self) -> CargoResult<()> {
@@ -355,6 +379,10 @@ impl<'cfg> Registry for RegistrySource<'cfg> {
 
     fn supports_checksums(&self) -> bool {
         true
+    }
+
+    fn requires_precise(&self) -> bool {
+        false
     }
 }
 

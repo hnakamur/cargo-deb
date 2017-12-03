@@ -75,7 +75,7 @@ See 'cargo help <command>' for more information on a specific command.
 fn main() {
     env_logger::init().unwrap();
 
-    let config = match Config::default() {
+    let mut config = match Config::default() {
         Ok(cfg) => cfg,
         Err(e) => {
             let mut shell = Shell::new();
@@ -92,7 +92,7 @@ fn main() {
             })
             .collect());
         let rest = &args;
-        cargo::call_main_without_stdin(execute, &config, USAGE, rest, true)
+        cargo::call_main_without_stdin(execute, &mut config, USAGE, rest, true)
     })();
 
     match result {
@@ -146,7 +146,7 @@ each_subcommand!(declare_mod);
   because they are fundamental (and intertwined). Other commands can rely
   on this top-level information.
 */
-fn execute(flags: Flags, config: &Config) -> CliResult {
+fn execute(flags: Flags, config: &mut Config) -> CliResult {
     config.configure(flags.flag_verbose,
                    flags.flag_quiet,
                    &flags.flag_color,
@@ -225,11 +225,11 @@ fn execute(flags: Flags, config: &Config) -> CliResult {
         }
     };
 
-    if let Some(r) = try_execute_builtin_command(&config, &args) {
+    if let Some(r) = try_execute_builtin_command(config, &args) {
         return r;
     }
 
-    let alias_list = aliased_command(&config, &args[1])?;
+    let alias_list = aliased_command(config, &args[1])?;
     let args = match alias_list {
         Some(alias_command) => {
             let chain = args.iter()
@@ -238,7 +238,7 @@ fn execute(flags: Flags, config: &Config) -> CliResult {
                 .chain(args.iter().skip(2))
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>();
-            if let Some(r) = try_execute_builtin_command(&config, &chain) {
+            if let Some(r) = try_execute_builtin_command(config, &chain) {
                 return r;
             } else {
                 chain
@@ -250,11 +250,12 @@ fn execute(flags: Flags, config: &Config) -> CliResult {
     execute_external_subcommand(config, &args[1], &args)
 }
 
-fn try_execute_builtin_command(config: &Config, args: &[String]) -> Option<CliResult> {
+fn try_execute_builtin_command(config: &mut Config, args: &[String]) -> Option<CliResult> {
     macro_rules! cmd {
         ($name:ident) => (if args[1] == stringify!($name).replace("_", "-") {
             config.shell().set_verbosity(Verbosity::Verbose);
-            let r = cargo::call_main_without_stdin($name::execute, config,
+            let r = cargo::call_main_without_stdin($name::execute,
+                                                   config,
                                                    $name::USAGE,
                                                    &args,
                                                    false);
@@ -266,7 +267,7 @@ fn try_execute_builtin_command(config: &Config, args: &[String]) -> Option<CliRe
     None
 }
 
-fn aliased_command(config: &Config, command: &String) -> CargoResult<Option<Vec<String>>> {
+fn aliased_command(config: &Config, command: &str) -> CargoResult<Option<Vec<String>>> {
     let alias_name = format!("alias.{}", command);
     let mut result = Ok(None);
     match config.get_string(&alias_name) {
@@ -298,7 +299,7 @@ fn find_closest(config: &Config, cmd: &str) -> Option<String> {
     // Only consider candidates with a lev_distance of 3 or less so we don't
     // suggest out-of-the-blue options.
     let mut filtered = cmds.iter()
-        .map(|c| (lev_distance(&c, cmd), c))
+        .map(|c| (lev_distance(c, cmd), c))
         .filter(|&(d, _)| d < 4)
         .collect::<Vec<_>>();
     filtered.sort_by(|a, b| a.0.cmp(&b.0));

@@ -108,7 +108,7 @@ migration.
 ## The `publish`  field (optional)
 
 The `publish` field can be used to prevent a package from being published to a
-package repository (like *crates.io*) by mistake.
+package registry (like *crates.io*) by mistake.
 
 ```toml
 [package]
@@ -175,20 +175,28 @@ license = "..."
 # (similar to the readme key).
 license-file = "..."
 
-# Optional specification of badges to be displayed on crates.io. The badges 
-# pertaining to build status that are currently available are Appveyor, CircleCI,
-# GitLab, and TravisCI. Available badges pertaining to code test coverage are
-# Codecov and Coveralls. There are also maintenance-related badges which state
-# the issue resolution time, percent of open issues, and future maintenance
-# intentions.
+# Optional specification of badges to be displayed on crates.io.
+#
+# - The badges pertaining to build status that are currently available are
+#   Appveyor, CircleCI, GitLab, and TravisCI.
+# - Available badges pertaining to code test coverage are Codecov and
+#   Coveralls.
+# - There are also maintenance-related badges basesed on isitmaintained.com
+#   which state the issue resolution time, percent of open issues, and future
+#   maintenance intentions.
+#
+# If a `repository` key is required, this refers to a repository in
+# `user/repo` format.
 [badges]
 
 # Appveyor: `repository` is required. `branch` is optional; default is `master`
 # `service` is optional; valid values are `github` (default), `bitbucket`, and
-# `gitlab`.
+# `gitlab`; `id` is optional; you can specify the appveyor project id if you 
+# want to use that instead. `project_name` is optional; use when the repository
+# name differs from the appveyor project name.
 appveyor = { repository = "...", branch = "master", service = "github" }
 
-# Circle CI: `repository` is required. `branch` is optiona; default is `master`
+# Circle CI: `repository` is required. `branch` is optional; default is `master`
 circle-ci = { repository = "...", branch = "master" }
 
 # GitLab: `repository` is required. `branch` is optional; default is `master`
@@ -216,8 +224,7 @@ is-it-maintained-open-issues = { repository = "..." }
 # Maintenance: `status` is required Available options are `actively-developed`,
 # `passively-maintained`, `as-is`, `none`, `experimental`, `looking-for-maintainer`
 # and `deprecated`.
-maintenance = { status = "none" }
-
+maintenance = { status = "..." }
 ```
 
 The [crates.io](https://crates.io) registry will render the description, display
@@ -457,10 +464,12 @@ as:
 ```toml
 [workspace]
 
-# Optional key, inferred if not present
+# Optional key, inferred from path dependencies if not present.
+# Additional non-path dependencies that should be included must be given here.
+# In particular, for a virtual manifest, all members have to be listed.
 members = ["path/to/member1", "path/to/member2", "path/to/member3/*"]
 
-# Optional key, empty if not present
+# Optional key, empty if not present.
 exclude = ["path1", "path/to/dir2"]
 ```
 
@@ -505,8 +514,8 @@ Most of the time workspaces will not need to be dealt with as `cargo new` and
 ## Virtual Manifest
 
 In workspace manifests, if the `package` table is present, the workspace root
-crate will be treated as a normal package, as well as a worksapce. If the
-`package` table is not present in a worksapce manifest, it is called a *virtual
+crate will be treated as a normal package, as well as a workspace. If the
+`package` table is not present in a workspace manifest, it is called a *virtual
 manifest*.
 
 When working with *virtual manifests*, package-related cargo commands, like
@@ -520,7 +529,7 @@ If your project is an executable, name the main source file `src/main.rs`. If it
 is a library, name the main source file `src/lib.rs`.
 
 Cargo will also treat any files located in `src/bin/*.rs` as executables. If your
-executable consist of more than just one source file, you might also use a directory
+executable consists of more than just one source file, you might also use a directory
 inside `src/bin` containing a `main.rs` file which will be treated as an executable
 with a name of the parent directory.
 Do note, however, once you add a `[[bin]]` section ([see
@@ -530,7 +539,8 @@ each file you want to build.
 
 Your project can optionally contain folders named `examples`, `tests`, and
 `benches`, which Cargo will treat as containing examples,
-integration tests, and benchmarks respectively.
+integration tests, and benchmarks respectively. Analogous to `bin` targets, they
+may be composed of single files or directories with a `main.rs` file.
 
 ```notrust
 ▾ src/           # directory containing source files
@@ -542,10 +552,16 @@ integration tests, and benchmarks respectively.
     main.rs
 ▾ examples/      # (optional) examples
   *.rs
+  ▾ */           # (optional) directories containing multi-file examples
+    main.rs
 ▾ tests/         # (optional) integration tests
   *.rs
+  ▾ */           # (optional) directories containing multi-file tests
+    main.rs
 ▾ benches/       # (optional) benchmarks
   *.rs
+  ▾ */           # (optional) directories containing multi-file benchmarks
+    main.rs
 ```
 
 To structure your code after you've created the files and folders for your
@@ -572,8 +588,8 @@ name = "foo"
 crate-type = ["staticlib"]
 ```
 
-You can build individual library examples with the command
-`cargo build --example <example-name>`.
+You can build individual library examples with the command `cargo build
+--example <example-name>`.
 
 # Tests
 
@@ -725,7 +741,7 @@ source's original crate is replaced.
 More information about overriding dependencies can be found in the [overriding
 dependencies][replace] section of the documentation and [RFC 1969] for the
 technical specification of this feature. Note that the `[patch]` feature will
-first become available in Rust 1.20, set to be released on 2017-08-31.
+first become available in Rust 1.21, set to be released on 2017-10-12.
 
 [RFC 1969]: https://github.com/rust-lang/rfcs/pull/1969
 [replace]: specifying-dependencies.html#overriding-dependencies

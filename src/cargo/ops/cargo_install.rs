@@ -1,8 +1,6 @@
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
-use std::ffi::OsString;
-use std::fs::{self, File};
+use std::{env, fs};
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
@@ -64,7 +62,7 @@ pub fn install(root: Option<&str>,
     let map = SourceConfigMap::new(opts.config)?;
 
     let (installed_anything, scheduled_error) = if krates.len() <= 1 {
-        install_one(root.clone(), map, krates.into_iter().next(), source_id, vers, opts,
+        install_one(&root, &map, krates.into_iter().next(), source_id, vers, opts,
                     force, true)?;
         (true, false)
     } else {
@@ -74,7 +72,8 @@ pub fn install(root: Option<&str>,
         for krate in krates {
             let root = root.clone();
             let map = map.clone();
-            match install_one(root, map, Some(krate), source_id, vers, opts, force, first) {
+            match install_one(&root, &map, Some(krate), source_id, vers,
+                              opts, force, first) {
                 Ok(()) => succeeded.push(krate),
                 Err(e) => {
                     ::handle_error(e, &mut opts.config.shell());
@@ -102,7 +101,7 @@ pub fn install(root: Option<&str>,
         // Print a warning that if this directory isn't in PATH that they won't be
         // able to run these commands.
         let dst = metadata(opts.config, &root)?.parent().join("bin");
-        let path = env::var_os("PATH").unwrap_or(OsString::new());
+        let path = env::var_os("PATH").unwrap_or_default();
         for path in env::split_paths(&path) {
             if path == dst {
                 return Ok(())
@@ -121,8 +120,8 @@ pub fn install(root: Option<&str>,
     Ok(())
 }
 
-fn install_one(root: Filesystem,
-               map: SourceConfigMap,
+fn install_one(root: &Filesystem,
+               map: &SourceConfigMap,
                krate: Option<&str>,
                source_id: &SourceId,
                vers: Option<&str>,
@@ -179,8 +178,8 @@ fn install_one(root: Filesystem,
     // We have to check this again afterwards, but may as well avoid building
     // anything if we're gonna throw it away anyway.
     {
-        let metadata = metadata(config, &root)?;
-        let list = read_crate_list(metadata.file())?;
+        let metadata = metadata(config, root)?;
+        let list = read_crate_list(&metadata)?;
         let dst = metadata.parent().join("bin");
         check_overwrites(&dst, pkg, &opts.filter, &list, force)?;
     }
@@ -210,8 +209,8 @@ fn install_one(root: Filesystem,
               features");
     }
 
-    let metadata = metadata(config, &root)?;
-    let mut list = read_crate_list(metadata.file())?;
+    let metadata = metadata(config, root)?;
+    let mut list = read_crate_list(&metadata)?;
     let dst = metadata.parent().join("bin");
     let duplicates = check_overwrites(&dst, pkg, &opts.filter,
                                            &list, force)?;
@@ -225,10 +224,8 @@ fn install_one(root: Filesystem,
     for &(bin, src) in binaries.iter() {
         let dst = staging_dir.path().join(bin);
         // Try to move if `target_dir` is transient.
-        if !source_id.is_path() {
-            if fs::rename(src, &dst).is_ok() {
-                continue
-            }
+        if !source_id.is_path() && fs::rename(src, &dst).is_ok() {
+            continue
         }
         fs::copy(src, &dst).chain_err(|| {
             format!("failed to copy `{}` to `{}`", src.display(),
@@ -301,7 +298,7 @@ fn install_one(root: Filesystem,
                .extend(to_install.iter().map(|s| s.to_string()));
     }
 
-    let write_result = write_crate_list(metadata.file(), list);
+    let write_result = write_crate_list(&metadata, list);
     match write_result {
         // Replacement error (if any) isn't actually caused by write error
         // but this seems to be the only way to show both.
@@ -392,7 +389,7 @@ fn select_pkg<'a, T>(mut source: T,
                 }
                 None => {
                     let vers_info = vers.map(|v| format!(" with version `{}`", v))
-                                        .unwrap_or(String::new());
+                                        .unwrap_or_default();
                     Err(format!("could not find `{}` in `{}`{}", name,
                                 source.source_id(), vers_info).into())
                 }
@@ -448,13 +445,11 @@ fn check_overwrites(dst: &Path,
                     filter: &ops::CompileFilter,
                     prev: &CrateListingV1,
                     force: bool) -> CargoResult<BTreeMap<String, Option<PackageId>>> {
-    if !filter.is_specific() {
-        // If explicit --bin or --example flags were passed then those'll
-        // get checked during cargo_compile, we only care about the "build
-        // everything" case here
-        if pkg.targets().iter().filter(|t| t.is_bin()).next().is_none() {
-            bail!("specified package has no binaries")
-        }
+    // If explicit --bin or --example flags were passed then those'll
+    // get checked during cargo_compile, we only care about the "build
+    // everything" case here
+    if !filter.is_specific() && !pkg.targets().iter().any(|t| t.is_bin()) {
+        bail!("specified package has no binaries")
     }
     let duplicates = find_duplicates(dst, pkg, filter, prev);
     if force || duplicates.is_empty() {
@@ -462,7 +457,7 @@ fn check_overwrites(dst: &Path,
     }
     // Format the error message.
     let mut msg = String::new();
-    for (ref bin, p) in duplicates.iter() {
+    for (bin, p) in duplicates.iter() {
         msg.push_str(&format!("binary `{}` already exists in destination", bin));
         if let Some(p) = p.as_ref() {
             msg.push_str(&format!(" as part of `{}`\n", p));
@@ -515,10 +510,10 @@ fn find_duplicates(dst: &Path,
     }
 }
 
-fn read_crate_list(mut file: &File) -> CargoResult<CrateListingV1> {
+fn read_crate_list(file: &FileLock) -> CargoResult<CrateListingV1> {
     (|| -> CargoResult<_> {
         let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
+        file.file().read_to_string(&mut contents)?;
         let listing = toml::from_str(&contents).chain_err(|| {
             internal("invalid TOML found for metadata")
         })?;
@@ -529,26 +524,29 @@ fn read_crate_list(mut file: &File) -> CargoResult<CrateListingV1> {
             }
         }
     })().chain_err(|| {
-        "failed to parse crate metadata"
+        format!("failed to parse crate metadata at `{}`",
+                file.path().to_string_lossy())
     })
 }
 
-fn write_crate_list(mut file: &File, listing: CrateListingV1) -> CargoResult<()> {
+fn write_crate_list(file: &FileLock, listing: CrateListingV1) -> CargoResult<()> {
     (|| -> CargoResult<_> {
+        let mut file = file.file();
         file.seek(SeekFrom::Start(0))?;
         file.set_len(0)?;
         let data = toml::to_string(&CrateListing::V1(listing))?;
         file.write_all(data.as_bytes())?;
         Ok(())
     })().chain_err(|| {
-        "failed to write crate metadata"
+        format!("failed to write crate metadata at `{}`",
+                file.path().to_string_lossy())
     })
 }
 
 pub fn install_list(dst: Option<&str>, config: &Config) -> CargoResult<()> {
     let dst = resolve_root(dst, config)?;
     let dst = metadata(config, &dst)?;
-    let list = read_crate_list(dst.file())?;
+    let list = read_crate_list(&dst)?;
     for (k, v) in list.v1.iter() {
         println!("{}:", k);
         for bin in v {
@@ -564,7 +562,7 @@ pub fn uninstall(root: Option<&str>,
                  config: &Config) -> CargoResult<()> {
     let root = resolve_root(root, config)?;
     let crate_metadata = metadata(config, &root)?;
-    let mut metadata = read_crate_list(crate_metadata.file())?;
+    let mut metadata = read_crate_list(&crate_metadata)?;
     let mut to_remove = Vec::new();
     {
         let result = PackageIdSpec::query_str(spec, metadata.v1.keys())?
@@ -609,7 +607,7 @@ pub fn uninstall(root: Option<&str>,
             installed.remove();
         }
     }
-    write_crate_list(crate_metadata.file(), metadata)?;
+    write_crate_list(&crate_metadata, metadata)?;
     for bin in to_remove {
         config.shell().status("Removing", bin.display())?;
         fs::remove_file(bin)?;
