@@ -1,4 +1,4 @@
-cargo (0.23.0-1) UNRELEASED; urgency=medium
+cargo (0.23.0-1~exp1) experimental; urgency=medium
 
   * [upstream]
     + Cargo will now build multi file examples in subdirectories of the
@@ -14,8 +14,17 @@ cargo (0.23.0-1) UNRELEASED; urgency=medium
     + Refresh patch 2001 with newer libgit2-sys changes.
     + Add patch 2005 to prevent executing non-existing mdbook command
       during build.
+    + Move part of typo fix for url crate to patch 1001 to 1002. url crate
+      is not updated in new cargo release.
+  * debian/copyright:
+    + Remove copyright for gcc crate.
+    + Add copyright information for cc, commoncrypto, crypto-hash,
+      redox_syscall. redox_termios and termion crate.
+    + Add CONTRIBUTING.md to top Files section.
+    + Drop magnet-sys from copyright.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 03 Dec 2017 20:02:07 +0530
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Tue, 05 Dec 2017 22:03:49 +0530
 
 cargo (0.22.0-1~exp1) experimental; urgency=medium
 
