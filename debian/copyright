@@ -22,7 +22,6 @@ Files: vendor/bitflags-*
        vendor/env_logger-*
        vendor/flate2-*
        vendor/fs2-0*
-       vendor/gcc-0*
        vendor/glob-0*
        vendor/libc-0*
        vendor/log-0*
@@ -309,6 +308,7 @@ License: MIT
 Comment: see https://github.com/softprops/atty
 
 Files: vendor/fnv-*
+ vendor/cc-*
 Copyright: 2017, Alex Crichton <alex@alexcrichton.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/servo/rust-fnv/
@@ -335,6 +335,24 @@ Files: vendor/vcpkg-0*
 Copyright: 2017-2017 Jim McGrath <jimmc2@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/mcgoo/vcpkg-rs
+
+Files: vendor/commoncrypto-*
+       vendor/crypto-hash-*
+Copyright: 2016, Mark Lee
+ 2015-2016, Mark Lee
+License: MIT
+Comment:
+ * see https://github.com/malept/rust-commoncrypto
+ * see https://github.com/malept/crypto-hash
+
+Files: vendor/redox_syscall-*
+Copyright: 2017, Redox OS Developers
+License: MIT
+
+Files: vendor/termion-*
+Copyright: 2016, Ticki
+License: MIT
+Comment: see https://github.com/ticki/termion/
 
 Files: src/doc/javascripts/prism.js
        debian/missing-sources/prism.js
