@@ -9,6 +9,7 @@ Files: src/*
        LICENSE-*
        README.*
        ARCHITECTURE.*
+       CONTRIBUTING.*
        appveyor.yml
 Copyright: 2014 The Rust Project Developers
 License: MIT or Apache-2.0
