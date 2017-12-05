@@ -346,6 +346,7 @@ Comment:
  * see https://github.com/malept/crypto-hash
 
 Files: vendor/redox_syscall-*
+       vendor/redox_termios-*
 Copyright: 2017, Redox OS Developers
 License: MIT
 
