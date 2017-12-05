@@ -4,9 +4,9 @@ Description: Fix typo in cargo search subcommand.
 Author: Vasudev Kamath <vasudev@copyninja.info>
 Last-Update: 2017-10-29
 
---- cargo-0.22.0.orig/src/bin/search.rs
-+++ cargo-0.22.0/src/bin/search.rs
-@@ -62,7 +62,7 @@ pub fn execute(options: Options, config:
+--- a/src/bin/search.rs
++++ b/src/bin/search.rs
+@@ -62,7 +62,7 @@
      let msg = "The flag '--host' is no longer valid.
  
  Previous versions of Cargo accepted this flag, but it is being
@@ -15,9 +15,9 @@ Last-Update: 2017-10-29
  wants the location of the index in which to search. Please
  use '--index' instead.
  
---- cargo-0.22.0.orig/tests/search.rs
-+++ cargo-0.22.0/tests/search.rs
-@@ -140,7 +140,7 @@ fn simple_with_host() {
+--- a/tests/search.rs
++++ b/tests/search.rs
+@@ -140,7 +140,7 @@
  [WARNING] The flag '--host' is no longer valid.
  
  Previous versions of Cargo accepted this flag, but it is being
@@ -26,7 +26,7 @@ Last-Update: 2017-10-29
  wants the location of the index in which to search. Please
  use '--index' instead.
  
-@@ -207,7 +207,7 @@ fn simple_with_index_and_host() {
+@@ -207,7 +207,7 @@
  [WARNING] The flag '--host' is no longer valid.
  
  Previous versions of Cargo accepted this flag, but it is being
@@ -35,3 +35,14 @@ Last-Update: 2017-10-29
  wants the location of the index in which to search. Please
  use '--index' instead.
  
+--- a/vendor/url-1.5.1/src/parser.rs
++++ b/vendor/url-1.5.1/src/parser.rs
+@@ -683,7 +683,7 @@
+                         self.syntax_violation("unencoded @ sign in username or password")
+                     } else {
+                         self.syntax_violation(
+-                            "embedding authentification information (username or password) \
++                            "embedding authentication information (username or password) \
+                             in an URL is not recommended")
+                     }
+                     last_at = Some((char_count, remaining.clone()))
