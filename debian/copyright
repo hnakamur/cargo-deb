@@ -320,7 +320,6 @@ License: MIT or Apache-2.0
 Comment: see https://github.com/brson/home
 
 Files: vendor/magenta-*
-       vendor/magnet-sys-*
 Copyright: Raph Levien <raph@google.com>
            2016, The Fuchsia Authors
 License: BSD-3-Clause
