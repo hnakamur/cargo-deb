@@ -16,6 +16,11 @@ strsim-*/docs/
 # <WindowsBunny> infinity0: and you can uh... run whatever mingw tool to create the import libraries from those .def files
 dbghelp-sys-*/*/*.a
 
+# added in 0.24.0
+winapi-*/*/*.a
+secur32-*/*/*.a
+schannel-*/*/*.a
+
 # To clean deps before making a new tarball, run
 # grep -v '^#' debian/deps-tarball-filter.txt | xargs -I% sh -c 'rm -rf %'
 
