@@ -34,7 +34,7 @@ fn resolve(pkg: &PackageId, deps: Vec<Dependency>, registry: &[Summary])
     let mut registry = MyRegistry(registry);
     let summary = Summary::new(pkg.clone(), deps, BTreeMap::new()).unwrap();
     let method = Method::Everything;
-    let resolve = resolver::resolve(&[(summary, method)], &[], &mut registry, None)?;
+    let resolve = resolver::resolve(&[(summary, method)], &[], &mut registry, None, false)?;
     let res = resolve.iter().cloned().collect();
     Ok(res)
 }
@@ -376,7 +376,7 @@ fn resolving_but_no_exists() {
 
     assert_eq!(res.err().unwrap().to_string(), "\
 no matching package named `foo` found (required by `root`)
-location searched: registry http://example.com/
+location searched: registry `http://example.com/`
 version required: ^1\
 ");
 }
