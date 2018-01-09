@@ -31,7 +31,7 @@
 //! })?;
 //! ```
 //!
-//! Notably you'll notice the `require` funciton called with your `Feature`, and
+//! Notably you'll notice the `require` function called with your `Feature`, and
 //! then you use `chain_err` to tack on more context for why the feature was
 //! required when the feature isn't activated.
 //!
@@ -122,6 +122,9 @@ features! {
         // A dummy feature that gates the usage of the `im-a-teapot` manifest
         // entry. This is basically just intended for tests.
         [unstable] test_dummy_unstable: bool,
+
+        // Downloading packages from alternative registry indexes.
+        [unstable] alternative_registries: bool,
     }
 }
 
@@ -228,6 +231,7 @@ impl Features {
 #[derive(Default, Debug)]
 pub struct CliUnstable {
     pub print_im_a_teapot: bool,
+    pub unstable_options: bool,
 }
 
 impl CliUnstable {
@@ -257,6 +261,7 @@ impl CliUnstable {
 
         match k {
             "print-im-a-teapot" => self.print_im_a_teapot = parse_bool(v)?,
+            "unstable-options" => self.unstable_options = true,
             _ => bail!("unknown `-Z` flag specified: {}", k),
         }
 

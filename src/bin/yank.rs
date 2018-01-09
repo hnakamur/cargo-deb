@@ -1,5 +1,5 @@
 use cargo::ops;
-use cargo::util::{CliResult, Config};
+use cargo::util::{CargoError, CliResult, Config};
 
 #[derive(Deserialize)]
 pub struct Options {
@@ -15,6 +15,7 @@ pub struct Options {
     flag_locked: bool,
     #[serde(rename = "flag_Z")]
     flag_z: Vec<String>,
+    flag_registry: Option<String>,
 }
 
 pub static USAGE: &'static str = "
@@ -24,17 +25,18 @@ Usage:
     cargo yank [options] [<crate>]
 
 Options:
-    -h, --help          Print this message
-    --vers VERSION      The version to yank or un-yank
-    --undo              Undo a yank, putting a version back into the index
-    --index INDEX       Registry index to yank from
-    --token TOKEN       API token to use when authenticating
-    -v, --verbose ...   Use verbose output (-vv very verbose/build.rs output)
-    -q, --quiet         No output printed to stdout
-    --color WHEN        Coloring: auto, always, never
-    --frozen            Require Cargo.lock and cache are up to date
-    --locked            Require Cargo.lock is up to date
-    -Z FLAG ...         Unstable (nightly-only) flags to Cargo
+    -h, --help               Print this message
+    --vers VERSION           The version to yank or un-yank
+    --undo                   Undo a yank, putting a version back into the index
+    --index INDEX            Registry index to yank from
+    --token TOKEN            API token to use when authenticating
+    -v, --verbose ...        Use verbose output (-vv very verbose/build.rs output)
+    -q, --quiet              No output printed to stdout
+    --color WHEN             Coloring: auto, always, never
+    --frozen                 Require Cargo.lock and cache are up to date
+    --locked                 Require Cargo.lock is up to date
+    -Z FLAG ...              Unstable (nightly-only) flags to Cargo
+    --registry REGISTRY      Registry to use
 
 The yank command removes a previously pushed crate's version from the server's
 index. This command does not delete any data, and the crate will still be
@@ -52,12 +54,18 @@ pub fn execute(options: Options, config: &mut Config) -> CliResult {
                      options.flag_frozen,
                      options.flag_locked,
                      &options.flag_z)?;
+
+    if options.flag_registry.is_some() && !config.cli_unstable().unstable_options {
+        return Err(CargoError::from("registry option is an unstable feature and requires -Zunstable-options to use.").into());
+    }
+
     ops::yank(config,
               options.arg_crate,
               options.flag_vers,
               options.flag_token,
               options.flag_index,
-              options.flag_undo)?;
+              options.flag_undo,
+              options.flag_registry)?;
     Ok(())
 }
 

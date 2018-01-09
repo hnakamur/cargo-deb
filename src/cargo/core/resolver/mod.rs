@@ -47,10 +47,11 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashSet, HashMap, BinaryHeap, BTreeMap};
-use std::iter::FromIterator;
 use std::fmt;
+use std::iter::FromIterator;
 use std::ops::Range;
 use std::rc::Rc;
+use std::time::{Instant, Duration};
 
 use semver;
 use url::Url;
@@ -363,7 +364,8 @@ type Activations = HashMap<String, HashMap<SourceId, Vec<Summary>>>;
 pub fn resolve(summaries: &[(Summary, Method)],
                replacements: &[(PackageIdSpec, Dependency)],
                registry: &mut Registry,
-               config: Option<&Config>) -> CargoResult<Resolve> {
+               config: Option<&Config>,
+               print_warnings: bool) -> CargoResult<Resolve> {
     let cx = Context {
         resolve_graph: RcList::new(),
         resolve_features: HashMap::new(),
@@ -373,7 +375,7 @@ pub fn resolve(summaries: &[(Summary, Method)],
         warnings: RcList::new(),
     };
     let _p = profile::start("resolving");
-    let cx = activate_deps_loop(cx, registry, summaries)?;
+    let cx = activate_deps_loop(cx, registry, summaries, config)?;
 
     let mut resolve = Resolve {
         graph: cx.graph(),
@@ -399,11 +401,13 @@ pub fn resolve(summaries: &[(Summary, Method)],
 
     // If we have a shell, emit warnings about required deps used as feature.
     if let Some(config) = config {
-        let mut shell = config.shell();
-        let mut warnings = &cx.warnings;
-        while let Some(ref head) = warnings.head {
-            shell.warn(&head.0)?;
-            warnings = &head.1;
+        if print_warnings {
+            let mut shell = config.shell();
+            let mut warnings = &cx.warnings;
+            while let Some(ref head) = warnings.head {
+                shell.warn(&head.0)?;
+                warnings = &head.1;
+            }
         }
     }
 
@@ -421,7 +425,7 @@ fn activate(cx: &mut Context,
             parent: Option<&Summary>,
             candidate: Candidate,
             method: &Method)
-            -> CargoResult<Option<DepsFrame>> {
+            -> CargoResult<Option<(DepsFrame, Duration)>> {
     if let Some(parent) = parent {
         cx.resolve_graph.push(GraphNode::Link(parent.package_id().clone(),
                                            candidate.summary.package_id().clone()));
@@ -449,12 +453,13 @@ fn activate(cx: &mut Context,
         }
     };
 
+    let now = Instant::now();
     let deps = cx.build_deps(registry, &candidate, method)?;
-
-    Ok(Some(DepsFrame {
+    let frame = DepsFrame {
         parent: candidate,
         remaining_siblings: RcVecIter::new(Rc::new(deps)),
-    }))
+    };
+    Ok(Some((frame, now.elapsed())))
 }
 
 struct RcVecIter<T> {
@@ -581,7 +586,8 @@ impl RemainingCandidates {
 /// dependency graph, cx.resolve is returned.
 fn activate_deps_loop<'a>(mut cx: Context<'a>,
                           registry: &mut Registry,
-                          summaries: &[(Summary, Method)])
+                          summaries: &[(Summary, Method)],
+                          config: Option<&Config>)
                           -> CargoResult<Context<'a>> {
     // Note that a `BinaryHeap` is used for the remaining dependencies that need
     // activation. This heap is sorted such that the "largest value" is the most
@@ -595,9 +601,17 @@ fn activate_deps_loop<'a>(mut cx: Context<'a>,
     for &(ref summary, ref method) in summaries {
         debug!("initial activation: {}", summary.package_id());
         let candidate = Candidate { summary: summary.clone(), replace: None };
-        remaining_deps.extend(activate(&mut cx, registry, None, candidate,
-                                       method)?);
+        let res = activate(&mut cx, registry, None, candidate, method)?;
+        if let Some((frame, _)) = res {
+            remaining_deps.push(frame);
+        }
     }
+
+    let mut ticks = 0;
+    let start = Instant::now();
+    let time_to_print = Duration::from_millis(500);
+    let mut printed = false;
+    let mut deps_time = Duration::new(0, 0);
 
     // Main resolution loop, this is the workhorse of the resolution algorithm.
     //
@@ -613,6 +627,28 @@ fn activate_deps_loop<'a>(mut cx: Context<'a>,
     // backtracking states where if we hit an error we can return to in order to
     // attempt to continue resolving.
     while let Some(mut deps_frame) = remaining_deps.pop() {
+
+        // If we spend a lot of time here (we shouldn't in most cases) then give
+        // a bit of a visual indicator as to what we're doing. Only enable this
+        // when stderr is a tty (a human is likely to be watching) to ensure we
+        // get deterministic output otherwise when observed by tools.
+        //
+        // Also note that we hit this loop a lot, so it's fairly performance
+        // sensitive. As a result try to defer a possibly expensive operation
+        // like `Instant::now` by only checking every N iterations of this loop
+        // to amortize the cost of the current time lookup.
+        ticks += 1;
+        if let Some(config) = config {
+            if config.shell().is_err_tty() &&
+                !printed &&
+                ticks % 1000 == 0 &&
+                start.elapsed() - deps_time > time_to_print
+            {
+                printed = true;
+                config.shell().status("Resolving", "dependency graph...")?;
+            }
+        }
+
         let frame = match deps_frame.remaining_siblings.next() {
             Some(sibling) => {
                 let parent = Summary::clone(&deps_frame.parent);
@@ -696,8 +732,11 @@ fn activate_deps_loop<'a>(mut cx: Context<'a>,
         };
         trace!("{}[{}]>{} trying {}", parent.name(), cur, dep.name(),
                candidate.summary.version());
-        remaining_deps.extend(activate(&mut cx, registry, Some(&parent),
-                              candidate, &method)?);
+        let res = activate(&mut cx, registry, Some(&parent), candidate, &method)?;
+        if let Some((frame, dur)) = res {
+            remaining_deps.push(frame);
+            deps_time += dur;
+        }
     }
 
     Ok(cx)
@@ -860,55 +899,68 @@ fn compatible(a: &semver::Version, b: &semver::Version) -> bool {
     a.patch == b.patch
 }
 
-// Returns a pair of (feature dependencies, all used features)
-//
-// The feature dependencies map is a mapping of package name to list of features
-// enabled. Each package should be enabled, and each package should have the
-// specified set of features enabled.  The boolean indicates whether this
-// package was specifically requested (rather than just requesting features
-// *within* this package).
-//
-// The all used features set is the set of features which this local package had
-// enabled, which is later used when compiling to instruct the code what
-// features were enabled.
-fn build_features<'a>(s: &'a Summary, method: &'a Method)
-                      -> CargoResult<(HashMap<&'a str, (bool, Vec<String>)>, HashSet<&'a str>)> {
-    let mut deps = HashMap::new();
-    let mut used = HashSet::new();
-    let mut visited = HashSet::new();
-    match *method {
-        Method::Everything => {
-            for key in s.features().keys() {
-                add_feature(s, key, &mut deps, &mut used, &mut visited)?;
-            }
-            for dep in s.dependencies().iter().filter(|d| d.is_optional()) {
-                add_feature(s, dep.name(), &mut deps, &mut used,
-                            &mut visited)?;
-            }
-        }
-        Method::Required { features: requested_features, .. } =>  {
-            for feat in requested_features.iter() {
-                add_feature(s, feat, &mut deps, &mut used, &mut visited)?;
-            }
-        }
-    }
-    match *method {
-        Method::Everything |
-        Method::Required { uses_default_features: true, .. } => {
-            if s.features().get("default").is_some() {
-                add_feature(s, "default", &mut deps, &mut used,
-                            &mut visited)?;
-            }
-        }
-        Method::Required { uses_default_features: false, .. } => {}
-    }
-    return Ok((deps, used));
+struct Requirements<'a> {
+    summary: &'a Summary,
+    // The deps map is a mapping of package name to list of features enabled.
+    // Each package should be enabled, and each package should have the
+    // specified set of features enabled. The boolean indicates whether this
+    // package was specifically requested (rather than just requesting features
+    // *within* this package).
+    deps: HashMap<&'a str, (bool, Vec<String>)>,
+    // The used features set is the set of features which this local package had
+    // enabled, which is later used when compiling to instruct the code what
+    // features were enabled.
+    used: HashSet<&'a str>,
+    visited: HashSet<&'a str>,
+}
 
-    fn add_feature<'a>(s: &'a Summary,
-                       feat: &'a str,
-                       deps: &mut HashMap<&'a str, (bool, Vec<String>)>,
-                       used: &mut HashSet<&'a str>,
-                       visited: &mut HashSet<&'a str>) -> CargoResult<()> {
+impl<'r> Requirements<'r> {
+    fn new<'a>(summary: &'a Summary) -> Requirements<'a> {
+        Requirements {
+            summary,
+            deps: HashMap::new(),
+            used: HashSet::new(),
+            visited: HashSet::new(),
+        }
+    }
+
+    fn require_crate_feature(&mut self, package: &'r str, feat: &'r str) {
+        self.used.insert(package);
+        self.deps.entry(package)
+            .or_insert((false, Vec::new()))
+            .1.push(feat.to_string());
+    }
+
+    fn seen(&mut self, feat: &'r str) -> bool {
+        if self.visited.insert(feat) {
+            self.used.insert(feat);
+            false
+        } else {
+            true
+        }
+    }
+
+    fn require_dependency(&mut self, pkg: &'r str) {
+        if self.seen(pkg) {
+            return;
+        }
+        self.deps.entry(pkg).or_insert((false, Vec::new())).0 = true;
+    }
+
+    fn require_feature(&mut self, feat: &'r str) -> CargoResult<()> {
+        if self.seen(feat) {
+            return Ok(());
+        }
+        for f in self.summary.features().get(feat).expect("must be a valid feature") {
+            if f == &feat {
+                bail!("Cyclic feature dependency: feature `{}` depends on itself", feat);
+            }
+            self.add_feature(f)?;
+        }
+        Ok(())
+    }
+
+    fn add_feature(&mut self, feat: &'r str) -> CargoResult<()> {
         if feat.is_empty() { return Ok(()) }
 
         // If this feature is of the form `foo/bar`, then we just lookup package
@@ -920,42 +972,51 @@ fn build_features<'a>(s: &'a Summary, method: &'a Method)
         let feat_or_package = parts.next().unwrap();
         match parts.next() {
             Some(feat) => {
-                let package = feat_or_package;
-                used.insert(package);
-                deps.entry(package)
-                    .or_insert((false, Vec::new()))
-                    .1.push(feat.to_string());
+                self.require_crate_feature(feat_or_package, feat);
             }
             None => {
-                let feat = feat_or_package;
-
-                //if this feature has already been added, then just return Ok
-                if !visited.insert(feat) {
-                    return Ok(());
-                }
-
-                used.insert(feat);
-                match s.features().get(feat) {
-                    Some(recursive) => {
-                        // This is a feature, add it recursively.
-                        for f in recursive {
-                            if f == feat {
-                                bail!("Cyclic feature dependency: feature `{}` depends \
-                                        on itself", feat);
-                            }
-
-                            add_feature(s, f, deps, used, visited)?;
-                        }
-                    }
-                    None => {
-                        // This is a dependency, mark it as explicitly requested.
-                        deps.entry(feat).or_insert((false, Vec::new())).0 = true;
-                    }
+                if self.summary.features().contains_key(feat_or_package) {
+                    self.require_feature(feat_or_package)?;
+                } else {
+                    self.require_dependency(feat_or_package);
                 }
             }
         }
         Ok(())
     }
+}
+
+// Takes requested features for a single package from the input Method and
+// recurses to find all requested features, dependencies and requested
+// dependency features in a Requirements object, returning it to the resolver.
+fn build_requirements<'a, 'b: 'a>(s: &'a Summary, method: &'b Method)
+                                  -> CargoResult<Requirements<'a>> {
+    let mut reqs = Requirements::new(s);
+    match *method {
+        Method::Everything => {
+            for key in s.features().keys() {
+                reqs.require_feature(key)?;
+            }
+            for dep in s.dependencies().iter().filter(|d| d.is_optional()) {
+                reqs.require_dependency(dep.name());
+            }
+        }
+        Method::Required { features: requested_features, .. } =>  {
+            for feat in requested_features.iter() {
+                reqs.add_feature(feat)?;
+            }
+        }
+    }
+    match *method {
+        Method::Everything |
+        Method::Required { uses_default_features: true, .. } => {
+            if s.features().get("default").is_some() {
+                reqs.require_feature("default")?;
+            }
+        }
+        Method::Required { uses_default_features: false, .. } => {}
+    }
+    return Ok(reqs);
 }
 
 impl<'a> Context<'a> {
@@ -1118,18 +1179,18 @@ impl<'a> Context<'a> {
         let deps = s.dependencies();
         let deps = deps.iter().filter(|d| d.is_transitive() || dev_deps);
 
-        let (mut feature_deps, used_features) = build_features(s, method)?;
+        let mut reqs = build_requirements(s, method)?;
         let mut ret = Vec::new();
 
         // Next, collect all actually enabled dependencies and their features.
         for dep in deps {
             // Skip optional dependencies, but not those enabled through a feature
-            if dep.is_optional() && !feature_deps.contains_key(dep.name()) {
+            if dep.is_optional() && !reqs.deps.contains_key(dep.name()) {
                 continue
             }
             // So we want this dependency.  Move the features we want from `feature_deps`
             // to `ret`.
-            let base = feature_deps.remove(dep.name()).unwrap_or((false, vec![]));
+            let base = reqs.deps.remove(dep.name()).unwrap_or((false, vec![]));
             if !dep.is_optional() && base.0 {
                 self.warnings.push(
                     format!("Package `{}` does not have feature `{}`. It has a required dependency \
@@ -1152,21 +1213,22 @@ impl<'a> Context<'a> {
         // Any remaining entries in feature_deps are bugs in that the package does not actually
         // have those dependencies.  We classified them as dependencies in the first place
         // because there is no such feature, either.
-        if !feature_deps.is_empty() {
-            let unknown = feature_deps.keys().map(|s| &s[..])
-                                      .collect::<Vec<&str>>();
+        if !reqs.deps.is_empty() {
+            let unknown = reqs.deps.keys()
+                                   .map(|s| &s[..])
+                                   .collect::<Vec<&str>>();
             let features = unknown.join(", ");
             bail!("Package `{}` does not have these features: `{}`",
                     s.package_id(), features)
         }
 
         // Record what list of features is active for this package.
-        if !used_features.is_empty() {
+        if !reqs.used.is_empty() {
             let pkgid = s.package_id();
 
             let set = self.resolve_features.entry(pkgid.clone())
                               .or_insert_with(HashSet::new);
-            for feature in used_features {
+            for feature in reqs.used {
                 if !set.contains(feature) {
                     set.insert(feature.to_string());
                 }

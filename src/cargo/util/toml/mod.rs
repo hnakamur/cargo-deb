@@ -14,7 +14,7 @@ use url::Url;
 
 use core::{SourceId, Profiles, PackageIdSpec, GitReference, WorkspaceConfig, WorkspaceRootConfig};
 use core::{Summary, Manifest, Target, Dependency, PackageId};
-use core::{EitherManifest, VirtualManifest, Features};
+use core::{EitherManifest, VirtualManifest, Features, Feature};
 use core::dependency::{Kind, Platform};
 use core::manifest::{LibKind, Profile, ManifestMetadata};
 use sources::CRATES_IO;
@@ -184,6 +184,7 @@ impl<'de> de::Deserialize<'de> for TomlDependency {
 #[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct DetailedTomlDependency {
     version: Option<String>,
+    registry: Option<String>,
     path: Option<String>,
     git: Option<String>,
     branch: Option<String>,
@@ -199,6 +200,8 @@ pub struct DetailedTomlDependency {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TomlManifest {
+    #[serde(rename = "cargo-features")]
+    cargo_features: Option<Vec<String>>,
     package: Option<Box<TomlProject>>,
     project: Option<Box<TomlProject>>,
     profile: Option<TomlProfiles>,
@@ -222,8 +225,6 @@ pub struct TomlManifest {
     patch: Option<BTreeMap<String, BTreeMap<String, TomlDependency>>>,
     workspace: Option<TomlWorkspace>,
     badges: Option<BTreeMap<String, BTreeMap<String, String>>>,
-    #[serde(rename = "cargo-features")]
-    cargo_features: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default)]
@@ -380,6 +381,44 @@ impl<'de> de::Deserialize<'de> for StringOrBool {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub enum VecStringOrBool {
+    VecString(Vec<String>),
+    Bool(bool),
+}
+
+impl<'de> de::Deserialize<'de> for VecStringOrBool {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: de::Deserializer<'de>
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = VecStringOrBool;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or vector of strings")
+            }
+
+            fn visit_seq<V>(self, v: V) -> Result<Self::Value, V::Error>
+                where V: de::SeqAccess<'de>
+            {
+                let seq = de::value::SeqAccessDeserializer::new(v);
+                Vec::deserialize(seq).map(VecStringOrBool::VecString)
+            }
+
+            fn visit_bool<E>(self, b: bool) -> Result<Self::Value, E>
+                where E: de::Error,
+            {
+                Ok(VecStringOrBool::Bool(b))
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct TomlProject {
     name: String,
@@ -389,7 +428,7 @@ pub struct TomlProject {
     links: Option<String>,
     exclude: Option<Vec<String>>,
     include: Option<Vec<String>>,
-    publish: Option<bool>,
+    publish: Option<VecStringOrBool>,
     workspace: Option<String>,
     #[serde(rename = "im-a-teapot")]
     im_a_teapot: Option<bool>,
@@ -429,6 +468,7 @@ struct Context<'a, 'b> {
     warnings: &'a mut Vec<String>,
     platform: Option<Platform>,
     root: &'a Path,
+    features: &'a Features,
 }
 
 impl TomlManifest {
@@ -511,6 +551,11 @@ impl TomlManifest {
         let mut warnings = vec![];
         let mut errors = vec![];
 
+        // Parse features first so they will be available when parsing other parts of the toml
+        let empty = Vec::new();
+        let cargo_features = me.cargo_features.as_ref().unwrap_or(&empty);
+        let features = Features::new(&cargo_features, &mut warnings)?;
+
         let project = me.project.as_ref().or_else(|| me.package.as_ref());
         let project = project.ok_or_else(|| {
             CargoError::from("no `package` section found.")
@@ -551,6 +596,7 @@ impl TomlManifest {
                 nested_paths: &mut nested_paths,
                 config: config,
                 warnings: &mut warnings,
+                features: &features,
                 platform: None,
                 root: package_root,
             };
@@ -647,10 +693,16 @@ impl TomlManifest {
             }
         };
         let profiles = build_profiles(&me.profile);
-        let publish = project.publish.unwrap_or(true);
-        let empty = Vec::new();
-        let cargo_features = me.cargo_features.as_ref().unwrap_or(&empty);
-        let features = Features::new(cargo_features, &mut warnings)?;
+        let publish = match project.publish {
+            Some(VecStringOrBool::VecString(ref vecstring)) => {
+                features.require(Feature::alternative_registries()).chain_err(|| {
+                    "the `publish` manifest key is unstable for anything other than a value of true or false"
+                })?;
+                Some(vecstring.clone())
+            },
+            Some(VecStringOrBool::Bool(false)) => Some(vec![]),
+            None | Some(VecStringOrBool::Bool(true)) => None,
+        };
         let mut manifest = Manifest::new(summary,
                                          targets,
                                          exclude,
@@ -711,6 +763,10 @@ impl TomlManifest {
         let mut nested_paths = Vec::new();
         let mut warnings = Vec::new();
         let mut deps = Vec::new();
+        let empty = Vec::new();
+        let cargo_features = me.cargo_features.as_ref().unwrap_or(&empty);
+        let features = Features::new(&cargo_features, &mut warnings)?;
+
         let (replace, patch) = {
             let mut cx = Context {
                 pkgid: None,
@@ -720,6 +776,7 @@ impl TomlManifest {
                 config: config,
                 warnings: &mut warnings,
                 platform: None,
+                features: &features,
                 root: root
             };
             (me.replace(&mut cx)?, me.patch(&mut cx)?)
@@ -865,8 +922,12 @@ impl TomlDependency {
             }
         }
 
-        let new_source_id = match (details.git.as_ref(), details.path.as_ref()) {
-            (Some(git), maybe_path) => {
+        let new_source_id = match (details.git.as_ref(), details.path.as_ref(), details.registry.as_ref()) {
+            (Some(_), _, Some(_)) => bail!("dependency ({}) specification is ambiguous. \
+                                            Only one of `git` or `registry` is allowed.", name),
+            (_, Some(_), Some(_)) => bail!("dependency ({}) specification is ambiguous. \
+                                            Only one of `path` or `registry` is allowed.", name),
+            (Some(git), maybe_path, _) => {
                 if maybe_path.is_some() {
                     let msg = format!("dependency ({}) specification is ambiguous. \
                                        Only one of `git` or `path` is allowed. \
@@ -893,7 +954,7 @@ impl TomlDependency {
                 let loc = git.to_url()?;
                 SourceId::for_git(&loc, reference)?
             },
-            (None, Some(path)) => {
+            (None, Some(path), _) => {
                 cx.nested_paths.push(PathBuf::from(path));
                 // If the source id for the package we're parsing is a path
                 // source, then we normalize the path here to get rid of
@@ -911,7 +972,11 @@ impl TomlDependency {
                     cx.source_id.clone()
                 }
             },
-            (None, None) => SourceId::crates_io(cx.config)?,
+            (None, None, Some(registry)) => {
+                cx.features.require(Feature::alternative_registries())?;
+                SourceId::alt_registry(cx.config, registry)?
+            }
+            (None, None, None) => SourceId::crates_io(cx.config)?,
         };
 
         let version = details.version.as_ref().map(|v| &v[..]);
@@ -1041,6 +1106,8 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
         custom_build: Profile::default_custom_build(),
         check: merge(Profile::default_check(),
                      profiles.and_then(|p| p.dev.as_ref())),
+        check_test: merge(Profile::default_check_test(),
+                          profiles.and_then(|p| p.dev.as_ref())),
         doctest: Profile::default_doctest(),
     };
     // The test/bench targets cannot have panic=abort because they'll all get

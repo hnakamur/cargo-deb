@@ -3676,7 +3676,7 @@ Caused by:
 
 
 #[test]
-fn dirs_in_bin_dir_with_main_rs() {
+fn inferred_bins() {
     let p = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -3686,21 +3686,17 @@ fn dirs_in_bin_dir_with_main_rs() {
         "#)
         .file("src/main.rs", "fn main() {}")
         .file("src/bin/bar.rs", "fn main() {}")
-        .file("src/bin/bar2.rs", "fn main() {}")
-        .file("src/bin/bar3/main.rs", "fn main() {}")
-        .file("src/bin/bar4/main.rs", "fn main() {}")
+        .file("src/bin/baz/main.rs", "fn main() {}")
         .build();
 
     assert_that(p.cargo("build"), execs().with_status(0));
     assert_that(&p.bin("foo"), existing_file());
     assert_that(&p.bin("bar"), existing_file());
-    assert_that(&p.bin("bar2"), existing_file());
-    assert_that(&p.bin("bar3"), existing_file());
-    assert_that(&p.bin("bar4"), existing_file());
+    assert_that(&p.bin("baz"), existing_file());
 }
 
 #[test]
-fn dir_and_file_with_same_name_in_bin() {
+fn inferred_bins_duplicate_name() {
     // this should fail, because we have two binaries with the same name
     let p = project("bar")
         .file("Cargo.toml", r#"
@@ -3722,7 +3718,7 @@ fn dir_and_file_with_same_name_in_bin() {
 }
 
 #[test]
-fn inferred_path_in_src_bin_foo() {
+fn inferred_bin_path() {
     let p = project("foo")
         .file("Cargo.toml", r#"
         [package]
@@ -3780,7 +3776,7 @@ fn inferred_tests() {
 }
 
 #[test]
-fn inferred_benchmark() {
+fn inferred_benchmarks() {
     let p = project("foo")
         .file("Cargo.toml", r#"
             [package]
@@ -3790,29 +3786,11 @@ fn inferred_benchmark() {
         "#)
         .file("src/lib.rs", "fn main() {}")
         .file("benches/bar.rs", "fn main() {}")
+        .file("benches/baz/main.rs", "fn main() {}")
         .build();
 
     assert_that(
-        p.cargo("bench").arg("--bench=bar"),
-        execs().with_status(0));
-}
-
-#[test]
-fn inferred_benchmark_from_directory() {
-    //FIXME: merge with `inferred_benchmark` after fixing #4504
-    let p = project("foo")
-        .file("Cargo.toml", r#"
-            [package]
-            name = "foo"
-            version = "0.1.0"
-            authors = []
-        "#)
-        .file("src/lib.rs", "fn main() {}")
-        .file("benches/bar/main.rs", "fn main() {}")
-        .build();
-
-    assert_that(
-        p.cargo("bench").arg("--bench=bar"),
+        p.cargo("bench").arg("--bench=bar").arg("--bench=baz"),
         execs().with_status(0));
 }
 
@@ -3908,4 +3886,88 @@ fn uplift_dsym_of_bin_on_mac() {
     );
     assert_that(&p.bin("c.dSYM"), is_not(existing_dir()));
     assert_that(&p.bin("d.dSYM"), is_not(existing_dir()));
+}
+
+// Make sure that `cargo build` chooses the correct profile for building
+// targets based on filters (assuming --profile is not specified).
+#[test]
+fn build_filter_infer_profile() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "")
+        .file("src/main.rs", "fn main() {}")
+        .file("tests/t1.rs", "")
+        .file("benches/b1.rs", "")
+        .file("examples/ex1.rs", "fn main() {}")
+        .build();
+
+    assert_that(p.cargo("build").arg("-v"),
+        execs().with_status(0)
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
+            --emit=dep-info,link[..]")
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]main.rs --crate-type bin \
+            --emit=dep-info,link[..]")
+        );
+
+    p.root().join("target").rm_rf();
+    assert_that(p.cargo("build").arg("-v").arg("--test=t1"),
+        execs().with_status(0)
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
+            --emit=dep-info,link[..]")
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name t1 tests[/]t1.rs --emit=dep-info,link[..]")
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]main.rs --crate-type bin \
+            --emit=dep-info,link[..]")
+        );
+
+    p.root().join("target").rm_rf();
+    assert_that(p.cargo("build").arg("-v").arg("--bench=b1"),
+        execs().with_status(0)
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
+            --emit=dep-info,link[..]")
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name b1 benches[/]b1.rs --emit=dep-info,link \
+            -C opt-level=3[..]")
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]main.rs --crate-type bin \
+            --emit=dep-info,link[..]")
+        );
+}
+
+#[test]
+fn all_targets_no_lib() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .build();
+    assert_that(p.cargo("build").arg("-v").arg("--all-targets"),
+        execs().with_status(0)
+        // bin
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]main.rs --crate-type bin \
+            --emit=dep-info,link[..]")
+        // bench
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]main.rs --emit=dep-info,link \
+            -C opt-level=3 --test [..]")
+        // unit test
+        .with_stderr_contains("\
+            [RUNNING] `rustc --crate-name foo src[/]main.rs --emit=dep-info,link \
+            -C debuginfo=2 --test [..]")
+        );
 }
