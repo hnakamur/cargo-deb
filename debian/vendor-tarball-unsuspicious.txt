@@ -38,3 +38,9 @@ conv-*/src/macros.rs
 conv-*/src/impls.rs
 conv-*/src/lib.rs
 termion-*/logo.svg
+tar-*/Cargo.toml
+schannel-*/LICENSE.md
+lazy_static-*/src/lib.rs
+
+# test data for schanel
+schannel-*/test/*
