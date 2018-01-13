@@ -1,3 +1,22 @@
+cargo (0.24.0-1) unstable; urgency=medium
+
+  [upstream]
+  * Supports uninstallation of multiple crates.
+  * `cargo check` unit testing.
+  * Install  a specific version using `cargo install --version`
+
+  [ Vasudev Kamath ]
+  * Update vendor-tarball-unsuspicious.txt vendor-tarball-filter.txt for
+    new upstream release.
+  * debian/control:
+    + Mark package compliance with Debian Policy 4.1.3.
+  * debian/patches:
+    + Update patch 2001 to work with libgit2-sys-0.6.19.
+    + Update 1002 patch to drop url crate specific hunk as its merged
+      upstream.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 13 Jan 2018 21:27:17 +0530
+
 cargo (0.23.0-1) unstable; urgency=medium
 
   * Upload to unstable.
