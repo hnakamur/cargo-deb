@@ -11,6 +11,7 @@ Files: src/*
        ARCHITECTURE.*
        CONTRIBUTING.*
        appveyor.yml
+       rustfmt.toml
 Copyright: 2014 The Rust Project Developers
 License: MIT or Apache-2.0
 Comment: please do not add * to the above paragraph, so we can use lintian to
