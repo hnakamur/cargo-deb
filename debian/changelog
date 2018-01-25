@@ -1,4 +1,4 @@
-cargo (0.24.0-1) unstable; urgency=medium
+cargo (0.24.0-1~exp1) experimental; urgency=medium
 
   [upstream]
   * Supports uninstallation of multiple crates.
@@ -14,8 +14,14 @@ cargo (0.24.0-1) unstable; urgency=medium
     + Update patch 2001 to work with libgit2-sys-0.6.19.
     + Update 1002 patch to drop url crate specific hunk as its merged
       upstream.
+    + Add patch 0001 to fix bad_git_dependency test failure.
+  * debian/copyright:
+    + Add new vendor crates to copyright.
+    + Track rustfmt.toml in top level copyright section.
+  * Add lintian-override for ignoring README from
+    patch-file-present-but-not-mentioned-in-series tag.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 13 Jan 2018 21:27:17 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Thu, 25 Jan 2018 14:57:43 +0530
 
 cargo (0.23.0-1) unstable; urgency=medium
 
