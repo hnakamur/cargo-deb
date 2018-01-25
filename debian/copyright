@@ -101,10 +101,13 @@ Files: vendor/dbghelp-sys-0*
        vendor/ws2_32-sys-*
        vendor/advapi32-sys-*
        vendor/userenv-sys-*
+       vendor/secur32-sys-*
+       vendor/crypt32-sys-*
 Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
            2014-2017 winapi-rs developers
 License: MIT
 Comment: see https://github.com/retep998/winapi-rs
+
 
 Files: vendor/curl-0*
        vendor/curl-sys-0*
@@ -129,6 +132,7 @@ License: MIT or Apache-2.0
 Comment: see https://github.com/brson/error-chain
 
 Files: vendor/foreign-types-0*
+       vendor/foreign-types-shared-*
 Copyright: 2017-2017 Steven Fackler <sfackler@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/sfackler/foreign-types
@@ -161,8 +165,9 @@ Copyright: 1991-2017 Unicode, Inc
 License: Unicode-terms
 
 Files: vendor/lazy_static-0*
+ vendor/lazy_static-1*
 Copyright: 2014-2016 Marvin Löbel <loebel.marvin@gmail.com>
-License: MIT
+License: MIT or Apache-2.0
 Comment: see https://github.com/rust-lang-nursery/lazy-static.rs
 
 Files: vendor/matches-*
@@ -320,10 +325,14 @@ License: MIT or Apache-2.0
 Comment: see https://github.com/brson/home
 
 Files: vendor/magenta-*
+       vendor/fuchsia-zircon-*
+       vendor/fuchsia-zircon-sys-*
 Copyright: Raph Levien <raph@google.com>
            2016, The Fuchsia Authors
 License: BSD-3-Clause
-Comment: see https://fuchsia.googlesource.com/magenta-rs/
+Comment:
+ * see https://fuchsia.googlesource.com/magenta-rs/
+ * see https://fuchsia.googlesource.com/garnet/
 
 Files: vendor/scopeguard-*
 Copyright: 2015, The Rust Project Developers
@@ -359,6 +368,11 @@ Files: src/doc/javascripts/prism.js
        debian/missing-sources/prism.js
 Copyright: 2015 Lea Verou
 License: MIT
+
+Files: vendor/schannel-*
+Copyright: 2015, Steffen Butzer <steffen.butzer@outlook.com>
+License: MIT
+Comment: see https://github.com/steffengy/schannel-rs/
 
 Files: debian/*
 Copyright: 2017 Ximin Luo <infinity0@debian.org>
