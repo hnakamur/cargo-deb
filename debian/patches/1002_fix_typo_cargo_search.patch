@@ -1,0 +1,37 @@
+Description: Fix typo in cargo search subcommand.
+ Since the search subcommand where typo happened is
+ also used in test fix the typo in test also.
+Author: Vasudev Kamath <vasudev@copyninja.info>
+Last-Update: 2017-10-29
+
+--- a/src/bin/search.rs
++++ b/src/bin/search.rs
+@@ -69,7 +69,7 @@
+     let msg = "The flag '--host' is no longer valid.
+ 
+ Previous versions of Cargo accepted this flag, but it is being
+-depricated. The flag is being renamed to 'index', as the flag
++deprecated. The flag is being renamed to 'index', as the flag
+ wants the location of the index in which to search. Please
+ use '--index' instead.
+ 
+--- a/tests/search.rs
++++ b/tests/search.rs
+@@ -140,7 +140,7 @@
+ [WARNING] The flag '--host' is no longer valid.
+ 
+ Previous versions of Cargo accepted this flag, but it is being
+-depricated. The flag is being renamed to 'index', as the flag
++deprecated. The flag is being renamed to 'index', as the flag
+ wants the location of the index in which to search. Please
+ use '--index' instead.
+ 
+@@ -207,7 +207,7 @@
+ [WARNING] The flag '--host' is no longer valid.
+ 
+ Previous versions of Cargo accepted this flag, but it is being
+-depricated. The flag is being renamed to 'index', as the flag
++deprecated. The flag is being renamed to 'index', as the flag
+ wants the location of the index in which to search. Please
+ use '--index' instead.
+ 

@@ -1,0 +1,11 @@
+- later: experiment with -C prefer-dynamic
+  - see TODO in d/rules, need to update rustc
+- (possibly not needed, seems Windows-only):
+  work around https://github.com/rust-lang/rust/issues/43449
+
+Later
+=====
+
+A lot of stuff here is shared with dh-cargo. We should use that instead.
+
+Specifically, d/cargohome/config and the override_dh_auto_* rules

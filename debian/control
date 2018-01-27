@@ -1,0 +1,77 @@
+Source: cargo
+Section: devel
+Maintainer: Rust Maintainers <pkg-rust-maintainers@lists.alioth.debian.org>
+Uploaders: Luca Bruno <lucab@debian.org>,
+ Angus Lees <gus@debian.org>,
+ Ximin Luo <infinity0@debian.org>,
+ Vasudev Kamath <vasudev@copyninja.info>
+Priority: optional
+# :native annotations are to support cross-compiling, see README.Debian of rustc
+Build-Depends: debhelper (>= 9.20141010),
+               dpkg-dev (>= 1.17.14),
+               python-dulwich           <pkg.cargo.mkstage0>,
+               python-pytoml            <pkg.cargo.mkstage0>,
+# TODO: related to https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=839145
+# the non-native lines can be deleted after all versions in unstable are M-A: allowed
+               cargo           (>= 0.17.0) <!pkg.cargo.mkstage0> |
+               cargo:native    (>= 0.17.0) <!pkg.cargo.mkstage0>,
+               rustc:native    (>= 1.16),
+               libstd-rust-dev (>= 1.16),
+               pkg-config,
+               cmake,
+               bash-completion,
+               python3,
+               libcurl4-gnutls-dev | libcurl4-openssl-dev,
+               libssh2-1-dev,
+               libgit2-dev (>= 0.25.1.0),
+               libhttp-parser-dev,
+               libssl-dev,
+               zlib1g-dev,
+               git <!nocheck>
+Homepage: https://crates.io/
+Standards-Version: 4.1.3
+Vcs-Git: https://anonscm.debian.org/git/pkg-rust/cargo.git
+Vcs-Browser: https://anonscm.debian.org/cgit/pkg-rust/cargo.git
+
+Package: cargo
+Architecture: any
+Multi-Arch: allowed
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         rustc (>= 1.1),
+         binutils,
+         gcc | clang | c-compiler
+Suggests: cargo-doc, python3
+Description: Rust package manager
+ Cargo is a tool that allows Rust projects to declare their various
+ dependencies, and ensure that you'll always get a repeatable build.
+ .
+ To accomplish this goal, Cargo does four things:
+  * Introduces two metadata files with various bits of project information.
+  * Fetches and builds your project's dependencies.
+  * Invokes rustc or another build tool with the correct parameters to build
+    your project.
+  * Introduces conventions, making working with Rust projects easier.
+ .
+ Cargo downloads your Rust project’s dependencies and compiles your
+ project.
+
+Package: cargo-doc
+Section: doc
+Architecture: all
+Build-Profiles: <!nodoc>
+Depends: ${misc:Depends}, libjs-jquery
+Description: Rust package manager, documentation
+ Cargo is a tool that allows Rust projects to declare their various
+ dependencies, and ensure that you'll always get a repeatable build.
+ .
+ To accomplish this goal, Cargo does four things:
+  * Introduces two metadata files with various bits of project information.
+  * Fetches and builds your project's dependencies.
+  * Invokes rustc or another build tool with the correct parameters to build
+    your project.
+  * Introduces conventions, making working with Rust projects easier.
+ .
+ Cargo downloads your Rust project’s dependencies and compiles your
+ project.
+ .
+ This package contains the documentation.
