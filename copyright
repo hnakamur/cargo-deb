@@ -1,0 +1,515 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: cargo
+Source: https://github.com/rust-lang/cargo
+
+Files: src/*
+       tests/*
+       .*
+       Cargo.*
+       LICENSE-*
+       README.*
+       ARCHITECTURE.*
+       CONTRIBUTING.*
+       appveyor.yml
+       rustfmt.toml
+Copyright: 2014 The Rust Project Developers
+License: MIT or Apache-2.0
+Comment: please do not add * to the above paragraph, so we can use lintian to
+         help us update this file properly
+
+Files: vendor/bitflags-*
+       vendor/bufstream-*
+       vendor/cmake-*
+       vendor/crossbeam-*
+       vendor/env_logger-*
+       vendor/flate2-*
+       vendor/fs2-0*
+       vendor/glob-0*
+       vendor/libc-0*
+       vendor/log-0*
+       vendor/num-0*
+       vendor/num-bigint-*
+       vendor/num-complex-*
+       vendor/num-integer-*
+       vendor/num-iter-*
+       vendor/num-rational-*
+       vendor/num-traits-*
+       vendor/rand-0*
+       vendor/regex-0*
+       vendor/regex-syntax-*
+       vendor/rustc-serialize-*
+       vendor/semver-*
+       vendor/shell-escape-*
+       vendor/tempdir-0*
+Copyright: 2014-2016 The Rust Project Developers
+License: MIT or Apache-2.0
+Comment:
+ This is a collection of external crates embedded here to bootstrap cargo.
+ Most of them come from the original upstream Rust project, thus share the
+ same MIT/Apache-2.0 dual-license. See https://github.com/rust-lang.
+ Exceptions are noted below.
+
+Files: vendor/backtrace-0*
+       vendor/backtrace-sys-0*
+       vendor/cfg-if-0*
+       vendor/filetime-*
+       vendor/git2-0*
+       vendor/git2-curl-*
+       vendor/jobserver-0*
+       vendor/libz-sys-*
+       vendor/libgit2-sys-*
+       vendor/libssh2-sys-*
+       vendor/miniz-sys-*
+       vendor/openssl-probe-*
+       vendor/pkg-config-*
+       vendor/rustc-demangle-0*
+       vendor/scoped-tls-0*
+       vendor/tar-0*
+       vendor/toml-0*
+       vendor/socket2-*
+Copyright: 2014-2017 Alex Crichton <alex@alexcrichton.com>
+           2014-2017 The Rust Project Developers
+License: MIT or Apache-2.0
+Comment: see https://github.com/alexcrichton/
+
+Files: vendor/aho-corasick-*
+       vendor/docopt-*
+       vendor/memchr-*
+       vendor/utf8-ranges-*
+       vendor/wincolor-*
+       vendor/termcolor-*
+       vendor/globset-*
+       vendor/ignore-*
+       vendor/same-file-*
+       vendor/walkdir-*
+Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
+License: MIT or Unlicense
+Comment: see upstream projects,
+ * https://github.com/docopt/docopt.rs
+ * https://github.com/BurntSushi/aho-corasick
+ * https://github.com/BurntSushi/rust-memchr
+ * https://github.com/BurntSushi/utf8-ranges
+ * https://github.com/BurntSushi/ripgrep/tree/master/wincolor
+ * https://github.com/BurntSushi/ripgrep/tree/master/termcolor
+ * https://github.com/BurntSushi/ripgrep/tree/master/globset
+ * https://github.com/BurntSushi/ripgrep/tree/master/ignore
+ * https://github.com/BurntSushi/same-file
+ * https://github.com/BurntSushi/walkdir
+
+Files: vendor/dbghelp-sys-0*
+       vendor/kernel32-*
+       vendor/winapi-*
+       vendor/ws2_32-sys-*
+       vendor/advapi32-sys-*
+       vendor/userenv-sys-*
+       vendor/secur32-sys-*
+       vendor/crypt32-sys-*
+Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
+           2014-2017 winapi-rs developers
+License: MIT
+Comment: see https://github.com/retep998/winapi-rs
+
+
+Files: vendor/curl-0*
+       vendor/curl-sys-0*
+Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
+           2014-2016 Alex Crichton <alex@alexcrichton.com>
+License: MIT
+Comment: see https://github.com/sfackler/rust-openssl
+
+Files: vendor/dtoa-0*
+       vendor/itoa-0*
+       vendor/quote-0*
+Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/dtolnay
+
+Files: vendor/error-chain-0*
+Copyright: 2016 Brian Anderson <banderson@mozilla.com>,
+           2016 Paul Colomiets <paul@colomiets.name>,
+           2016 Colin Kiegel <kiegel@gmx.de>,
+           2016 Yamakaky <yamakaky@yamaworld.fr>
+License: MIT or Apache-2.0
+Comment: see https://github.com/brson/error-chain
+
+Files: vendor/foreign-types-0*
+       vendor/foreign-types-shared-*
+Copyright: 2017-2017 Steven Fackler <sfackler@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/sfackler/foreign-types
+
+Files: vendor/hamcrest-0*
+Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
+           2014-2016 Alex Crichton <alex@alexcrichton.com>
+           2014-2016 Ben Longbons <b.r.longbons@gmail.com>
+           2014-2016 Graham Dennis <graham.dennis@gmail.com>
+           2014-2016 Michael Gehring <mg@ebfe.org>
+           2014-2016 Oliver Mader <b52@reaktor42.de>
+           2014-2016 Robin Gloster <robin@loc-com.de>
+           2014-2016 Steve Klabnik <steve@steveklabnik.com>
+           2014-2016 Tamir Duberstein <tamird@gmail.com>
+           2014-2016 Thiago Pontes <thiagopnts@gmail.com>
+           2014-2016 Urban Hafner <contact@urbanhafner.com>
+           2014-2016 Valerii Hiora <valerii.hiora@gmail.com>
+           2014-2016 Yehuda Katz <wycats@gmail.com>
+License: MIT or Apache-2.0
+
+Files: vendor/idna-0*
+Copyright: 2013 Simon Sapin <simon.sapin@exyr.org>
+           2013-2014 Valentin Gosu
+           1991-2015 Unicode, Inc
+License: MIT or Apache-2.0
+
+Files: vendor/idna-0*/src/IdnaMappingTable.txt
+       vendor/idna-0*/tests/IdnaTest.txt
+Copyright: 1991-2017 Unicode, Inc
+License: Unicode-terms
+
+Files: vendor/lazy_static-0*
+ vendor/lazy_static-1*
+Copyright: 2014-2016 Marvin Löbel <loebel.marvin@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/rust-lang-nursery/lazy-static.rs
+
+Files: vendor/matches-*
+Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
+License: MIT
+Comment: see https://github.com/SimonSapin/rust-std-candidates
+
+Files: vendor/miniz-sys-*/miniz.c
+Copyright: Rich Geldreich <richgel99@gmail.com>
+License: Unlicense
+
+Files: vendor/num_cpus-*
+Copyright: 2015 Sean McArthur <sean.monstar@gmail.com>
+License: MIT
+Comment: see https://github.com/seanmonstar/num_cpus
+
+Files: vendor/conv-*
+Copyright: 2015, Daniel Keep <daniel.keep@gmail.com>
+License: MIT
+Comment: see https://github.com/DanielKeep/rust-conv
+
+Files: vendor/custom_derive-*
+Copyright: 2015-2016, Daniel Keep <daniel.keep@gmail.com>
+           2015-2016, rust-custom-derive contributors
+License: MIT or Apache-2.0
+Comment: see https://github.com/DanielKeep/rust-custom-derive
+
+Files: vendor/openssl-*
+Copyright: 2013-2015 Steven Fackler <sfackler@gmail.com>
+           2013 Jack Lloyd
+           2011 Google Inc.
+License: Apache-2.0
+
+Files: vendor/openssl-sys-*
+Copyright: 2015 Steven Fackler <sfackler@gmail.com>
+           2015 Alex Crichton <alex@alexcrichton.com>
+License: MIT
+Comment: see https://github.com/sfackler/rust-openssl
+
+Files: vendor/serde-1.*
+       vendor/serde_derive-1.*
+       vendor/serde_derive_internals-0*
+       vendor/serde_ignored-0*
+       vendor/serde_json-1.*
+Copyright: 2014-2017 Erick Tryzelaar <erick.tryzelaar@gmail.com>
+           2014-2017 David Tolnay <dtolnay@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/serde-rs
+         see https://github.com/dtolnay/serde-ignored
+
+Files: vendor/strsim-*
+Copyright: 2015 Danny Guo <dannyguo91@gmail.com>
+License: MIT
+Comment: see https://github.com/dguo/strsim-rs
+
+Files: vendor/syn-0*
+       vendor/synom-0*
+Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/dtolnay/syn
+
+Files: vendor/thread-id-2.*
+Copyright: 2016-2017 Ruud van Asseldonk <dev@veniogames.com>
+License: Apache-2.0
+Comment: see https://github.com/ruud-v-a/thread-id
+         see https://github.com/ruuda/thread-id
+
+Files: vendor/thread_local-0*
+Copyright: 2016 Amanieu d'Antras <amanieu@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/Amanieu/thread_local-rs
+
+Files: vendor/unicode-bidi-*
+Copyright: 2015 The Servo Project Developers
+License: MIT or Apache-2.0
+Comment: see https://github.com/servo/unicode-bidi
+
+Files: vendor/core-foundation-*
+       vendor/core-foundation-sys-*
+Copyright: 2012-2013, The Servo Project Developers,
+ 2012-2013, Mozilla Foundation
+License: MIT or Apache-2.0
+Comment: see https://github.com/servo/core-foundation-rs
+
+Files: vendor/unicode-normalization-*
+Copyright: 2016 kwantam <kwantam@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/unicode-rs/unicode-normalization
+
+Files: vendor/unicode-xid-0*
+Copyright: 2015-2017 erick.tryzelaar <erick.tryzelaar@gmail.com>
+           2015-2017 kwantam <kwantam@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/unicode-rs/unicode-xid
+
+Files: vendor/unicode-normalization-0*/scripts/unicode.py
+       vendor/unicode-xid-0*/scripts/unicode.py
+Copyright: 2011-2015 The Rust Project Developers
+           2015 The Servo Project Developers
+License: MIT or Apache-2.0
+
+Files: vendor/unicode-bidi-0*/src/char_data/tables.rs
+       vendor/unicode-normalization-0*/src/tables.rs
+       vendor/unicode-normalization-0*/src/testdata.rs
+       vendor/unicode-xid-0*/src/tables.rs
+Copyright: 2011-2015 The Rust Project Developers
+           2015 The Servo Project Developers
+License: MIT or Apache-2.0, and Unicode-terms
+Comment:
+ These files are generated using python scripts, as indicated below, from
+ Unicode data files which are licensed under the Unicode-terms. In Debian these
+ data files are available in the unicode-data package.
+ .
+ $ git grep -i generated --  vendor/unicode-* ':(exclude)*LICENSE*'
+ vendor/unicode-bidi-0.3.4/src/char_data/tables.rs:// The following code was generated by "tools/generate.py". do not edit directly
+ vendor/unicode-normalization-0.1.5/scripts/unicode.py:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
+ vendor/unicode-normalization-0.1.5/src/tables.rs:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
+ vendor/unicode-normalization-0.1.5/src/testdata.rs:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
+ vendor/unicode-xid-0.0.4/scripts/unicode.py:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
+ vendor/unicode-xid-0.0.4/src/tables.rs:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
+
+Files: vendor/unreachable-*
+       vendor/void-1.*
+Copyright: 2015-2017 Jonathan Reem <jonathan.reem@gmail.com>
+License: MIT
+Comment: see https://github.com/reem/
+
+Files: vendor/url-1.*
+       vendor/percent-encoding-*
+Copyright: 2015-2016 Simon Sapin <simon.sapin@exyr.org>
+           2013-2016 The rust-url developers
+License: MIT or Apache-2.0
+Comment: see https://github.com/servo/rust-url
+         see https://github.com/servo/rust-url/tree/master/percent_encoding
+
+Files: vendor/hex-*
+Copyright: 2015, rust-hex Developers
+License: MIT or Apache-2.0
+Comment: see https://github.com/KokaKiwi/rust-hex
+
+Files: vendor/atty-*
+Copyright: 2015-2016, Doug Tangren
+License: MIT
+Comment: see https://github.com/softprops/atty
+
+Files: vendor/fnv-*
+ vendor/cc-*
+Copyright: 2017, Alex Crichton <alex@alexcrichton.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/servo/rust-fnv/
+
+Files: vendor/home-*
+Copyright: Brian Anderson <andersb@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/brson/home
+
+Files: vendor/magenta-*
+       vendor/fuchsia-zircon-*
+       vendor/fuchsia-zircon-sys-*
+Copyright: Raph Levien <raph@google.com>
+           2016, The Fuchsia Authors
+License: BSD-3-Clause
+Comment:
+ * see https://fuchsia.googlesource.com/magenta-rs/
+ * see https://fuchsia.googlesource.com/garnet/
+
+Files: vendor/scopeguard-*
+Copyright: 2015, The Rust Project Developers
+           bluss
+License: MIT or Apache-2.0
+Comment: see https://github.com/bluss/scopeguard
+
+Files: vendor/vcpkg-0*
+Copyright: 2017-2017 Jim McGrath <jimmc2@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/mcgoo/vcpkg-rs
+
+Files: vendor/commoncrypto-*
+       vendor/crypto-hash-*
+Copyright: 2016, Mark Lee
+ 2015-2016, Mark Lee
+License: MIT
+Comment:
+ * see https://github.com/malept/rust-commoncrypto
+ * see https://github.com/malept/crypto-hash
+
+Files: vendor/redox_syscall-*
+       vendor/redox_termios-*
+Copyright: 2017, Redox OS Developers
+License: MIT
+
+Files: vendor/termion-*
+Copyright: 2016, Ticki
+License: MIT
+Comment: see https://github.com/ticki/termion/
+
+Files: src/doc/javascripts/prism.js
+       debian/missing-sources/prism.js
+Copyright: 2015 Lea Verou
+License: MIT
+
+Files: vendor/schannel-*
+Copyright: 2015, Steffen Butzer <steffen.butzer@outlook.com>
+License: MIT
+Comment: see https://github.com/steffengy/schannel-rs/
+
+Files: debian/*
+Copyright: 2017 Ximin Luo <infinity0@debian.org>
+           2015-2016 Luca Bruno <lucab@debian.org>
+License: MIT or Apache-2.0
+
+Files: debian/bootstrap.py
+Copyright: 2015 David Huseby
+License: BSD-2-clause
+Comment: See LICENSE at https://github.com/dhuseby/cargo-bootstrap/
+
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ .
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+  1. Redistributions of source code must retain the above copyright
+     notice, this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright
+     notice, this list of conditions and the following disclaimer in the
+     documentation and/or other materials provided with the
+     distribution.
+  3. Neither the name of the Creytiv.com nor the names of its
+     contributors may be used to endorse or promote products derived
+     from this software without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ POSSIBILITY OF SUCH DAMAGE.
+
+License: MIT
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+  .
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+  .
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+  THE SOFTWARE.
+
+License: Apache-2.0
+ On Debian systems, see /usr/share/common-licenses/Apache-2.0 for
+ the full text of the Apache License version 2.
+
+License: Unlicense
+ This is free and unencumbered software released into the public domain.
+ .
+ Anyone is free to copy, modify, publish, use, compile, sell, or
+ distribute this software, either in source code form or as a compiled
+ binary, for any purpose, commercial or non-commercial, and by any
+ means.
+ .
+ In jurisdictions that recognize copyright laws, the author or authors
+ of this software dedicate any and all copyright interest in the
+ software to the public domain. We make this dedication for the benefit
+ of the public at large and to the detriment of our heirs and
+ successors. We intend this dedication to be an overt act of
+ relinquishment in perpetuity of all present and future rights to this
+ software under copyright law.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.
+
+License: Unicode-terms
+ Distributed under the Terms of Use in http://www.unicode.org/copyright.html.
+ .
+ Permission is hereby granted, free of charge, to any person obtaining
+ a copy of the Unicode data files and any associated documentation
+ (the "Data Files") or Unicode software and any associated documentation
+ (the "Software") to deal in the Data Files or Software
+ without restriction, including without limitation the rights to use,
+ copy, modify, merge, publish, distribute, and/or sell copies of
+ the Data Files or Software, and to permit persons to whom the Data Files
+ or Software are furnished to do so, provided that either
+ (a) this copyright and permission notice appear with all copies
+ of the Data Files or Software, or
+ (b) this copyright and permission notice appear in associated
+ Documentation.
+ .
+ THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+ WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ NONINFRINGEMENT OF THIRD PARTY RIGHTS.
+ IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
+ NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
+ DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+ DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+ PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+ .
+ Except as contained in this notice, the name of a copyright holder
+ shall not be used in advertising or otherwise to promote the sale,
+ use or other dealings in these Data Files or Software without prior
+ written authorization of the copyright holder.
+Comment: see http://www.unicode.org/copyright.html

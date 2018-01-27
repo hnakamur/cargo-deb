@@ -1,0 +1,2 @@
+target/*/release/cargo                  usr/bin
+debian/scripts/*                        usr/share/cargo

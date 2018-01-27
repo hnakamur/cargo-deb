@@ -1,0 +1,11 @@
+Description: Remove remote jquery references
+From: Luca Bruno <lucab@debian.org>
+Forwarded: no
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/src/doc/html-headers.html
++++ b/src/doc/html-headers.html
+@@ -1,2 +1,2 @@
+-<script src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
++<script src="jquery.js"></script>
+ <link rel="icon" type="image/x-icon" href="favicon.ico">

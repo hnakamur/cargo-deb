@@ -1,0 +1,16 @@
+Description: Disable wasm32_final_outputs test
+ This test depends on emscripten built using fastcomp
+ a fork of LLVM and is not avaialble in Debian.
+Author: Vasudev Kamath <vasudev@copyninja.info>
+Last-Update: 2017-12-05
+
+--- cargo-0.23.0.orig/tests/build.rs
++++ cargo-0.23.0/tests/build.rs
+@@ -3479,7 +3479,6 @@ fn cdylib_final_outputs() {
+     }
+ }
+ 
+-#[test]
+ fn wasm32_final_outputs() {
+     use cargo::core::{Shell, Target, Workspace};
+     use cargo::ops::{self, BuildConfig, Context, CompileMode, CompileOptions, Kind, Unit};
