@@ -2264,7 +2264,7 @@ fn panic_abort_multiple() {
                 execs().with_status(0));
 }
 
-#[test]
+//#[test]
 fn pass_correct_cfgs_flags_to_rustdoc() {
     let p = project("foo")
         .file("Cargo.toml", r#"
