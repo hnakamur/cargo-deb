@@ -1,3 +1,9 @@
+cargo (0.24.0-1) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Ximin Luo <infinity0@debian.org>  Sat, 27 Jan 2018 10:41:06 +0100
+
 cargo (0.24.0-1~exp1) experimental; urgency=medium
 
   [upstream]
