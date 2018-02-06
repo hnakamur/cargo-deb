@@ -1,0 +1,265 @@
+Description: Avoid installing dev-dependencies
+Author: Ximin Luo <infinity0@pwned.gg>
+Applied-Upstream: https://github.com/rust-lang/cargo/pull/5012
+Applied-Upstream: https://github.com/rust-lang/cargo/pull/5186
+--- a/src/bin/build.rs
++++ b/src/bin/build.rs
+@@ -98,7 +98,10 @@
+                      &options.flag_z)?;
+ 
+     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
+-    let ws = Workspace::new(&root, config)?;
++    let mut ws = Workspace::new(&root, config)?;
++    if config.cli_unstable().avoid_dev_deps {
++        ws.set_require_optional_deps(false);
++    }
+ 
+     let spec = Packages::from_flags(options.flag_all,
+                                     &options.flag_exclude,
+--- a/src/cargo/core/features.rs
++++ b/src/cargo/core/features.rs
+@@ -232,6 +232,7 @@
+ pub struct CliUnstable {
+     pub print_im_a_teapot: bool,
+     pub unstable_options: bool,
++    pub avoid_dev_deps: bool,
+ }
+ 
+ impl CliUnstable {
+@@ -262,6 +263,7 @@
+         match k {
+             "print-im-a-teapot" => self.print_im_a_teapot = parse_bool(v)?,
+             "unstable-options" => self.unstable_options = true,
++            "avoid-dev-deps" => self.avoid_dev_deps = true,
+             _ => bail!("unknown `-Z` flag specified: {}", k),
+         }
+ 
+--- a/src/cargo/core/resolver/mod.rs
++++ b/src/cargo/core/resolver/mod.rs
+@@ -96,14 +96,26 @@
+ 
+ #[derive(Clone, Copy)]
+ pub enum Method<'a> {
+-    Everything,
++    Everything, // equivalent to Required { dev_deps: true, all_features: true, .. }
+     Required {
+         dev_deps: bool,
+         features: &'a [String],
++        all_features: bool,
+         uses_default_features: bool,
+     },
+ }
+ 
++impl<'r> Method<'r> {
++    pub fn split_features(features: &[String]) -> Vec<String> {
++        features.iter()
++            .flat_map(|s| s.split_whitespace())
++            .flat_map(|s| s.split(','))
++            .filter(|s| !s.is_empty())
++            .map(|s| s.to_string())
++            .collect::<Vec<String>>()
++    }
++}
++
+ // Information about the dependencies for a crate, a tuple of:
+ //
+ // (dependency info, candidates, features activated)
+@@ -731,6 +743,7 @@
+         let method = Method::Required {
+             dev_deps: false,
+             features: &features,
++            all_features: false,
+             uses_default_features: dep.uses_default_features(),
+         };
+         trace!("{}[{}]>{} trying {}", parent.name(), cur, dep.name(),
+@@ -996,7 +1009,8 @@
+                                   -> CargoResult<Requirements<'a>> {
+     let mut reqs = Requirements::new(s);
+     match *method {
+-        Method::Everything => {
++        Method::Everything |
++        Method::Required { all_features: true, .. } => {
+             for key in s.features().keys() {
+                 reqs.require_feature(key)?;
+             }
+@@ -1042,10 +1056,11 @@
+         }
+         debug!("checking if {} is already activated", summary.package_id());
+         let (features, use_default) = match *method {
++            Method::Everything |
++            Method::Required { all_features: true, .. } => return false,
+             Method::Required { features, uses_default_features, .. } => {
+                 (features, uses_default_features)
+             }
+-            Method::Everything => return false,
+         };
+ 
+         let has_default_feature = summary.features().contains_key("default");
+--- a/src/cargo/core/workspace.rs
++++ b/src/cargo/core/workspace.rs
+@@ -64,7 +64,8 @@
+ 
+     // True if this workspace should enforce optional dependencies even when
+     // not needed; false if this workspace should only enforce dependencies
+-    // needed by the current configuration (such as in cargo install).
++    // needed by the current configuration (such as in cargo install). In some
++    // cases `false` also results in the non-enforcement of dev-dependencies.
+     require_optional_deps: bool,
+ }
+ 
+@@ -300,6 +301,11 @@
+         self.require_optional_deps
+     }
+ 
++    pub fn set_require_optional_deps<'a>(&'a mut self, require_optional_deps: bool) -> &mut Workspace<'cfg> {
++        self.require_optional_deps = require_optional_deps;
++        self
++    }
++
+     /// Finds the root of a workspace for the crate whose manifest is located
+     /// at `manifest_path`.
+     ///
+--- a/src/cargo/ops/cargo_compile.rs
++++ b/src/cargo/ops/cargo_compile.rs
+@@ -29,7 +29,7 @@
+ 
+ use core::{Source, Package, Target};
+ use core::{Profile, TargetKind, Profiles, Workspace, PackageId, PackageIdSpec};
+-use core::resolver::Resolve;
++use core::resolver::{Resolve, Method};
+ use ops::{self, BuildOutput, Executor, DefaultExecutor};
+ use util::config::Config;
+ use util::{CargoResult, profile};
+@@ -226,12 +226,18 @@
+     let profiles = ws.profiles();
+ 
+     let specs = spec.into_package_id_specs(ws)?;
+-    let resolve = ops::resolve_ws_precisely(ws,
+-                                            source,
+-                                            features,
+-                                            all_features,
+-                                            no_default_features,
+-                                            &specs)?;
++    let features = Method::split_features(features);
++    let method = Method::Required {
++        dev_deps: ws.require_optional_deps() || filter.need_dev_deps(mode),
++        features: &features,
++        all_features,
++        uses_default_features: !no_default_features,
++    };
++    let resolve = ops::resolve_ws_with_method(ws,
++                                              source,
++                                              method,
++                                              &specs,
++                                              )?;
+     let (packages, resolve_with_overrides) = resolve;
+ 
+     if specs.is_empty() {
+@@ -413,6 +419,22 @@
+         }
+     }
+ 
++    pub fn need_dev_deps(&self, mode: CompileMode) -> bool {
++        match mode {
++            CompileMode::Test | CompileMode::Doctest | CompileMode::Bench => true,
++            CompileMode::Build | CompileMode::Doc { .. } | CompileMode::Check { .. } => match *self
++            {
++                CompileFilter::Default { .. } => false,
++                CompileFilter::Only {
++                    ref examples,
++                    ref tests,
++                    ref benches,
++                    ..
++                } => examples.is_specific() || tests.is_specific() || benches.is_specific(),
++            },
++        }
++    }
++
+     pub fn matches(&self, target: &Target) -> bool {
+         match *self {
+             CompileFilter::Default { .. } => true,
+--- a/src/cargo/ops/cargo_install.rs
++++ b/src/cargo/ops/cargo_install.rs
+@@ -175,7 +175,11 @@
+ 
+     let ws = match overidden_target_dir {
+         Some(dir) => Workspace::ephemeral(pkg, config, Some(dir), false)?,
+-        None => Workspace::new(pkg.manifest_path(), config)?,
++        None => {
++            let mut ws = Workspace::new(pkg.manifest_path(), config)?;
++            ws.set_require_optional_deps(false);
++            ws
++        }
+     };
+     let pkg = ws.current()?;
+ 
+--- a/src/cargo/ops/mod.rs
++++ b/src/cargo/ops/mod.rs
+@@ -22,7 +22,7 @@
+ pub use self::registry::configure_http_handle;
+ pub use self::cargo_fetch::fetch;
+ pub use self::cargo_pkgid::pkgid;
+-pub use self::resolve::{resolve_ws, resolve_ws_precisely, resolve_with_previous};
++pub use self::resolve::{resolve_ws, resolve_ws_precisely, resolve_ws_with_method, resolve_with_previous};
+ pub use self::cargo_output_metadata::{output_metadata, OutputMetadataOptions, ExportInfo};
+ 
+ mod cargo_clean;
+--- a/src/cargo/ops/resolve.rs
++++ b/src/cargo/ops/resolve.rs
+@@ -29,13 +29,25 @@
+                                 no_default_features: bool,
+                                 specs: &[PackageIdSpec])
+                                 -> CargoResult<(PackageSet<'a>, Resolve)> {
+-    let features = features.iter()
+-        .flat_map(|s| s.split_whitespace())
+-        .flat_map(|s| s.split(','))
+-        .filter(|s| !s.is_empty())
+-        .map(|s| s.to_string())
+-        .collect::<Vec<String>>();
++    let features = Method::split_features(features);
++    let method = if all_features {
++        Method::Everything
++    } else {
++        Method::Required {
++            dev_deps: true,
++            features: &features,
++            all_features: false,
++            uses_default_features: !no_default_features,
++        }
++    };
++    resolve_ws_with_method(ws, source, method, specs)
++}
+ 
++pub fn resolve_ws_with_method<'a>(ws: &Workspace<'a>,
++                                  source: Option<Box<Source + 'a>>,
++                                  method: Method,
++                                  specs: &[PackageIdSpec])
++                                  -> CargoResult<(PackageSet<'a>, Resolve)> {
+     let mut registry = PackageRegistry::new(ws.config())?;
+     if let Some(source) = source {
+         registry.add_preloaded(source);
+@@ -66,16 +78,6 @@
+         None
+     };
+ 
+-    let method = if all_features {
+-        Method::Everything
+-    } else {
+-        Method::Required {
+-            dev_deps: true, // TODO: remove this option?
+-            features: &features,
+-            uses_default_features: !no_default_features,
+-        }
+-    };
+-
+     let resolved_with_overrides =
+     ops::resolve_with_previous(&mut registry, ws,
+                                method, resolve.as_ref(), None,
+@@ -219,6 +221,7 @@
+                 let base = Method::Required {
+                     dev_deps: dev_deps,
+                     features: &[],
++                    all_features: false,
+                     uses_default_features: true,
+                 };
+                 let member_id = member.package_id();

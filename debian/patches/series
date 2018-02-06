@@ -5,3 +5,4 @@
 1002_fix_typo_cargo_search.patch
 2005_dont_run_mdbook.patch
 2006_disable_wasm32_tests.patch
+1001_PR5012.patch
