@@ -26,3 +26,51 @@ schannel-*/*/*.a
 
 # We do not need sublime workspace file for building package
 hex-*/rust-hex.sublime-workspace
+
+# added in 0.25.0
+
+# Embedded git data for test.
+libgit2-sys-*/libgit2/tests/resources/userdiff/.gitted
+libgit2-sys-*/libgit2/tests/resources/submod3/.gitted
+libgit2-sys-*/libgit2/tests/resources/win32-forbidden/.gitted
+libgit2-sys-*/libgit2/tests/resources/mergedrepo/.gitted
+libgit2-sys-*/libgit2/tests/resources/submod2_target/.gitted
+libgit2-sys-*/libgit2/tests/resources/submodules/.gitted
+libgit2-sys-*/libgit2/tests/resources/submodules/testrepo/.gitted
+libgit2-sys-*/libgit2/tests/resources/cherrypick/.gitted
+libgit2-sys-*/libgit2/tests/resources/testrepo2/.gitted
+libgit2-sys-*/libgit2/tests/resources/describe/.gitted
+libgit2-sys-*/libgit2/tests/resources/merge-recursive/.gitted
+libgit2-sys-*/libgit2/tests/resources/diff/.gitted
+libgit2-sys-*/libgit2/tests/resources/partial-testrepo/.gitted
+libgit2-sys-*/libgit2/tests/resources/nsecs/.gitted
+libgit2-sys-*/libgit2/tests/resources/issue_1397/.gitted
+libgit2-sys-*/libgit2/tests/resources/typechanges/.gitted
+libgit2-sys-*/libgit2/tests/resources/submod2/not/.gitted
+libgit2-sys-*/libgit2/tests/resources/submod2/.gitted
+libgit2-sys-*/libgit2/tests/resources/submod2/not-submodule/.gitted
+libgit2-sys-*/libgit2/tests/resources/push_src/.gitted
+libgit2-sys-*/libgit2/tests/resources/testrepo/.gitted
+libgit2-sys-*/libgit2/tests/resources/renames/.gitted
+libgit2-sys-*/libgit2/tests/resources/issue_592/.gitted
+libgit2-sys-*/libgit2/tests/resources/filemodes/.gitted
+libgit2-sys-*/libgit2/tests/resources/attr_index/.gitted
+libgit2-sys-*/libgit2/tests/resources/crlf/.gitted
+libgit2-sys-*/libgit2/tests/resources/diff_format_email/.gitted
+libgit2-sys-*/libgit2/tests/resources/submodule_with_path/.gitted
+libgit2-sys-*/libgit2/tests/resources/attr/.gitted
+libgit2-sys-*/libgit2/tests/resources/merge-resolve/.gitted
+libgit2-sys-*/libgit2/tests/resources/revert/.gitted
+libgit2-sys-*/libgit2/tests/resources/submodule_simple/.gitted
+libgit2-sys-*/libgit2/tests/resources/issue_592b/.gitted
+libgit2-sys-*/libgit2/tests/resources/super/.gitted
+libgit2-sys-*/libgit2/tests/resources/rebase-submodule/.gitted
+libgit2-sys-*/libgit2/tests/resources/indexv4/.gitted
+libgit2-sys-*/libgit2/tests/resources/merge-whitespace/.gitted
+libgit2-sys-*/libgit2/tests/resources/icase/.gitted
+libgit2-sys-*/libgit2/tests/resources/status/.gitted
+libgit2-sys-*/libgit2/tests/resources/nasty/.gitted
+libgit2-sys-*/libgit2/tests/resources/binaryunicode/.gitted
+libgit2-sys-*/libgit2/tests/resources/rebase/.gitted
+libgit2-sys-*/libgit2/tests/resources/empty_standard_repo/.gitted
+libgit2-sys-*/libgit2/tests/resources/crlf_data/
