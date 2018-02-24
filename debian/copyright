@@ -96,14 +96,10 @@ Comment: see upstream projects,
  * https://github.com/BurntSushi/same-file
  * https://github.com/BurntSushi/walkdir
 
-Files: vendor/dbghelp-sys-0*
-       vendor/kernel32-*
+Files: vendor/kernel32-*
        vendor/winapi-*
-       vendor/ws2_32-sys-*
        vendor/advapi32-sys-*
        vendor/userenv-sys-*
-       vendor/secur32-sys-*
-       vendor/crypt32-sys-*
 Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
            2014-2017 winapi-rs developers
 License: MIT
@@ -123,14 +119,6 @@ Files: vendor/dtoa-0*
 Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/dtolnay
-
-Files: vendor/error-chain-0*
-Copyright: 2016 Brian Anderson <banderson@mozilla.com>,
-           2016 Paul Colomiets <paul@colomiets.name>,
-           2016 Colin Kiegel <kiegel@gmx.de>,
-           2016 Yamakaky <yamakaky@yamaworld.fr>
-License: MIT or Apache-2.0
-Comment: see https://github.com/brson/error-chain
 
 Files: vendor/foreign-types-0*
        vendor/foreign-types-shared-*
@@ -184,17 +172,6 @@ Files: vendor/num_cpus-*
 Copyright: 2015 Sean McArthur <sean.monstar@gmail.com>
 License: MIT
 Comment: see https://github.com/seanmonstar/num_cpus
-
-Files: vendor/conv-*
-Copyright: 2015, Daniel Keep <daniel.keep@gmail.com>
-License: MIT
-Comment: see https://github.com/DanielKeep/rust-conv
-
-Files: vendor/custom_derive-*
-Copyright: 2015-2016, Daniel Keep <daniel.keep@gmail.com>
-           2015-2016, rust-custom-derive contributors
-License: MIT or Apache-2.0
-Comment: see https://github.com/DanielKeep/rust-custom-derive
 
 Files: vendor/openssl-*
 Copyright: 2013-2015 Steven Fackler <sfackler@gmail.com>
@@ -325,8 +302,7 @@ Copyright: Brian Anderson <andersb@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/brson/home
 
-Files: vendor/magenta-*
-       vendor/fuchsia-zircon-*
+Files: vendor/fuchsia-zircon-*
        vendor/fuchsia-zircon-sys-*
 Copyright: Raph Levien <raph@google.com>
            2016, The Fuchsia Authors
@@ -364,6 +340,24 @@ Files: vendor/termion-*
 Copyright: 2016, Ticki
 License: MIT
 Comment: see https://github.com/ticki/termion/
+
+Files: vendor/failure-*
+       vendor/failure_derive-*
+Copyright: Without Boats <boats@mozilla.com>
+License: MIT or Apache-2.0
+Comment:
+ * see https://github.com/withoutboats/failure
+ * see https://github.com/withoutboats/failure_derive
+
+Files: vendor/remove_dir_all-*
+Copyright: 2017, Aaron Power <theaaronepower@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/Aaronepower/remove_dir_all
+
+Files: vendor/synstructure-*
+Copyright: Michael Layzell <michael@thelayzells.com>
+License: MIT
+Comment: see https://github.com/mystor/synstructure
 
 Files: src/doc/javascripts/prism.js
        debian/missing-sources/prism.js
