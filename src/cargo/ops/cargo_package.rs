@@ -78,11 +78,11 @@ pub fn package(ws: &Workspace,
     config.shell().status("Packaging", pkg.package_id().to_string())?;
     dst.file().set_len(0)?;
     tar(ws, &src, dst.file(), &filename).chain_err(|| {
-        "failed to prepare local package for uploading"
+        format_err!("failed to prepare local package for uploading")
     })?;
     if opts.verify {
         dst.seek(SeekFrom::Start(0))?;
-        run_verify(ws, dst.file(), opts).chain_err(|| {
+        run_verify(ws, &dst, opts).chain_err(|| {
             "failed to verify package tarball"
         })?
     }
@@ -196,7 +196,7 @@ fn tar(ws: &Workspace,
     // Prepare the encoder and its header
     let filename = Path::new(filename);
     let encoder = GzBuilder::new().filename(util::path2bytes(filename)?)
-                                  .write(dst, Compression::Best);
+                                  .write(dst, Compression::best());
 
     // Put all package files into a compressed archive
     let mut ar = Builder::new(encoder);
@@ -207,8 +207,8 @@ fn tar(ws: &Workspace,
         let relative = util::without_prefix(file, root).unwrap();
         check_filename(relative)?;
         let relative = relative.to_str().ok_or_else(|| {
-            format!("non-utf8 path in source directory: {}",
-                    relative.display())
+            format_err!("non-utf8 path in source directory: {}",
+                        relative.display())
         })?;
         config.shell().verbose(|shell| {
             shell.status("Archiving", &relative)
@@ -276,15 +276,14 @@ fn tar(ws: &Workspace,
     Ok(())
 }
 
-fn run_verify(ws: &Workspace, tar: &File, opts: &PackageOpts) -> CargoResult<()> {
+fn run_verify(ws: &Workspace, tar: &FileLock, opts: &PackageOpts) -> CargoResult<()> {
     let config = ws.config();
     let pkg = ws.current()?;
 
     config.shell().status("Verifying", pkg)?;
 
-    let f = GzDecoder::new(tar)?;
-    let dst = pkg.root().join(&format!("target/package/{}-{}",
-                                       pkg.name(), pkg.version()));
+    let f = GzDecoder::new(tar.file());
+    let dst = tar.parent().join(&format!("{}-{}", pkg.name(), pkg.version()));
     if fs::metadata(&dst).is_ok() {
         fs::remove_dir_all(&dst)?;
     }

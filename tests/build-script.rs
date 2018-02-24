@@ -1,8 +1,10 @@
 extern crate cargotest;
 extern crate hamcrest;
 
+use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::path::PathBuf;
 
 use cargotest::{rustc_host, sleep_ms};
 use cargotest::support::{project, execs};
@@ -102,6 +104,8 @@ fn custom_build_env_vars() {
                 let _host = env::var("HOST").unwrap();
 
                 let _feat = env::var("CARGO_FEATURE_FOO").unwrap();
+
+                let _cargo = env::var("CARGO").unwrap();
 
                 let rustc = env::var("RUSTC").unwrap();
                 assert_eq!(rustc, "rustc");
@@ -252,14 +256,15 @@ fn links_duplicates() {
     assert_that(p.cargo("build"),
                 execs().with_status(101)
                        .with_stderr("\
-[ERROR] Multiple packages link to native library `a`. A native library can be \
-linked only once.
+[ERROR] multiple packages link to native library `a`, but a native library can \
+be linked only once
 
-The root-package links to native library `a`.
+package `foo v0.5.0 ([..])`
+links to native library `a`
 
-Package `a-sys v0.5.0 (file://[..])`
-    ... which is depended on by `foo v0.5.0 (file://[..])`
-also links to native library `a`.
+package `a-sys v0.5.0 ([..])`
+    ... which is depended on by `foo v0.5.0 ([..])`
+also links to native library `a`
 "));
 }
 
@@ -306,15 +311,16 @@ fn links_duplicates_deep_dependency() {
     assert_that(p.cargo("build"),
                 execs().with_status(101)
                        .with_stderr("\
-[ERROR] Multiple packages link to native library `a`. A native library can be \
-linked only once.
+[ERROR] multiple packages link to native library `a`, but a native library can \
+be linked only once
 
-The root-package links to native library `a`.
+package `foo v0.5.0 ([..])`
+links to native library `a`
 
-Package `a-sys v0.5.0 (file://[..])`
-    ... which is depended on by `a v0.5.0 (file://[..])`
-    ... which is depended on by `foo v0.5.0 (file://[..])`
-also links to native library `a`.
+package `a-sys v0.5.0 ([..])`
+    ... which is depended on by `a v0.5.0 ([..])`
+    ... which is depended on by `foo v0.5.0 ([..])`
+also links to native library `a`
 "));
 }
 
@@ -2730,5 +2736,166 @@ fn deterministic_rustc_dependency_flags() {
                     .with_stderr_contains("\
 [RUNNING] `rustc --crate-name foo [..] -L native=test1 -L native=test2 \
 -L native=test3 -L native=test4`
+"));
+}
+
+#[test]
+fn links_duplicates_with_cycle() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+            links = "a"
+            build = "build.rs"
+
+            [dependencies.a]
+            path = "a"
+
+            [dev-dependencies]
+            b = { path = "b" }
+        "#)
+        .file("src/lib.rs", "")
+        .file("build.rs", "")
+        .file("a/Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.5.0"
+            authors = []
+            links = "a"
+            build = "build.rs"
+        "#)
+        .file("a/src/lib.rs", "")
+        .file("a/build.rs", "")
+        .file("b/Cargo.toml", r#"
+            [project]
+            name = "b"
+            version = "0.5.0"
+            authors = []
+
+            [dependencies]
+            foo = { path = ".." }
+        "#)
+        .file("b/src/lib.rs", "")
+        .build();
+
+    assert_that(p.cargo("build"),
+                execs().with_status(101)
+                       .with_stderr("\
+[ERROR] multiple packages link to native library `a`, but a native library can \
+be linked only once
+
+package `foo v0.5.0 ([..])`
+    ... which is depended on by `b v0.5.0 ([..])`
+links to native library `a`
+
+package `a v0.5.0 (file://[..])`
+    ... which is depended on by `foo v0.5.0 ([..])`
+    ... which is depended on by `b v0.5.0 ([..])`
+also links to native library `a`
+"));
+}
+
+#[test]
+fn rename_with_link_search_path() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.5.0"
+            authors = []
+
+            [lib]
+            crate-type = ["cdylib"]
+        "#)
+        .file("src/lib.rs", "
+            #[no_mangle]
+            pub extern fn cargo_test_foo() {}
+        ");
+    let p = p.build();
+
+    assert_that(p.cargo("build"), execs().with_status(0));
+
+    let p2 = project("bar")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.5.0"
+            authors = []
+        "#)
+        .file("build.rs", r#"
+            use std::env;
+            use std::fs;
+            use std::path::PathBuf;
+
+            fn main() {
+                // Move the `libfoo.so` from the root of our project into the
+                // build directory. This way Cargo should automatically manage
+                // `LD_LIBRARY_PATH` and such.
+                let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+                let file = format!("{}foo{}", env::consts::DLL_PREFIX, env::consts::DLL_SUFFIX);
+                let src = root.join(&file);
+
+                let dst_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+                let dst = dst_dir.join(&file);
+
+                fs::copy(&src, &dst).unwrap();
+                // handle windows, like below
+                drop(fs::copy(root.join("foo.dll.lib"), dst_dir.join("foo.dll.lib")));
+
+                println!("cargo:rerun-if-changed=build.rs");
+                if cfg!(target_env = "msvc") {
+                    println!("cargo:rustc-link-lib=foo.dll");
+                } else {
+                    println!("cargo:rustc-link-lib=foo");
+                }
+                println!("cargo:rustc-link-search={}",
+                         dst.parent().unwrap().display());
+            }
+        "#)
+        .file("src/main.rs", r#"
+            extern {
+                #[link_name = "cargo_test_foo"]
+                fn foo();
+            }
+
+            fn main() {
+                unsafe { foo(); }
+            }
+        "#);
+    let p2 = p2.build();
+
+    // Move the output `libfoo.so` into the directory of `p2`, and then delete
+    // the `p` project. On OSX the `libfoo.dylib` artifact references the
+    // original path in `p` so we want to make sure that it can't find it (hence
+    // the deletion).
+    let root = PathBuf::from(p.root());
+    let root = root.join("target").join("debug").join("deps");
+    let file = format!("{}foo{}", env::consts::DLL_PREFIX, env::consts::DLL_SUFFIX);
+    let src = root.join(&file);
+
+    let dst = p2.root().join(&file);
+
+    fs::copy(&src, &dst).unwrap();
+    // copy the import library for windows, if it exists
+    drop(fs::copy(&root.join("foo.dll.lib"), p2.root().join("foo.dll.lib")));
+    fs::remove_dir_all(p.root()).unwrap();
+
+    // Everything should work the first time
+    assert_that(p2.cargo("run"),
+                execs().with_status(0));
+
+    // Now rename the root directory and rerun `cargo run`. Not only should we
+    // not build anything but we also shouldn't crash.
+    let mut new = p2.root();
+    new.pop();
+    new.push("bar2");
+    fs::rename(p2.root(), &new).unwrap();
+    assert_that(p2.cargo("run").cwd(&new),
+                execs().with_status(0)
+                       .with_stderr("\
+[FINISHED] [..]
+[RUNNING] [..]
 "));
 }

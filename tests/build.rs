@@ -58,14 +58,88 @@ fn cargo_compile_incremental() {
     assert_that(
         p.cargo("build").arg("-v").env("CARGO_INCREMENTAL", "1"),
         execs().with_stderr_contains(
-            "[RUNNING] `rustc [..] -Zincremental=[..][/]target[/]debug[/]incremental`\n")
+            "[RUNNING] `rustc [..] -C incremental=[..][/]target[/]debug[/]incremental[..]`\n")
             .with_status(0));
 
     assert_that(
         p.cargo("test").arg("-v").env("CARGO_INCREMENTAL", "1"),
         execs().with_stderr_contains(
-            "[RUNNING] `rustc [..] -Zincremental=[..][/]target[/]debug[/]incremental`\n")
+            "[RUNNING] `rustc [..] -C incremental=[..][/]target[/]debug[/]incremental[..]`\n")
                .with_status(0));
+}
+
+#[test]
+fn incremental_profile() {
+    if !is_nightly() {
+        return
+    }
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+
+            [profile.dev]
+            incremental = false
+
+            [profile.release]
+            incremental = true
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build").arg("-v").env_remove("CARGO_INCREMENTAL"),
+        execs().with_stderr_does_not_contain("[..]C incremental=[..]")
+            .with_status(0));
+
+    assert_that(
+        p.cargo("build").arg("-v").env("CARGO_INCREMENTAL", "1"),
+        execs().with_stderr_contains("[..]C incremental=[..]")
+            .with_status(0));
+
+    assert_that(
+        p.cargo("build").arg("--release").arg("-v").env_remove("CARGO_INCREMENTAL"),
+        execs().with_stderr_contains("[..]C incremental=[..]")
+            .with_status(0));
+
+    assert_that(
+        p.cargo("build").arg("--release").arg("-v").env("CARGO_INCREMENTAL", "0"),
+        execs().with_stderr_does_not_contain("[..]C incremental=[..]")
+            .with_status(0));
+}
+
+#[test]
+fn incremental_config() {
+    if !is_nightly() {
+        return
+    }
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .file(".cargo/config", r#"
+            [build]
+            incremental = false
+        "#)
+        .build();
+
+    assert_that(
+        p.cargo("build").arg("-v").env_remove("CARGO_INCREMENTAL"),
+        execs().with_stderr_does_not_contain("[..]C incremental=[..]")
+            .with_status(0));
+
+    assert_that(
+        p.cargo("build").arg("-v").env("CARGO_INCREMENTAL", "1"),
+        execs().with_stderr_contains("[..]C incremental=[..]")
+            .with_status(0));
 }
 
 #[test]
@@ -95,7 +169,7 @@ fn cargo_compile_with_invalid_manifest() {
 [ERROR] failed to parse manifest at `[..]`
 
 Caused by:
-  no `package` section found.
+  virtual manifests must be configured with [workspace]
 "))
 }
 
@@ -222,7 +296,7 @@ fn cargo_compile_with_invalid_package_name() {
 [ERROR] failed to parse manifest at `[..]`
 
 Caused by:
-  package name cannot be an empty string.
+  package name cannot be an empty string
 "))
 }
 
@@ -3856,9 +3930,11 @@ fn building_a_dependent_crate_witout_bin_should_fail() {
                 ));
 }
 
-#[cfg(any(target_os = "macos", target_os = "ios"))]
 #[test]
 fn uplift_dsym_of_bin_on_mac() {
+    if !cfg!(any(target_os = "macos", target_os = "ios")) {
+        return
+    }
     let p = project("foo")
         .file("Cargo.toml", r#"
             [project]
@@ -3970,4 +4046,35 @@ fn all_targets_no_lib() {
             [RUNNING] `rustc --crate-name foo src[/]main.rs --emit=dep-info,link \
             -C debuginfo=2 --test [..]")
         );
+}
+
+#[test]
+fn no_linkable_target() {
+    // Issue 3169. This is currently not an error as per discussion in PR #4797
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+            [dependencies]
+            the_lib = { path = "the_lib" }
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .file("the_lib/Cargo.toml", r#"
+            [package]
+            name = "the_lib"
+            version = "0.1.0"
+            [lib]
+            name = "the_lib"
+            crate-type = ["staticlib"]
+        "#)
+        .file("the_lib/src/lib.rs", "pub fn foo() {}")
+        .build();
+    assert_that(p.cargo("build"),
+                execs()
+                .with_status(0)
+                .with_stderr_contains("\
+                [WARNING] The package `the_lib` provides no linkable [..] \
+while compiling `foo`. [..] in `the_lib`'s Cargo.toml. [..]"));
 }

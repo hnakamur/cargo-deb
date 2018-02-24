@@ -2,8 +2,9 @@
 extern crate cargotest;
 extern crate hamcrest;
 
+use std::env;
+use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::fs::File;
 
 use cargotest::sleep_ms;
 use cargotest::support::{project, execs, git};
@@ -44,6 +45,35 @@ fn simple_explicit() {
 
     assert_that(&p.root().join("Cargo.lock"), existing_file());
     assert_that(&p.root().join("bar/Cargo.lock"), is_not(existing_file()));
+}
+
+#[test]
+fn simple_explicit_default_members() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+
+            [workspace]
+            members = ["bar"]
+            default-members = ["bar"]
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+            workspace = ".."
+        "#)
+        .file("bar/src/main.rs", "fn main() {}");
+    let p = p.build();
+
+    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(&p.bin("bar"), existing_file());
+    assert_that(&p.bin("foo"), is_not(existing_file()));
 }
 
 #[test]
@@ -689,6 +719,59 @@ fn virtual_build_all_implied() {
     let p = p.build();
     assert_that(p.cargo("build"),
                 execs().with_status(0));
+}
+
+#[test]
+fn virtual_default_members() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["bar", "baz"]
+            default-members = ["bar"]
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("baz/Cargo.toml", r#"
+            [project]
+            name = "baz"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/main.rs", "fn main() {}")
+        .file("baz/src/main.rs", "fn main() {}");
+    let p = p.build();
+    assert_that(p.cargo("build"),
+                execs().with_status(0));
+    assert_that(&p.bin("bar"), existing_file());
+    assert_that(&p.bin("baz"), is_not(existing_file()));
+}
+
+#[test]
+fn virtual_default_member_is_not_a_member() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["bar"]
+            default-members = ["something-else"]
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("bar/src/main.rs", "fn main() {}");
+    let p = p.build();
+    assert_that(p.cargo("build"),
+                execs().with_status(101)
+                       .with_stderr("\
+error: package `[..]something-else` is listed in workspace’s default-members \
+but is not a member.
+"));
 }
 
 #[test]
@@ -1618,6 +1701,54 @@ fn dep_used_with_separate_features() {
 "));
 }
 
+#[test]
+fn dont_recurse_out_of_cargo_home() {
+    let git_project = git::new("dep", |project| {
+        project
+            .file("Cargo.toml", r#"
+                [package]
+                name = "dep"
+                version = "0.1.0"
+            "#)
+            .file("src/lib.rs", "")
+            .file("build.rs", r#"
+                use std::env;
+                use std::path::Path;
+                use std::process::{self, Command};
+
+                fn main() {
+                    let cargo = env::var_os("CARGO").unwrap();
+                    let cargo_manifest_dir = env::var_os("CARGO_MANIFEST_DIR").unwrap();
+                    let output = Command::new(cargo)
+                        .args(&["metadata", "--format-version", "1", "--manifest-path"])
+                        .arg(&Path::new(&cargo_manifest_dir).join("Cargo.toml"))
+                        .output()
+                        .unwrap();
+                    if !output.status.success() {
+                        eprintln!("{}", String::from_utf8(output.stderr).unwrap());
+                        process::exit(1);
+                    }
+                }
+            "#)
+    }).unwrap();
+    let p = project("lib")
+        .file("Cargo.toml", &format!(r#"
+            [package]
+            name = "lib"
+            version = "0.1.0"
+
+            [dependencies.dep]
+            git = "{}"
+
+            [workspace]
+        "#, git_project.url()))
+        .file("src/lib.rs", "");
+    let p = p.build();
+
+    assert_that(p.cargo("build").env("CARGO_HOME", p.root().join(".cargo")),
+                execs().with_status(0));
+}
+
 /*FIXME: This fails because of how workspace.exclude and workspace.members are working.
 #[test]
 fn include_and_exclude() {
@@ -1652,3 +1783,76 @@ fn include_and_exclude() {
     assert_that(&p.root().join("foo/bar/target"), existing_dir());
 }
 */
+
+#[test]
+fn cargo_home_at_root_works() {
+    let p = project("lib")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "lib"
+            version = "0.1.0"
+
+            [workspace]
+            members = ["a"]
+        "#)
+        .file("src/lib.rs", "")
+        .file("a/Cargo.toml", r#"
+            [package]
+            name = "a"
+            version = "0.1.0"
+        "#)
+        .file("a/src/lib.rs", "");
+    let p = p.build();
+
+    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--frozen").env("CARGO_HOME", p.root()),
+                execs().with_status(0));
+}
+
+#[test]
+fn relative_rustc() {
+    let p = project("the_exe")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+        "#)
+        .file("src/main.rs", r#"
+            use std::process::Command;
+            use std::env;
+
+            fn main() {
+                let mut cmd = Command::new("rustc");
+                for arg in env::args_os().skip(1) {
+                    cmd.arg(arg);
+                }
+                std::process::exit(cmd.status().unwrap().code().unwrap());
+            }
+        "#)
+        .build();
+    assert_that(p.cargo("build"), execs().with_status(0));
+
+    let src = p.root()
+        .join("target/debug/foo")
+        .with_extension(env::consts::EXE_EXTENSION);
+
+    Package::new("a", "0.1.0").publish();
+
+    let p = project("lib")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "lib"
+            version = "0.1.0"
+
+            [dependencies]
+            a = "0.1"
+        "#)
+        .file("src/lib.rs", "")
+        .build();
+
+    fs::copy(&src, p.root().join(src.file_name().unwrap())).unwrap();
+
+    let file = format!("./foo{}", env::consts::EXE_SUFFIX);
+    assert_that(p.cargo("build").env("RUSTC", &file),
+                execs().with_status(0));
+}

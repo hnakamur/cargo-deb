@@ -11,7 +11,7 @@ use cargotest::support::git;
 use cargotest::support::paths;
 use cargotest::support::registry::Package;
 use cargotest::support::{project, execs};
-use hamcrest::{assert_that, is_not};
+use hamcrest::{assert_that, existing_dir, is_not};
 
 fn cargo_process(s: &str) -> ProcessBuilder {
     let mut p = cargotest::cargo_process();
@@ -73,8 +73,7 @@ fn multiple_pkgs() {
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] {home}[..]bin[..]bar[..]
 error: could not find `baz` in registry `[..]`
-   
-Summary: Successfully installed foo, bar! Failed to install baz (see error(s) above).
+[SUMMARY] Successfully installed foo, bar! Failed to install baz (see error(s) above).
 warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
 error: some crates failed to install
 ",
@@ -86,8 +85,7 @@ error: some crates failed to install
                 execs().with_status(0).with_stderr(&format!("\
 [REMOVING] {home}[..]bin[..]foo[..]
 [REMOVING] {home}[..]bin[..]bar[..]
-   
-Summary: Successfully uninstalled foo, bar!
+[SUMMARY] Successfully uninstalled foo, bar!
 ",
         home = cargo_home().display())));
 
@@ -938,7 +936,7 @@ fn not_both_vers_and_version() {
 
     assert_that(cargo_process("install").arg("foo").arg("--version").arg("0.1.1").arg("--vers").arg("0.1.2"),
                 execs().with_status(101).with_stderr_contains("\
-error: Invalid arguments.
+error: invalid arguments
 "));
 }
 
@@ -982,12 +980,37 @@ fn uninstall_multiple_and_some_pkg_does_not_exist() {
                 execs().with_status(101).with_stderr(&format!("\
 [REMOVING] {home}[..]bin[..]foo[..]
 error: package id specification `bar` matched no packages
-   
-Summary: Successfully uninstalled foo! Failed to uninstall bar (see error(s) above).
+[SUMMARY] Successfully uninstalled foo! Failed to uninstall bar (see error(s) above).
 error: some packages failed to uninstall
 ",
         home = cargo_home().display())));
 
     assert_that(cargo_home(), is_not(has_installed_exe("foo")));
     assert_that(cargo_home(), is_not(has_installed_exe("bar")));
+}
+
+#[test]
+fn custom_target_dir_for_git_source() {
+    let p = git::repo(&paths::root().join("foo"))
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(cargo_process("install")
+                            .arg("--git").arg(p.url().to_string()),
+                execs().with_status(0));
+    assert_that(&paths::root().join("target/release"),
+                is_not(existing_dir()));
+
+    assert_that(cargo_process("install").arg("--force")
+                            .arg("--git").arg(p.url().to_string())
+                            .env("CARGO_TARGET_DIR", "target"),
+                execs().with_status(0));
+    assert_that(&paths::root().join("target/release"),
+                existing_dir());
 }
