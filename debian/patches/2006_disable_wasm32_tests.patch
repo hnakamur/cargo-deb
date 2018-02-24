@@ -1,6 +1,6 @@
 Description: Disable wasm32_final_outputs test
  This test depends on emscripten built using fastcomp
- a fork of LLVM and is not avaialble in Debian.
+ a fork of LLVM and is not available in Debian.
 Author: Vasudev Kamath <vasudev@copyninja.info>
 Last-Update: 2017-12-05
 
