@@ -1,3 +1,28 @@
+cargo (0.25.0-1~exp1) experimental; urgency=medium
+
+  [upstream]
+  * Added a workspace.default-members config that overrides implied --all
+    in virtual workspaces.
+  * Enable incremental by default on development builds.
+
+  [ Vasudev Kamath ]
+  * debian/vendor-tarball-filter.txt: Filter out git test data from
+    libgit2-sys crate.
+  * debian/vendor-tarball-unsusupiciousAudit unsuspicious files for 0.25.0
+    release.
+  * debian/make_orig_multi.sh: Make sure we take filter and unsuspiciaus
+    texts from debian folder.
+  * debian/patches:
+    + Drop patch 0001 it is merged upstream.
+    + Fix the typo in description of patch 2006.
+  * Drop source/lintian-override. README under patches directory is no
+    longer considered as a patch file by lintian.
+  * debian/copyright:
+    + Drop unused vendor crates copyright information.
+    + Add new crates copyright information to copyright.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 24 Feb 2018 14:43:48 +0530
+
 cargo (0.24.0-1) unstable; urgency=medium
 
   * Upload to unstable.
