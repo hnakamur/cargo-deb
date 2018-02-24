@@ -24,8 +24,8 @@ if [ -z "$1" ]
 fi;
 
 BOOTSTRAP_PY=$(find "${PWD}" -name bootstrap.py -type f)
-VENDOR_FILTER=$(find "${PWD}" -name vendor-tarball-filter.txt -type f)
-VENDOR_SUS_WHITELIST=$(find "${PWD}" -name vendor-tarball-unsuspicious.txt -type f)
+VENDOR_FILTER=$(find "${PWD}/debian" -name vendor-tarball-filter.txt -type f)
+VENDOR_SUS_WHITELIST=$(find "${PWD}/debian" -name vendor-tarball-unsuspicious.txt -type f)
 
 # Download cargo tarball
 uscan --rename ${USCAN_ARGS} --force-download --destdir "${TMPDIR}/"
