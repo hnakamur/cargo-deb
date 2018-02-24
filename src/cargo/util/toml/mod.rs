@@ -30,9 +30,10 @@ pub fn read_manifest(path: &Path, source_id: &SourceId, config: &Config)
     trace!("read_manifest; path={}; source-id={}", path.display(), source_id);
     let contents = paths::read(path)?;
 
-    do_read_manifest(&contents, path, source_id, config).chain_err(|| {
+    let ret = do_read_manifest(&contents, path, source_id, config).chain_err(|| {
         format!("failed to parse manifest at `{}`", path.display())
-    })
+    })?;
+    Ok(ret)
 }
 
 fn do_read_manifest(contents: &str,
@@ -56,30 +57,26 @@ fn do_read_manifest(contents: &str,
     })?;
 
     let manifest = Rc::new(manifest);
-    return match TomlManifest::to_real_manifest(&manifest,
-                                                source_id,
-                                                package_root,
-                                                config) {
-        Ok((mut manifest, paths)) => {
-            for key in unused {
-                manifest.add_warning(format!("unused manifest key: {}", key));
-            }
-            if !manifest.targets().iter().any(|t| !t.is_custom_build()) {
-                bail!("no targets specified in the manifest\n  \
-                       either src/lib.rs, src/main.rs, a [lib] section, or \
-                       [[bin]] section must be present")
-            }
-            Ok((EitherManifest::Real(manifest), paths))
+    return if manifest.project.is_some() || manifest.package.is_some() {
+        let (mut manifest, paths) = TomlManifest::to_real_manifest(&manifest,
+                                                                   source_id,
+                                                                   package_root,
+                                                                   config)?;
+        for key in unused {
+            manifest.add_warning(format!("unused manifest key: {}", key));
         }
-        Err(e) => {
-            match TomlManifest::to_virtual_manifest(&manifest,
-                                                    source_id,
-                                                    package_root,
-                                                    config) {
-                Ok((m, paths)) => Ok((EitherManifest::Virtual(m), paths)),
-                Err(..) => Err(e),
-            }
+        if !manifest.targets().iter().any(|t| !t.is_custom_build()) {
+            bail!("no targets specified in the manifest\n  \
+                   either src/lib.rs, src/main.rs, a [lib] section, or \
+                   [[bin]] section must be present")
         }
+        Ok((EitherManifest::Real(manifest), paths))
+    } else {
+        let (m, paths) = TomlManifest::to_virtual_manifest(&manifest,
+                                                           source_id,
+                                                           package_root,
+                                                           config)?;
+        Ok((EitherManifest::Virtual(m), paths))
     };
 
     fn stringify(dst: &mut String, path: &serde_ignored::Path) {
@@ -131,9 +128,8 @@ in the future.", file.display());
         return Ok(ret)
     }
 
-    Err(first_error).chain_err(|| {
-        "could not parse input as TOML"
-    })
+    let first_error = CargoError::from(first_error);
+    Err(first_error.context("could not parse input as TOML").into())
 }
 
 type TomlLibTarget = TomlTarget;
@@ -342,6 +338,7 @@ pub struct TomlProfile {
     panic: Option<String>,
     #[serde(rename = "overflow-checks")]
     overflow_checks: Option<bool>,
+    incremental: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -450,6 +447,8 @@ pub struct TomlProject {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TomlWorkspace {
     members: Option<Vec<String>>,
+    #[serde(rename = "default-members")]
+    default_members: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
 }
 
@@ -558,12 +557,12 @@ impl TomlManifest {
 
         let project = me.project.as_ref().or_else(|| me.package.as_ref());
         let project = project.ok_or_else(|| {
-            CargoError::from("no `package` section found.")
+            format_err!("no `package` section found")
         })?;
 
         let package_name = project.name.trim();
         if package_name.is_empty() {
-            bail!("package name cannot be an empty string.")
+            bail!("package name cannot be an empty string")
         }
 
         let pkgid = project.to_package_id(source_id)?;
@@ -681,7 +680,9 @@ impl TomlManifest {
                                       project.workspace.as_ref()) {
             (Some(config), None) => {
                 WorkspaceConfig::Root(
-                    WorkspaceRootConfig::new(&package_root, &config.members, &config.exclude)
+                    WorkspaceRootConfig::new(
+                        &package_root, &config.members, &config.default_members, &config.exclude,
+                    )
                 )
             }
             (None, root) => {
@@ -785,7 +786,9 @@ impl TomlManifest {
         let workspace_config = match me.workspace {
             Some(ref config) => {
                 WorkspaceConfig::Root(
-                    WorkspaceRootConfig::new(&root, &config.members, &config.exclude)
+                    WorkspaceRootConfig::new(
+                        &root, &config.members, &config.default_members, &config.exclude,
+                    )
                 )
             }
             None => {
@@ -823,9 +826,9 @@ impl TomlManifest {
             let mut dep = replacement.to_dependency(spec.name(), cx, None)?;
             {
                 let version = spec.version().ok_or_else(|| {
-                    CargoError::from(format!("replacements must specify a version \
-                             to replace, but `{}` does not",
-                            spec))
+                    format_err!("replacements must specify a version \
+                                 to replace, but `{}` does not",
+                                spec)
                 })?;
                 dep.set_version_req(VersionReq::exact(version));
             }
@@ -1121,7 +1124,7 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
     fn merge(profile: Profile, toml: Option<&TomlProfile>) -> Profile {
         let &TomlProfile {
             ref opt_level, lto, codegen_units, ref debug, debug_assertions, rpath,
-            ref panic, ref overflow_checks,
+            ref panic, ref overflow_checks, ref incremental,
         } = match toml {
             Some(toml) => toml,
             None => return profile,
@@ -1147,6 +1150,7 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
             run_custom_build: profile.run_custom_build,
             check: profile.check,
             panic: panic.clone().or(profile.panic),
+            incremental: incremental.unwrap_or(profile.incremental),
         }
     }
 }

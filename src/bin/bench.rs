@@ -2,7 +2,7 @@ use std::env;
 
 use cargo::core::Workspace;
 use cargo::ops::{self, MessageFormat, Packages};
-use cargo::util::{CliResult, CliError, Config, CargoErrorKind};
+use cargo::util::{CliResult, CliError, Config};
 use cargo::util::important_paths::{find_root_manifest_for_wd};
 
 #[derive(Deserialize)]
@@ -109,8 +109,7 @@ pub fn execute(options: Options, config: &mut Config) -> CliResult {
     let root = find_root_manifest_for_wd(options.flag_manifest_path, config.cwd())?;
     let ws = Workspace::new(&root, config)?;
 
-    let spec = Packages::from_flags(ws.is_virtual(),
-                                    options.flag_all,
+    let spec = Packages::from_flags(options.flag_all,
                                     &options.flag_exclude,
                                     &options.flag_package)?;
 
@@ -145,8 +144,8 @@ pub fn execute(options: Options, config: &mut Config) -> CliResult {
         None => Ok(()),
         Some(err) => {
             Err(match err.exit.as_ref().and_then(|e| e.code()) {
-                Some(i) => CliError::new("bench failed".into(), i),
-                None => CliError::new(CargoErrorKind::CargoTestErrorKind(err).into(), 101)
+                Some(i) => CliError::new(format_err!("bench failed"), i),
+                None => CliError::new(err.into(), 101)
             })
         }
     }

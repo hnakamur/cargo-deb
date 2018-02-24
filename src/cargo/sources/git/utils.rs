@@ -12,7 +12,7 @@ use url::Url;
 
 use core::GitReference;
 use util::{ToUrl, internal, Config, network, Progress};
-use util::errors::{CargoResult, CargoResultExt, CargoError};
+use util::errors::{CargoResult, CargoResultExt, CargoError, Internal};
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct GitRevision(git2::Oid);
@@ -175,7 +175,7 @@ impl GitDatabase {
                 (|| {
                     let b = self.repo.find_branch(s, git2::BranchType::Local)?;
                     b.get().target().ok_or_else(|| {
-                        CargoError::from(format!("branch `{}` did not have a target", s))
+                        format_err!("branch `{}` did not have a target", s)
                     })
                 })().chain_err(|| {
                     format!("failed to find branch `{}`", s)
@@ -282,11 +282,10 @@ impl<'a> GitCheckout<'a> {
 
             for mut child in repo.submodules()? {
                 update_submodule(repo, &mut child, cargo_config)
-                    .map_err(CargoError::into_internal)
                     .chain_err(|| {
                         format!("failed to update submodule `{}`",
                                 child.name().unwrap_or(""))
-                })?;
+                    })?;
             }
             Ok(())
         }
@@ -308,8 +307,8 @@ impl<'a> GitCheckout<'a> {
 
             // If the submodule hasn't been checked out yet, we need to
             // clone it. If it has been checked out and the head is the same
-            // as the submodule's head, then we can bail out and go to the
-            // next submodule.
+            // as the submodule's head, then we can skip an update and keep
+            // recursing.
             let head_and_repo = child.open().and_then(|repo| {
                 let target = repo.head()?.target();
                 Ok((target, repo))
@@ -317,7 +316,7 @@ impl<'a> GitCheckout<'a> {
             let mut repo = match head_and_repo {
                 Ok((head, repo)) => {
                     if child.head_id() == head {
-                        return Ok(())
+                        return update_submodules(&repo, cargo_config)
                     }
                     repo
                 }
@@ -518,7 +517,7 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
     // In the case of an authentication failure (where we tried something) then
     // we try to give a more helpful error message about precisely what we
     // tried.
-    res.map_err(CargoError::from).map_err(|e| e.into_internal()).chain_err(|| {
+    let res = res.map_err(Internal::new).chain_err(|| {
         let mut msg = "failed to authenticate when downloading \
                        repository".to_string();
         if !ssh_agent_attempts.is_empty() {
@@ -540,7 +539,8 @@ fn with_authentication<T, F>(url: &str, cfg: &git2::Config, mut f: F)
             }
         }
         msg
-    })
+    })?;
+    Ok(res)
 }
 
 fn reset(repo: &git2::Repository,

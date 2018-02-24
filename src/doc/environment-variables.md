@@ -28,6 +28,10 @@ system:
 * `RUSTFLAGS` - A space-separated list of custom flags to pass to all compiler
   invocations that Cargo performs. In contrast with `cargo rustc`, this is
   useful for passing a flag to *all* compiler instances.
+* `CARGO_INCREMENTAL` - If this is set to 1 then Cargo will force incremental
+  compilation to be enabled for the current compilation, and when set to 0 it
+  will force disabling it. If this env var isn't present then Cargo's defaults
+  will otherwise be used.
 
 Note that Cargo will also read environment variables for `.cargo/config`
 configuration values, as described in [that documentation][config-env]
@@ -73,6 +77,7 @@ let out_dir = env::var("OUT_DIR").unwrap();
 
 `out_dir` will now contain the value of `OUT_DIR`.
 
+* `CARGO` - Path to the `cargo` binary performing the build.
 * `CARGO_MANIFEST_DIR` - The directory containing the manifest for the package
                          being built (the package containing the build
                          script). Also note that this is the value of the

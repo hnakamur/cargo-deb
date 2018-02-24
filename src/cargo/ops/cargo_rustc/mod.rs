@@ -14,7 +14,7 @@ use core::{Profile, Profiles, Workspace};
 use core::shell::ColorChoice;
 use util::{self, ProcessBuilder, machine_message};
 use util::{Config, internal, profile, join_paths};
-use util::errors::{CargoResult, CargoResultExt};
+use util::errors::{CargoResult, CargoResultExt, Internal};
 use util::Freshness;
 
 use self::job::{Job, Work};
@@ -226,9 +226,16 @@ pub fn compile_targets<'a, 'cfg: 'a>(ws: &Workspace<'cfg>,
         }
 
         let feats = cx.resolve.features(unit.pkg.package_id());
-        cx.compilation.cfgs.entry(unit.pkg.package_id().clone())
-            .or_insert_with(HashSet::new)
-            .extend(feats.iter().map(|feat| format!("feature=\"{}\"", feat)));
+        if !feats.is_empty() {
+            cx.compilation.cfgs.entry(unit.pkg.package_id().clone()).or_insert_with(|| {
+                feats.iter().map(|feat| format!("feature=\"{}\"", feat)).collect()
+            });
+        }
+        let rustdocflags = cx.rustdocflags_args(&unit)?;
+        if !rustdocflags.is_empty() {
+            cx.compilation.rustdocflags.entry(unit.pkg.package_id().clone())
+                .or_insert(rustdocflags);
+        }
 
         output_depinfo(&mut cx, unit)?;
     }
@@ -340,9 +347,7 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
         root.join(&cx.file_stem(unit))
     }.with_extension("d");
     let dep_info_loc = fingerprint::dep_info_loc(cx, unit);
-    let cwd = cx.config.cwd().to_path_buf();
 
-    rustc.args(&cx.incremental_args(unit)?);
     rustc.args(&cx.rustflags_args(unit)?);
     let json_messages = cx.build_config.json_messages;
     let package_id = unit.pkg.package_id().clone();
@@ -352,6 +357,8 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
     let exec = exec.clone();
 
     let root_output = cx.target_root().to_path_buf();
+    let pkg_root = unit.pkg.root().to_path_buf();
+    let cwd = rustc.get_cwd().unwrap_or(cx.config.cwd()).to_path_buf();
 
     return Ok(Work::new(move |state| {
         // Only at runtime have we discovered what the extra -L and -l
@@ -415,9 +422,11 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
                 format!("Could not compile `{}`.", name)
             })?;
         } else {
-            exec.exec(rustc, &package_id, &target).map_err(|e| e.into_internal()).chain_err(|| {
-                format!("Could not compile `{}`.", name)
-            })?;
+            exec.exec(rustc, &package_id, &target)
+                .map_err(Internal::new)
+                .chain_err(|| {
+                    format!("Could not compile `{}`.", name)
+                })?;
         }
 
         if do_rename && real_name != crate_name {
@@ -432,13 +441,15 @@ fn rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
             }
         }
 
-        if fs::metadata(&rustc_dep_info_loc).is_ok() {
-            info!("Renaming dep_info {:?} to {:?}", rustc_dep_info_loc, dep_info_loc);
-            fs::rename(&rustc_dep_info_loc, &dep_info_loc).chain_err(|| {
-                internal(format!("could not rename dep info: {:?}",
-                              rustc_dep_info_loc))
-            })?;
-            fingerprint::append_current_dir(&dep_info_loc, &cwd)?;
+        if rustc_dep_info_loc.exists() {
+            fingerprint::translate_dep_info(&rustc_dep_info_loc,
+                                            &dep_info_loc,
+                                            &pkg_root,
+                                            &cwd)
+                .chain_err(|| {
+                    internal(format!("could not parse/generate dep info at: {}",
+                                     rustc_dep_info_loc.display()))
+                })?;
         }
 
         Ok(())
@@ -542,7 +553,9 @@ fn link_targets<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
                 #[cfg(windows)]
                 use std::os::windows::fs::symlink_dir as symlink;
 
-                symlink(src, dst)
+                let dst_dir = dst.parent().unwrap();
+                assert!(src.starts_with(dst_dir));
+                symlink(src.strip_prefix(dst_dir).unwrap(), dst)
             } else {
                 fs::hard_link(src, dst)
             };
@@ -637,7 +650,7 @@ fn prepare_rustc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
                            unit: &Unit<'a>) -> CargoResult<ProcessBuilder> {
     let mut base = cx.compilation.rustc_process(unit.pkg)?;
     base.inherit_jobserver(&cx.jobserver);
-    build_base_args(cx, &mut base, unit, crate_types);
+    build_base_args(cx, &mut base, unit, crate_types)?;
     build_deps_args(&mut base, cx, unit)?;
     Ok(base)
 }
@@ -647,9 +660,8 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
                      unit: &Unit<'a>) -> CargoResult<Work> {
     let mut rustdoc = cx.compilation.rustdoc_process(unit.pkg)?;
     rustdoc.inherit_jobserver(&cx.jobserver);
-    rustdoc.arg("--crate-name").arg(&unit.target.crate_name())
-           .cwd(cx.config.cwd())
-           .arg(&root_path(cx, unit));
+    rustdoc.arg("--crate-name").arg(&unit.target.crate_name());
+    add_path_args(cx, unit, &mut rustdoc);
 
     if unit.kind != Kind::Host {
         if let Some(target) = cx.requested_target() {
@@ -692,48 +704,55 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
             }
         }
         state.running(&rustdoc);
-        rustdoc.exec().chain_err(|| format!("Could not document `{}`.", name))
+        rustdoc.exec().chain_err(|| format!("Could not document `{}`.", name))?;
+        Ok(())
     }))
 }
 
 // The path that we pass to rustc is actually fairly important because it will
-// show up in error messages and the like. For this reason we take a few moments
-// to ensure that something shows up pretty reasonably.
+// show up in error messages (important for readability), debug information
+// (important for caching), etc. As a result we need to be pretty careful how we
+// actually invoke rustc.
 //
-// The heuristic here is fairly simple, but the key idea is that the path is
-// always "relative" to the current directory in order to be found easily. The
-// path is only actually relative if the current directory is an ancestor if it.
-// This means that non-path dependencies (git/registry) will likely be shown as
-// absolute paths instead of relative paths.
-fn root_path(cx: &Context, unit: &Unit) -> PathBuf {
-    let absolute = unit.pkg.root().join(unit.target.src_path());
-    let cwd = cx.config.cwd();
-    if absolute.starts_with(cwd) {
-        util::without_prefix(&absolute, cwd).map(|s| {
-            s.to_path_buf()
-        }).unwrap_or(absolute)
-    } else {
-        absolute
+// In general users don't expect `cargo build` to cause rebuilds if you change
+// directories. That could be if you just change directories in the project or
+// if you literally move the whole project wholesale to a new directory. As a
+// result we mostly don't factor in `cwd` to this calculation. Instead we try to
+// track the workspace as much as possible and we update the current directory
+// of rustc/rustdoc where approrpriate.
+//
+// The first returned value here is the argument to pass to rustc, and the
+// second is the cwd that rustc should operate in.
+fn path_args(cx: &Context, unit: &Unit) -> (PathBuf, PathBuf) {
+    let ws_root = cx.ws.root();
+    let src = unit.target.src_path();
+    assert!(src.is_absolute());
+    match src.strip_prefix(ws_root) {
+        Ok(path) => (path.to_path_buf(), ws_root.to_path_buf()),
+        Err(_) => (src.to_path_buf(), unit.pkg.root().to_path_buf()),
     }
+}
+
+fn add_path_args(cx: &Context, unit: &Unit, cmd: &mut ProcessBuilder) {
+    let (arg, cwd) = path_args(cx, unit);
+    cmd.arg(arg);
+    cmd.cwd(cwd);
 }
 
 fn build_base_args<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
                              cmd: &mut ProcessBuilder,
                              unit: &Unit<'a>,
-                             crate_types: &[&str]) {
+                             crate_types: &[&str]) -> CargoResult<()> {
     let Profile {
         ref opt_level, lto, codegen_units, ref rustc_args, debuginfo,
         debug_assertions, overflow_checks, rpath, test, doc: _doc,
-        run_custom_build, ref panic, rustdoc_args: _, check,
+        run_custom_build, ref panic, rustdoc_args: _, check, incremental: _,
     } = *unit.profile;
     assert!(!run_custom_build);
 
-    // Move to cwd so the root_path() passed below is actually correct
-    cmd.cwd(cx.config.cwd());
-
     cmd.arg("--crate-name").arg(&unit.target.crate_name());
 
-    cmd.arg(&root_path(cx, unit));
+    add_path_args(cx, unit, cmd);
 
     match cx.config.shell().color_choice() {
         ColorChoice::Always => { cmd.arg("--color").arg("always"); }
@@ -868,6 +887,9 @@ fn build_base_args<'a, 'cfg>(cx: &mut Context<'a, 'cfg>,
 
     opt(cmd, "-C", "ar=", cx.ar(unit.kind).map(|s| s.as_ref()));
     opt(cmd, "-C", "linker=", cx.linker(unit.kind).map(|s| s.as_ref()));
+    cmd.args(&cx.incremental_args(unit)?);
+
+    Ok(())
 }
 
 
@@ -890,12 +912,31 @@ fn build_deps_args<'a, 'cfg>(cmd: &mut ProcessBuilder,
         });
     }
 
-    for unit in cx.dep_targets(unit)?.iter() {
+    let dep_targets = cx.dep_targets(unit)?;
+
+    // If there is not one linkable target but should, rustc fails later
+    // on if there is an `extern crate` for it. This may turn into a hard
+    // error in the future, see PR #4797
+    if !dep_targets.iter().any(|u| !u.profile.doc && u.target.linkable()) {
+        if let Some(u) = dep_targets.iter()
+                         .filter(|u| !u.profile.doc && u.target.is_lib())
+                         .next() {
+                cx.config.shell().warn(format!("The package `{}` \
+provides no linkable target. The compiler might raise an error while compiling \
+`{}`. Consider adding 'dylib' or 'rlib' to key `crate-type` in `{}`'s \
+Cargo.toml. This warning might turn into a hard error in the future.",
+                                       u.target.crate_name(),
+                                       unit.target.crate_name(),
+                                       u.target.crate_name()))?;
+            }
+    }
+
+    for unit in dep_targets {
         if unit.profile.run_custom_build {
-            cmd.env("OUT_DIR", &cx.build_script_out_dir(unit));
+            cmd.env("OUT_DIR", &cx.build_script_out_dir(&unit));
         }
         if unit.target.linkable() && !unit.profile.doc {
-            link_to(cmd, cx, unit)?;
+            link_to(cmd, cx, &unit)?;
         }
     }
 

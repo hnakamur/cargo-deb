@@ -1,6 +1,6 @@
 use cargo::ops;
 use cargo::core::{SourceId, GitReference};
-use cargo::util::{CargoError, CliResult, Config, ToUrl};
+use cargo::util::{CliResult, Config, ToUrl};
 
 #[derive(Deserialize)]
 pub struct Options {
@@ -100,6 +100,12 @@ As a special convenience, omitting the <crate> specification entirely will
 install the crate in the current directory. That is, `install` is equivalent to
 the more explicit `install --path .`.
 
+If the source is crates.io or `--git` then by default the crate will be built
+in a temporary target directory.  To avoid this, the target directory can be
+specified by setting the `CARGO_TARGET_DIR` environment variable to a relative
+path.  In particular, this can be useful for caching build artifacts on
+continuous integration systems.
+
 The `--list` option will list all installed packages (and their versions).
 ";
 
@@ -154,7 +160,7 @@ pub fn execute(options: Options, config: &mut Config) -> CliResult {
 
     let krates = options.arg_crate.iter().map(|s| &s[..]).collect::<Vec<_>>();
     let vers = match (&options.flag_vers, &options.flag_version) {
-        (&Some(_), &Some(_)) => return Err(CargoError::from("Invalid arguments.").into()),
+        (&Some(_), &Some(_)) => return Err(format_err!("invalid arguments").into()),
         (&Some(ref v), _) | (_, &Some(ref v)) => Some(v.as_ref()),
         _ => None,
     };

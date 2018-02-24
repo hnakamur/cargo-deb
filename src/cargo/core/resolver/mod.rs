@@ -118,21 +118,26 @@ struct Candidate {
 impl Resolve {
     /// Resolves one of the paths from the given dependent package up to
     /// the root.
-    pub fn path_to_top(&self, pkg: &PackageId) -> Vec<&PackageId> {
-        let mut result = Vec::new();
-        let mut pkg = pkg;
-        while let Some(pulling) = self.graph
-                                    .get_nodes()
-                                    .iter()
-                                    .filter_map(|(pulling, pulled)|
-                                                if pulled.contains(pkg) {
-                                                    Some(pulling)
-                                                } else {
-                                                    None
-                                                })
-                                    .nth(0) {
-            result.push(pulling);
-            pkg = pulling;
+    pub fn path_to_top<'a>(&'a self, mut pkg: &'a PackageId) -> Vec<&'a PackageId> {
+        // Note that this implementation isn't the most robust per se, we'll
+        // likely have to tweak this over time. For now though it works for what
+        // it's used for!
+        let mut result = vec![pkg];
+        let first_pkg_depending_on = |pkg: &PackageId| {
+            self.graph.get_nodes()
+                .iter()
+                .filter(|&(_node, adjacent)| adjacent.contains(pkg))
+                .next()
+                .map(|p| p.0)
+        };
+        while let Some(p) = first_pkg_depending_on(pkg) {
+            // Note that we can have "cycles" introduced through dev-dependency
+            // edges, so make sure we don't loop infinitely.
+            if result.contains(&p) {
+                break
+            }
+            result.push(p);
+            pkg = p;
         }
         result
     }
@@ -474,10 +479,6 @@ impl<T> RcVecIter<T> {
             vec: vec,
         }
     }
-
-    fn cur_index(&self) -> usize {
-        self.rest.start - 1
-    }
 }
 
 // Not derived to avoid `T: Clone`
@@ -548,6 +549,7 @@ impl Ord for DepsFrame {
 }
 
 struct BacktrackFrame<'a> {
+    cur: usize,
     context_backup: Context<'a>,
     deps_backup: BinaryHeap<DepsFrame>,
     remaining_candidates: RemainingCandidates,
@@ -692,6 +694,7 @@ fn activate_deps_loop<'a>(mut cx: Context<'a>,
                 // we can try the next one if this one fails.
                 if has_another {
                     backtrack_stack.push(BacktrackFrame {
+                        cur,
                         context_backup: Context::clone(&cx),
                         deps_backup: <BinaryHeap<DepsFrame>>::clone(&remaining_deps),
                         remaining_candidates: remaining_candidates,
@@ -759,6 +762,7 @@ fn find_candidate<'a>(backtrack_stack: &mut Vec<BacktrackFrame<'a>>,
              frame.remaining_candidates.clone().next(prev_active).is_some())
         };
         if let Some(candidate) = next {
+            *cur = frame.cur;
             if has_another {
                 *cx = frame.context_backup.clone();
                 *remaining_deps = frame.deps_backup.clone();
@@ -773,7 +777,6 @@ fn find_candidate<'a>(backtrack_stack: &mut Vec<BacktrackFrame<'a>>,
                 *dep = frame.dep;
                 *features = frame.features;
             }
-            *cur = remaining_deps.peek().unwrap().remaining_siblings.cur_index();
             return Some(candidate)
         }
     }
@@ -819,7 +822,7 @@ fn activation_error(cx: &Context,
                                         .collect::<Vec<_>>()
                                         .join(", ")));
 
-        return msg.into()
+        return format_err!("{}", msg)
     }
 
     // Once we're all the way down here, we're definitely lost in the
@@ -883,7 +886,7 @@ fn activation_error(cx: &Context,
                 dep.version_req())
     };
 
-    msg.into()
+    format_err!("{}", msg)
 }
 
 // Returns if `a` and `b` are compatible in the semver sense. This is a
@@ -1113,10 +1116,10 @@ impl<'a> Context<'a> {
 
             let mut summaries = registry.query_vec(dep)?.into_iter();
             let s = summaries.next().ok_or_else(|| {
-                format!("no matching package for override `{}` found\n\
-                         location searched: {}\n\
-                         version required: {}",
-                         spec, dep.source_id(), dep.version_req())
+                format_err!("no matching package for override `{}` found\n\
+                             location searched: {}\n\
+                             version required: {}",
+                            spec, dep.source_id(), dep.version_req())
             })?;
             let summaries = summaries.collect::<Vec<_>>();
             if !summaries.is_empty() {

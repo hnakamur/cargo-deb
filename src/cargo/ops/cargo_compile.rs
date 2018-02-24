@@ -33,7 +33,6 @@ use core::resolver::Resolve;
 use ops::{self, BuildOutput, Executor, DefaultExecutor};
 use util::config::Config;
 use util::{CargoResult, profile};
-use util::errors::{CargoResultExt, CargoError};
 
 /// Contains information about how a package should be compiled.
 #[derive(Debug)]
@@ -106,26 +105,23 @@ pub enum MessageFormat {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Packages<'a> {
+    Default,
     All,
     OptOut(&'a [String]),
     Packages(&'a [String]),
 }
 
 impl<'a> Packages<'a> {
-    pub fn from_flags(virtual_ws: bool, all: bool, exclude: &'a [String], package: &'a [String])
+    pub fn from_flags(all: bool, exclude: &'a [String], package: &'a [String])
         -> CargoResult<Self>
     {
-        let all = all || (virtual_ws && package.is_empty());
-
-        let packages = match (all, &exclude) {
-            (true, exclude) if exclude.is_empty() => Packages::All,
-            (true, exclude) => Packages::OptOut(exclude),
-            (false, exclude) if !exclude.is_empty() => bail!("--exclude can only be used together \
-                                                           with --all"),
-            _ => Packages::Packages(package),
-        };
-
-        Ok(packages)
+        Ok(match (all, exclude.len(), package.len()) {
+            (false, 0, 0) => Packages::Default,
+            (false, 0, _) => Packages::Packages(package),
+            (false, _, _) => bail!("--exclude can only be used together with --all"),
+            (true, 0, _) => Packages::All,
+            (true, _, _) => Packages::OptOut(exclude),
+        })
     }
 
     pub fn into_package_id_specs(self, ws: &Workspace) -> CargoResult<Vec<PackageIdSpec>> {
@@ -151,6 +147,12 @@ impl<'a> Packages<'a> {
             }
             Packages::Packages(packages) => {
                 packages.iter().map(|p| PackageIdSpec::parse(p)).collect::<CargoResult<Vec<_>>>()?
+            }
+            Packages::Default => {
+                ws.default_members()
+                    .map(Package::package_id)
+                    .map(PackageIdSpec::from_package_id)
+                    .collect()
             }
         };
         Ok(specs)
@@ -191,10 +193,10 @@ pub fn compile_with_exec<'a>(ws: &Workspace<'a>,
     for member in ws.members() {
         for warning in member.manifest().warnings().iter() {
             if warning.is_critical {
-                let err: CargoResult<_> = Err(CargoError::from(warning.message.to_owned()));
-                return err.chain_err(|| {
-                    format!("failed to parse manifest at `{}`", member.manifest_path().display())
-                })
+                let err = format_err!("{}", warning.message);
+                let cx = format_err!("failed to parse manifest at `{}`",
+                                     member.manifest_path().display());
+                return Err(err.context(cx).into())
             } else {
                 options.config.shell().warn(&warning.message)?
             }
@@ -233,9 +235,10 @@ pub fn compile_ws<'a>(ws: &Workspace<'a>,
     let (packages, resolve_with_overrides) = resolve;
 
     if specs.is_empty() {
-        return Err(format!("manifest path `{}` contains no package: The manifest is virtual, \
-                     and the workspace has no members.", ws.current_manifest().display()).into());
-    };
+        bail!("manifest path `{}` contains no package: The manifest is virtual, \
+               and the workspace has no members.",
+              ws.current_manifest().display())
+    }
 
     let to_builds = specs.iter().map(|p| {
         let pkgid = p.query(resolve_with_overrides.iter())?;
