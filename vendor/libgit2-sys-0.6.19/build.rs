@@ -31,11 +31,10 @@ fn main() {
     }
     let has_pkgconfig = Command::new("pkg-config").output().is_ok();
 
-    if env::var("LIBGIT2_SYS_USE_PKG_CONFIG").is_ok() {
-        if pkg_config::find_library("libgit2").is_ok() {
-            return
-        }
+    if pkg_config::find_library("libgit2").is_ok() {
+        return
     }
+
 
     if !Path::new("libgit2/.git").exists() {
         let _ = Command::new("git").args(&["submodule", "update", "--init"])
