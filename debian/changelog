@@ -1,3 +1,11 @@
+cargo (0.25.0-1~exp2) experimental; urgency=medium
+
+  * Disable test running on powerpc and powerpcspe for now. Will be
+    enabled once issue in test suites are fixed.
+    Request from John Paul Adrian Glaubitz in IRC.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 25 Feb 2018 10:27:23 +0530
+
 cargo (0.25.0-1~exp1) experimental; urgency=medium
 
   [upstream]
