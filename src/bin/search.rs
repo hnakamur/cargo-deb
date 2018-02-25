@@ -70,7 +70,7 @@ pub fn execute(options: Options, config: &mut Config) -> CliResult {
     let msg = "The flag '--host' is no longer valid.
 
 Previous versions of Cargo accepted this flag, but it is being
-depricated. The flag is being renamed to 'index', as the flag
+deprecated. The flag is being renamed to 'index', as the flag
 wants the location of the index in which to search. Please
 use '--index' instead.
 

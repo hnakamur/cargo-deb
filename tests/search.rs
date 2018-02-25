@@ -140,7 +140,7 @@ fn simple_with_host() {
 [WARNING] The flag '--host' is no longer valid.
 
 Previous versions of Cargo accepted this flag, but it is being
-depricated. The flag is being renamed to 'index', as the flag
+deprecated. The flag is being renamed to 'index', as the flag
 wants the location of the index in which to search. Please
 use '--index' instead.
 
@@ -207,7 +207,7 @@ fn simple_with_index_and_host() {
 [WARNING] The flag '--host' is no longer valid.
 
 Previous versions of Cargo accepted this flag, but it is being
-depricated. The flag is being renamed to 'index', as the flag
+deprecated. The flag is being renamed to 'index', as the flag
 wants the location of the index in which to search. Please
 use '--index' instead.
 
