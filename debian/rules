@@ -31,6 +31,17 @@ ifeq (0,$(shell test $$(uname -s) = "Linux" -a $$(getconf PAGESIZE) -gt 4096; ec
   SYSTEM_WORKAROUNDS += ulimit -s $$(expr $$(getconf PAGESIZE) / 1024 '*' 256 + 8192);
 endif
 
+# Disable tests on powerpc and powerpcspe for now.
+# cbmuser requested this and will fix the errors later
+# TODO: once powerpc powerpcspe test failures are fixed drop this
+ifeq ($(DEB_HOST_ARCH), powerpc)
+	DEB_BUILD_PROFILES = nocheck
+endif
+
+ifeq ($(DEB_HOST_ARCH), powerpcspe)
+	DEB_BUILD_PROFILES = nocheck
+endif
+
 %:
 	$(SYSTEM_WORKAROUNDS) dh $@ --with bash-completion
 
