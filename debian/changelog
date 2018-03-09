@@ -1,3 +1,9 @@
+cargo (0.25.0-1) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Fri, 09 Mar 2018 21:09:38 +0530
+
 cargo (0.25.0-1~exp2) experimental; urgency=medium
 
   * Disable test running on powerpc and powerpcspe for now. Will be
