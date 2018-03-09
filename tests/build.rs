@@ -3553,7 +3553,6 @@ fn cdylib_final_outputs() {
     }
 }
 
-#[test]
 fn wasm32_final_outputs() {
     use cargo::core::{Shell, Target, Workspace};
     use cargo::ops::{self, BuildConfig, Context, CompileMode, CompileOptions, Kind, Unit};
