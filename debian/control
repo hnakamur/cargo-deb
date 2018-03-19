@@ -37,7 +37,7 @@ Package: cargo
 Architecture: any
 Multi-Arch: allowed
 Depends: ${shlibs:Depends}, ${misc:Depends},
-         rustc (>= 1.1),
+         rustc (>= 1.24),
          binutils,
          gcc | clang | c-compiler
 Suggests: cargo-doc, python3
