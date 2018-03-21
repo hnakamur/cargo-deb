@@ -101,6 +101,7 @@ override_dh_auto_clean:
 			$(CURDIR)/config.mk \
 			$(CURDIR)/config.stamp \
 			$(CURDIR)/Makefile \
+			$(CURDIR)/Cargo.lock \
 			$(CURDIR)/cargo-stage0
 
 override_dh_clean:
