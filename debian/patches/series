@@ -1,3 +1,4 @@
+2007_sparc64_disable_incremental_build.patch
 2004_clean-cargo-deps.patch
 2003_local-jquery.patch
 2001_use-system-libgit2.patch
