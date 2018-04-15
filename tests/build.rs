@@ -15,6 +15,7 @@ use cargotest::support::paths::{CargoPathExt,root};
 use cargotest::support::{ProjectBuilder};
 use cargotest::support::{project, execs, main_file, basic_bin_manifest};
 use cargotest::support::registry::Package;
+use cargotest::ChannelChanger;
 use hamcrest::{assert_that, existing_file, existing_dir, is_not};
 use tempdir::TempDir;
 
@@ -783,9 +784,9 @@ fn cargo_compile_with_dep_name_mismatch() {
 
     assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr(&format!(
-r#"[ERROR] no matching package named `notquitebar` found (required by `foo`)
+r#"error: no matching package named `notquitebar` found
 location searched: {proj_dir}/bar
-version required: *
+required by package `foo v0.0.1 ({proj_dir})`
 "#, proj_dir = p.url())));
 }
 
@@ -830,6 +831,260 @@ Did you mean `a`?"));
 }
 
 #[test]
+fn cargo_compile_path_with_offline() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies.bar]
+            path = "bar"
+        "#)
+        .file("src/lib.rs", "")
+        .file("bar/Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", "")
+        .build();
+
+    assert_that(p.cargo("build").masquerade_as_nightly_cargo().arg("-Zoffline"),
+                execs().with_status(0));
+}
+
+#[test]
+fn cargo_compile_with_downloaded_dependency_with_offline() {
+    Package::new("present_dep", "1.2.3")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "present_dep"
+            version = "1.2.3"
+        "#)
+        .file("src/lib.rs", "")
+        .publish();
+
+    {
+        // make package downloaded
+        let p = project("foo")
+            .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+
+            [dependencies]
+            present_dep = "1.2.3"
+        "#)
+            .file("src/lib.rs", "")
+            .build();
+        assert_that(p.cargo("build"),execs().with_status(0));
+    }
+
+    let p2 = project("bar")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+
+            [dependencies]
+            present_dep = "1.2.3"
+        "#)
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(p2.cargo("build").masquerade_as_nightly_cargo().arg("-Zoffline"),
+                execs().with_status(0)
+                    .with_stderr(format!("\
+[COMPILING] present_dep v1.2.3
+[COMPILING] bar v0.1.0 ([..])
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]")));
+
+}
+
+#[test]
+fn cargo_compile_offline_not_try_update() {
+    let p = project("bar")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+
+            [dependencies]
+            not_cached_dep = "1.2.5"
+        "#)
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(p.cargo("build").masquerade_as_nightly_cargo().arg("-Zoffline"),
+                execs().with_status(101)
+                    .with_stderr("\
+error: no matching package named `not_cached_dep` found
+location searched: registry `[..]`
+required by package `bar v0.1.0 ([..])`
+As a reminder, you're using offline mode (-Z offline) \
+which can sometimes cause surprising resolution failures, \
+if this error is too confusing you may with to retry \
+without the offline flag."));
+}
+
+#[test]
+fn compile_offline_without_maxvers_cached(){
+    Package::new("present_dep", "1.2.1").publish();
+    Package::new("present_dep", "1.2.2").publish();
+
+    Package::new("present_dep", "1.2.3")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "present_dep"
+            version = "1.2.3"
+        "#)
+        .file("src/lib.rs", r#"pub fn get_version()->&'static str {"1.2.3"}"#)
+        .publish();
+
+    Package::new("present_dep", "1.2.5")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "present_dep"
+            version = "1.2.5"
+        "#)
+        .file("src/lib.rs", r#"pub fn get_version(){"1.2.5"}"#)
+        .publish();
+
+    {
+        // make package cached
+        let p = project("foo")
+            .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+
+            [dependencies]
+            present_dep = "=1.2.3"
+        "#)
+            .file("src/lib.rs", "")
+            .build();
+        assert_that(p.cargo("build"),execs().with_status(0));
+    }
+
+    let p2 = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+
+            [dependencies]
+            present_dep = "1.2"
+        "#)
+        .file("src/main.rs", "\
+extern crate present_dep;
+fn main(){
+    println!(\"{}\", present_dep::get_version());
+}")
+        .build();
+
+    assert_that(p2.cargo("run").masquerade_as_nightly_cargo().arg("-Zoffline"),
+                execs().with_status(0)
+                    .with_stderr(format!("\
+[COMPILING] present_dep v1.2.3
+[COMPILING] foo v0.1.0 ({url})
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
+     Running `[..]`", url = p2.url()))
+                    .with_stdout("1.2.3")
+    );
+}
+
+#[test]
+fn incompatible_dependencies() {
+    Package::new("bad", "0.1.0").publish();
+    Package::new("bad", "1.0.0").publish();
+    Package::new("bad", "1.0.1").publish();
+    Package::new("bad", "1.0.2").publish();
+    Package::new("foo", "0.1.0").dep("bad", "0.1.0").publish();
+    Package::new("bar", "0.1.1").dep("bad", "=1.0.0").publish();
+    Package::new("bar", "0.1.0").dep("bad", "=1.0.0").publish();
+    Package::new("baz", "0.1.2").dep("bad", ">=1.0.1").publish();
+    Package::new("baz", "0.1.1").dep("bad", ">=1.0.1").publish();
+    Package::new("baz", "0.1.0").dep("bad", ">=1.0.1").publish();
+
+    let p = project("transitive_load_test")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "incompatible_dependencies"
+            version = "0.0.1"
+
+            [dependencies]
+            foo = "0.1.0"
+            bar = "0.1.0"
+            baz = "0.1.0"
+        "#)
+        .file("src/main.rs", "fn main(){}")
+        .build();
+
+    assert_that(p.cargo("build"),
+        execs().with_status(101)
+            .with_stderr_contains("\
+error: failed to select a version for `bad`
+all possible versions conflict with previously selected versions of `bad`
+required by package `baz v0.1.0`
+    ... which is depended on by `incompatible_dependencies v0.0.1 ([..])`
+  previously selected package `bad v0.1.0`
+    ... which is depended on by `foo v0.1.0`
+    ... which is depended on by `incompatible_dependencies v0.0.1 ([..])`
+  previously selected package `bad v1.0.0`
+    ... which is depended on by `bar v0.1.0`
+    ... which is depended on by `incompatible_dependencies v0.0.1 ([..])`
+  possible versions to select: 1.0.2, 1.0.1"));
+}
+
+#[test]
+fn compile_offline_while_transitive_dep_not_cached() {
+    let bar = Package::new("bar", "1.0.0");
+    let bar_path = bar.archive_dst();
+    bar.publish();
+
+    let mut content = Vec::new();
+
+    let mut file = File::open(bar_path.clone()).ok().unwrap();
+    let _ok = file.read_to_end(&mut content).ok().unwrap();
+    drop(file);
+    drop(File::create(bar_path.clone()).ok().unwrap() );
+
+    Package::new("foo", "0.1.0").dep("bar", "1.0.0").publish();
+
+    let p = project("transitive_load_test")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "transitive_load_test"
+            version = "0.0.1"
+
+            [dependencies]
+            foo = "0.1.0"
+        "#)
+        .file("src/main.rs", "fn main(){}")
+        .build();
+
+    // simulate download foo, but fail to download bar
+    let _out = p.cargo("build").exec_with_output();
+
+    drop( File::create(bar_path).ok().unwrap().write_all(&content) );
+
+    assert_that(p.cargo("build").masquerade_as_nightly_cargo().arg("-Zoffline"),
+        execs().with_status(101)
+            .with_stderr("\
+error: no matching package named `bar` found
+location searched: registry `[..]`
+required by package `foo v0.1.0`
+    ... which is depended on by `transitive_load_test v0.0.1 ([..]/transitive_load_test)`
+As a reminder, you're using offline mode (-Z offline) \
+which can sometimes cause surprising resolution failures, \
+if this error is too confusing you may with to retry \
+without the offline flag."));
+}
+
+#[test]
 fn compile_path_dep_then_change_version() {
     let p = project("foo")
         .file("Cargo.toml", r#"
@@ -862,9 +1117,10 @@ fn compile_path_dep_then_change_version() {
 
     assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr("\
-[ERROR] no matching version `= 0.0.1` found for package `bar` (required by `foo`)
+error: no matching version `= 0.0.1` found for package `bar`
 location searched: [..]
 versions found: 0.0.2
+required by package `foo v0.0.1 ([..]/foo)`
 consider running `cargo update` to update a path dependency's locked version
 "));
 }
@@ -3550,107 +3806,6 @@ fn cdylib_final_outputs() {
     for file in files {
         println!("checking: {}", file);
         assert_that(&p.root().join("target/debug").join(&file), existing_file());
-    }
-}
-
-#[test]
-fn wasm32_final_outputs() {
-    use cargo::core::{Shell, Target, Workspace};
-    use cargo::ops::{self, BuildConfig, Context, CompileMode, CompileOptions, Kind, Unit};
-    use cargo::util::Config;
-    use cargo::util::important_paths::find_root_manifest_for_wd;
-
-    let target_triple = "wasm32-unknown-emscripten";
-
-    let p = project("foo")
-        .file("Cargo.toml", r#"
-            [project]
-            name = "foo-bar"
-            authors = []
-            version = "0.1.0"
-        "#)
-        .file("src/main.rs", "fn main() {}")
-        .build();
-
-    // We can't cross-compile the project to wasm target unless we have emscripten installed.
-    // So here we will not run `cargo build`, but just create cargo_rustc::Context and ask it
-    // what the target file names would be.
-
-    // Create various stuff required to build cargo_rustc::Context.
-    let shell = Shell::new();
-    let config = Config::new(shell, p.root(), p.root());
-    let root = find_root_manifest_for_wd(None, config.cwd()).expect("Can't find the root manifest");
-    let ws = Workspace::new(&root, &config).expect("Can't create workspace");
-
-    let opts = CompileOptions {
-        target: Some(target_triple),
-        .. CompileOptions::default(&config, CompileMode::Build)
-    };
-
-    let specs = opts.spec.into_package_id_specs(&ws).expect("Can't create specs");
-
-    let (packages, resolve) = ops::resolve_ws_precisely(
-        &ws,
-        None,
-        opts.features,
-        opts.all_features,
-        opts.no_default_features,
-        &specs,
-    ).expect("Can't create resolve");
-
-    let build_config = BuildConfig {
-        requested_target: Some(target_triple.to_string()),
-        jobs: 1,
-        .. BuildConfig::default()
-    };
-
-    let pkgid = packages
-        .package_ids()
-        .filter(|id| id.name() == "foo-bar")
-        .collect::<Vec<_>>();
-    let pkg = packages.get(pkgid[0]).expect("Can't get package");
-
-    let target = Target::bin_target("foo-bar", p.root().join("src/main.rs"), None);
-
-    let unit = Unit {
-        pkg: &pkg,
-        target: &target,
-        profile: &ws.profiles().dev,
-        kind: Kind::Target,
-    };
-    let units = vec![unit];
-
-    // Finally, create the cargo_rustc::Context.
-    let mut ctx = Context::new(
-        &ws,
-        &resolve,
-        &packages,
-        &config,
-        build_config,
-        ws.profiles(),
-    ).expect("Can't create context");
-
-    // Ask the context to resolve target file names.
-    ctx.probe_target_info(&units).expect("Can't probe target info");
-    let target_filenames = ctx.target_filenames(&unit).expect("Can't get target file names");
-
-    // Verify the result.
-    let mut expected = vec!["debug/foo-bar.js", "debug/foo_bar.wasm"];
-
-    assert_eq!(target_filenames.len(), expected.len());
-
-    let mut target_filenames = target_filenames
-        .iter()
-        .map(|&(_, ref link_dst, _)| link_dst.clone().unwrap())
-        .collect::<Vec<_>>();
-    target_filenames.sort();
-    expected.sort();
-
-    for (expected, actual) in expected.iter().zip(target_filenames.iter()) {
-        assert!(
-            actual.ends_with(expected),
-            format!("{:?} does not end with {}", actual, expected)
-        );
     }
 }
 

@@ -22,6 +22,7 @@ pub struct Dependency {
 struct Inner {
     name: String,
     source_id: SourceId,
+    registry_id: Option<SourceId>,
     req: VersionReq,
     specified_req: bool,
     kind: Kind,
@@ -172,6 +173,7 @@ impl Dependency {
             inner: Rc::new(Inner {
                 name: name.to_string(),
                 source_id: source_id.clone(),
+                registry_id: None,
                 req: VersionReq::any(),
                 kind: Kind::Normal,
                 only_match_name: true,
@@ -194,6 +196,15 @@ impl Dependency {
 
     pub fn source_id(&self) -> &SourceId {
         &self.inner.source_id
+    }
+
+    pub fn registry_id(&self) -> Option<&SourceId> {
+        self.inner.registry_id.as_ref()
+    }
+
+    pub fn set_registry_id(&mut self, registry_id: &SourceId) -> &mut Dependency {
+        Rc::make_mut(&mut self.inner).registry_id = Some(registry_id.clone());
+        self
     }
 
     pub fn kind(&self) -> Kind {
@@ -254,6 +265,11 @@ impl Dependency {
     pub fn lock_to(&mut self, id: &PackageId) -> &mut Dependency {
         assert_eq!(self.inner.source_id, *id.source_id());
         assert!(self.inner.req.matches(id.version()));
+        trace!("locking dep from `{}` with `{}` at {} to {}",
+               self.name(),
+               self.version_req(),
+               self.source_id(),
+               id);
         self.set_version_req(VersionReq::exact(id.version()))
             .set_source_id(id.source_id().clone())
     }

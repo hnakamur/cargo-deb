@@ -16,6 +16,7 @@ use curl::easy::Easy;
 use jobserver;
 use serde::{Serialize, Serializer};
 use toml;
+use lazycell::LazyCell;
 
 use core::shell::Verbosity;
 use core::{Shell, CliUnstable};
@@ -26,7 +27,7 @@ use util::Rustc;
 use util::errors::{CargoResult, CargoResultExt, CargoError, internal};
 use util::paths;
 use util::toml as cargo_toml;
-use util::{Filesystem, LazyCell};
+use util::Filesystem;
 
 use self::ConfigValue as CV;
 
@@ -144,18 +145,18 @@ impl Config {
 
     /// Get the path to the `rustdoc` executable
     pub fn rustdoc(&self) -> CargoResult<&Path> {
-        self.rustdoc.get_or_try_init(|| self.get_tool("rustdoc")).map(AsRef::as_ref)
+        self.rustdoc.try_borrow_with(|| self.get_tool("rustdoc")).map(AsRef::as_ref)
     }
 
     /// Get the path to the `rustc` executable
     pub fn rustc(&self) -> CargoResult<&Rustc> {
-        self.rustc.get_or_try_init(|| Rustc::new(self.get_tool("rustc")?,
+        self.rustc.try_borrow_with(|| Rustc::new(self.get_tool("rustc")?,
                                                  self.maybe_get_tool("rustc_wrapper")?))
     }
 
     /// Get the path to the `cargo` executable
     pub fn cargo_exe(&self) -> CargoResult<&Path> {
-        self.cargo_exe.get_or_try_init(|| {
+        self.cargo_exe.try_borrow_with(|| {
             fn from_current_exe() -> CargoResult<PathBuf> {
                 // Try fetching the path to `cargo` using env::current_exe().
                 // The method varies per operating system and might fail; in particular,
@@ -207,7 +208,7 @@ impl Config {
     }
 
     pub fn values(&self) -> CargoResult<&HashMap<String, ConfigValue>> {
-        self.values.get_or_try_init(|| self.load_values())
+        self.values.try_borrow_with(|| self.load_values())
     }
 
     pub fn set_values(&self, values: HashMap<String, ConfigValue>) -> CargoResult<()> {
@@ -504,7 +505,11 @@ impl Config {
     }
 
     pub fn network_allowed(&self) -> bool {
-        !self.frozen
+        !self.frozen() && !self.cli_unstable().offline
+    }
+
+    pub fn frozen(&self) -> bool {
+        self.frozen
     }
 
     pub fn lock_update_allowed(&self) -> bool {
@@ -548,7 +553,13 @@ impl Config {
     /// Gets the index for a registry.
     pub fn get_registry_index(&self, registry: &str) -> CargoResult<Url> {
         Ok(match self.get_string(&format!("registries.{}.index", registry))? {
-            Some(index) => index.val.to_url()?,
+            Some(index) => {
+                let url = index.val.to_url()?;
+                if url.username() != "" || url.password().is_some() {
+                    bail!("Registry URLs may not contain credentials");
+                }
+                url
+            }
             None => bail!("No index found for registry: `{}`", registry),
         })
     }
@@ -573,29 +584,30 @@ impl Config {
             format!("could not parse TOML configuration in `{}`", credentials.display())
         })?;
 
-        let value = CV::from_toml(&credentials, toml).chain_err(|| {
+        let mut value = CV::from_toml(&credentials, toml).chain_err(|| {
             format!("failed to load TOML configuration from `{}`", credentials.display())
         })?;
 
-        let cfg = match *cfg {
-            CV::Table(ref mut map, _) => map,
-            _ => unreachable!(),
-        };
+        // backwards compatibility for old .cargo/credentials layout
+        {
+            let value = match value {
+                CV::Table(ref mut value, _) => value,
+                _ => unreachable!(),
+            };
 
-        let registry = cfg.entry("registry".into())
-                          .or_insert_with(|| CV::Table(HashMap::new(), PathBuf::from(".")));
-
-        match (registry, value) {
-            (&mut CV::Table(ref mut old, _), CV::Table(ref mut new, _)) => {
-                // Take ownership of `new` by swapping it with an empty hashmap, so we can move
-                // into an iterator.
-                let new = mem::replace(new, HashMap::new());
-                for (key, value) in new {
-                    old.insert(key, value);
+            if let Some(token) = value.remove("token") {
+                if let Vacant(entry) = value.entry("registry".into()) {
+                    let mut map = HashMap::new();
+                    map.insert("token".into(), token);
+                    let table = CV::Table(map, PathBuf::from("."));
+                    entry.insert(table);
                 }
             }
-            _ => unreachable!(),
         }
+
+        // we want value to override cfg, so swap these
+        mem::swap(cfg, &mut value);
+        cfg.merge(value)?;
 
         Ok(())
     }
@@ -637,7 +649,7 @@ impl Config {
     }
 
     pub fn http(&self) -> CargoResult<&RefCell<Easy>> {
-        let http = self.easy.get_or_try_init(|| {
+        let http = self.easy.try_borrow_with(|| {
             ops::http_handle(self).map(RefCell::new)
         })?;
         {
@@ -919,13 +931,16 @@ pub fn save_credentials(cfg: &Config,
     let (key, value) = {
         let key = "token".to_string();
         let value = ConfigValue::String(token, file.path().to_path_buf());
+        let mut map = HashMap::new();
+        map.insert(key, value);
+        let table = CV::Table(map, file.path().to_path_buf());
 
         if let Some(registry) = registry {
             let mut map = HashMap::new();
-            map.insert(key, value);
-            (registry, CV::Table(map, file.path().to_path_buf()))
+            map.insert(registry, table);
+            ("registries".into(), CV::Table(map, file.path().to_path_buf()))
         } else {
-            (key, value)
+            ("registry".into(), table)
         }
     };
 
@@ -935,6 +950,14 @@ pub fn save_credentials(cfg: &Config,
     })?;
 
     let mut toml = cargo_toml::parse(&contents, file.path(), cfg)?;
+
+    // move the old token location to the new one
+    if let Some(token) = toml.as_table_mut().unwrap().remove("token") {
+        let mut map = HashMap::new();
+        map.insert("token".to_string(), token);
+        toml.as_table_mut().unwrap().insert("registry".into(), map.into());
+    }
+
     toml.as_table_mut()
         .unwrap()
         .insert(key, value.into_toml());

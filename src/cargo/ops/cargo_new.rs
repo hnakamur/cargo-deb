@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::fmt;
 use std::path::Path;
 
 use serde::{Deserialize, Deserializer};
@@ -20,12 +21,33 @@ use toml;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VersionControl { Git, Hg, Pijul, Fossil, NoVcs }
 
+#[derive(Debug)]
 pub struct NewOptions<'a> {
     pub version_control: Option<VersionControl>,
-    pub bin: bool,
-    pub lib: bool,
+    pub kind: NewProjectKind,
     pub path: &'a str,
     pub name: Option<&'a str>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewProjectKind {
+    Bin,
+    Lib,
+}
+
+impl NewProjectKind {
+    fn is_bin(&self) -> bool {
+        *self == NewProjectKind::Bin
+    }
+}
+
+impl fmt::Display for NewProjectKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            NewProjectKind::Bin => "binary (application)",
+            NewProjectKind::Lib => "library",
+        }.fmt(f)
+    }
 }
 
 struct SourceFileInformation {
@@ -61,26 +83,21 @@ impl<'de> Deserialize<'de> for VersionControl {
 
 impl<'a> NewOptions<'a> {
     pub fn new(version_control: Option<VersionControl>,
-           bin: bool,
-           lib: bool,
-           path: &'a str,
-           name: Option<&'a str>) -> NewOptions<'a> {
+               bin: bool,
+               lib: bool,
+               path: &'a str,
+               name: Option<&'a str>) -> CargoResult<NewOptions<'a>> {
 
-        // default to lib
-        let is_lib = if !bin {
-            true
-        }
-        else {
-            lib
+        let kind = match (bin, lib) {
+            (true, true) => bail!("can't specify both lib and binary outputs"),
+            (true, false) => NewProjectKind::Bin,
+            (false, true) => NewProjectKind::Lib,
+            // default to bin
+            (false, false) => NewProjectKind::Bin,
         };
 
-        NewOptions {
-            version_control: version_control,
-            bin: bin,
-            lib: is_lib,
-            path: path,
-            name: name,
-        }
+        let opts = NewOptions { version_control, kind, path, name };
+        Ok(opts)
     }
 }
 
@@ -90,35 +107,28 @@ struct CargoNewConfig {
     version_control: Option<VersionControl>,
 }
 
-fn get_name<'a>(path: &'a Path, opts: &'a NewOptions, config: &Config) -> CargoResult<&'a str> {
+fn get_name<'a>(path: &'a Path, opts: &'a NewOptions) -> CargoResult<&'a str> {
     if let Some(name) = opts.name {
         return Ok(name);
     }
 
-    if path.file_name().is_none() {
-        bail!("cannot auto-detect project name from path {:?} ; use --name to override",
-                              path.as_os_str());
-    }
-
-    let dir_name = path.file_name().and_then(|s| s.to_str()).ok_or_else(|| {
-        format_err!("cannot create a project with a non-unicode name: {:?}",
-                    path.file_name().unwrap())
+    let file_name = path.file_name().ok_or_else(|| {
+        format_err!("cannot auto-detect project name from path {:?} ; use --name to override", path.as_os_str())
     })?;
 
-    if opts.bin {
-        Ok(dir_name)
-    } else {
-        let new_name = strip_rust_affixes(dir_name);
-        if new_name != dir_name {
-            writeln!(config.shell().err(),
-                     "note: package will be named `{}`; use --name to override",
-                     new_name)?;
-        }
-        Ok(new_name)
-    }
+    file_name.to_str().ok_or_else(|| {
+        format_err!("cannot create project with a non-unicode name: {:?}", file_name)
+    })
 }
 
-fn check_name(name: &str, is_bin: bool) -> CargoResult<()> {
+fn check_name(name: &str, opts: &NewOptions) -> CargoResult<()> {
+
+    // If --name is already used to override, no point in suggesting it
+    // again as a fix.
+    let name_help = match opts.name {
+        Some(_) => "",
+        None => "\nuse --name to override crate name",
+    };
 
     // Ban keywords + test list found at
     // https://doc.rust-lang.org/grammar.html#keywords
@@ -133,25 +143,26 @@ fn check_name(name: &str, is_bin: bool) -> CargoResult<()> {
         "super", "test", "trait", "true", "type", "typeof",
         "unsafe", "unsized", "use", "virtual", "where",
         "while", "yield"];
-    if blacklist.contains(&name) || (is_bin && is_bad_artifact_name(name)) {
-        bail!("The name `{}` cannot be used as a crate name\n\
-               use --name to override crate name",
-               name)
+    if blacklist.contains(&name) || (opts.kind.is_bin() && is_bad_artifact_name(name)) {
+        bail!("The name `{}` cannot be used as a crate name{}",
+            name,
+            name_help)
     }
 
     if let Some(ref c) = name.chars().nth(0) {
         if c.is_digit(10) {
-            bail!("Package names starting with a digit cannot be used as a crate name\n\
-               use --name to override crate name")
+            bail!("Package names starting with a digit cannot be used as a crate name{}",
+                name_help)
         }
     }
 
     for c in name.chars() {
         if c.is_alphanumeric() { continue }
         if c == '_' || c == '-' { continue }
-        bail!("Invalid character `{}` in crate name: `{}`\n\
-               use --name to override crate name",
-              c, name)
+        bail!("Invalid character `{}` in crate name: `{}`{}",
+            c,
+            name,
+            name_help)
     }
     Ok(())
 }
@@ -274,19 +285,15 @@ pub fn new(opts: &NewOptions, config: &Config) -> CargoResult<()> {
         )
     }
 
-    if opts.lib && opts.bin {
-        bail!("can't specify both lib and binary outputs")
-    }
-
-    let name = get_name(&path, opts, config)?;
-    check_name(name, opts.bin)?;
+    let name = get_name(&path, opts)?;
+    check_name(name, opts)?;
 
     let mkopts = MkOptions {
         version_control: opts.version_control,
         path: &path,
         name: name,
-        source_files: vec![plan_new_source_file(opts.bin, name.to_string())],
-        bin: opts.bin,
+        source_files: vec![plan_new_source_file(opts.kind.is_bin(), name.to_string())],
+        bin: opts.kind.is_bin(),
     };
 
     mk(config, &mkopts).chain_err(|| {
@@ -304,19 +311,15 @@ pub fn init(opts: &NewOptions, config: &Config) -> CargoResult<()> {
         bail!("`cargo init` cannot be run on existing Cargo projects")
     }
 
-    if opts.lib && opts.bin {
-        bail!("can't specify both lib and binary outputs");
-    }
-
-    let name = get_name(&path, opts, config)?;
-    check_name(name, opts.bin)?;
+    let name = get_name(&path, opts)?;
+    check_name(name, opts)?;
 
     let mut src_paths_types = vec![];
 
     detect_source_paths_and_types(&path, name, &mut src_paths_types)?;
 
     if src_paths_types.is_empty() {
-        src_paths_types.push(plan_new_source_file(opts.bin, name.to_string()));
+        src_paths_types.push(plan_new_source_file(opts.kind.is_bin(), name.to_string()));
     } else {
         // --bin option may be ignored if lib.rs or src/lib.rs present
         // Maybe when doing `cargo init --bin` inside a library project stub,
@@ -358,9 +361,9 @@ pub fn init(opts: &NewOptions, config: &Config) -> CargoResult<()> {
     }
 
     let mkopts = MkOptions {
-        version_control: version_control,
+        version_control,
         path: &path,
-        name: name,
+        name,
         bin: src_paths_types.iter().any(|x|x.bin),
         source_files: src_paths_types,
     };
@@ -372,20 +375,6 @@ pub fn init(opts: &NewOptions, config: &Config) -> CargoResult<()> {
     Ok(())
 }
 
-fn strip_rust_affixes(name: &str) -> &str {
-    for &prefix in &["rust-", "rust_", "rs-", "rs_"] {
-        if name.starts_with(prefix) {
-            return &name[prefix.len()..];
-        }
-    }
-    for &suffix in &["-rust", "_rust", "-rs", "_rs"] {
-        if name.ends_with(suffix) {
-            return &name[..name.len()-suffix.len()];
-        }
-    }
-    name
-}
-
 fn existing_vcs_repo(path: &Path, cwd: &Path) -> bool {
     GitRepo::discover(path, cwd).is_ok() || HgRepo::discover(path, cwd).is_ok()
 }
@@ -395,7 +384,7 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
     let name = opts.name;
     let cfg = global_config(config)?;
     // Please ensure that ignore and hgignore are in sync.
-    let ignore = ["\n", "/target/\n", "**/*.rs.bk\n",
+    let ignore = ["\n", "/target\n", "**/*.rs.bk\n",
         if !opts.bin { "Cargo.lock\n" } else { "" }]
         .concat();
     // Mercurial glob ignores can't be rooted, so just sticking a 'syntax: glob' at the top of the
@@ -581,6 +570,7 @@ fn global_config(config: &Config) -> CargoResult<CargoNewConfig> {
     let vcs = match vcs.as_ref().map(|p| (&p.val[..], &p.definition)) {
         Some(("git", _)) => Some(VersionControl::Git),
         Some(("hg", _)) => Some(VersionControl::Hg),
+        Some(("pijul", _)) => Some(VersionControl::Pijul),
         Some(("none", _)) => Some(VersionControl::NoVcs),
         Some((s, p)) => {
             return Err(internal(format!("invalid configuration for key \
@@ -594,21 +584,4 @@ fn global_config(config: &Config) -> CargoResult<CargoNewConfig> {
         email: email,
         version_control: vcs,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::strip_rust_affixes;
-
-    #[test]
-    fn affixes_stripped() {
-        assert_eq!(strip_rust_affixes("rust-foo"), "foo");
-        assert_eq!(strip_rust_affixes("foo-rs"), "foo");
-        assert_eq!(strip_rust_affixes("rs_foo"), "foo");
-        // Only one affix is stripped
-        assert_eq!(strip_rust_affixes("rs-foo-rs"), "foo-rs");
-        assert_eq!(strip_rust_affixes("foo-rs-rs"), "foo-rs");
-        // It shouldn't touch the middle
-        assert_eq!(strip_rust_affixes("some-rust-crate"), "some-rust-crate");
-    }
 }

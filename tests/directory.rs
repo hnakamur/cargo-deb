@@ -195,9 +195,9 @@ fn simple_install_fail() {
 error: failed to compile `bar v0.1.0`, intermediate artifacts can be found at `[..]`
 
 Caused by:
-  no matching package named `baz` found (required by `bar`)
+  no matching package named `baz` found
 location searched: registry `https://github.com/rust-lang/crates.io-index`
-version required: ^9.8.7
+required by package `bar v0.1.0`
 "));
 }
 
@@ -276,9 +276,9 @@ fn not_there() {
 
     assert_that(p.cargo("build"),
                 execs().with_status(101).with_stderr("\
-error: no matching package named `foo` found (required by `bar`)
+error: no matching package named `foo` found
 location searched: [..]
-version required: ^0.1.0
+required by package `bar v0.1.0 ([..])`
 "));
 }
 
@@ -493,6 +493,40 @@ fn only_dot_files_ok() {
         .build();
     VendorPackage::new("bar")
         .file(".foo", "")
+        .build();
+
+    let p = project("bar")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "bar"
+            version = "0.1.0"
+            authors = []
+
+            [dependencies]
+            foo = "0.1.0"
+        "#)
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(p.cargo("build"), execs().with_status(0));
+}
+
+#[test]
+fn random_files_ok() {
+    setup();
+
+    VendorPackage::new("foo")
+        .file("Cargo.toml", r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+        "#)
+        .file("src/lib.rs", "")
+        .build();
+    VendorPackage::new("bar")
+        .file("foo", "")
+        .file("../test", "")
         .build();
 
     let p = project("bar")

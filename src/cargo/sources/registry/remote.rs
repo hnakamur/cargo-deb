@@ -7,14 +7,15 @@ use std::path::Path;
 use std::str;
 
 use git2;
-use hex::ToHex;
+use hex;
 use serde_json;
+use lazycell::LazyCell;
 
 use core::{PackageId, SourceId};
 use sources::git;
 use sources::registry::{RegistryData, RegistryConfig, INDEX_LOCK, CRATE_TEMPLATE, VERSION_TEMPLATE};
 use util::network;
-use util::{FileLock, Filesystem, LazyCell};
+use util::{FileLock, Filesystem};
 use util::{Config, Sha256, ToUrl, Progress};
 use util::errors::{CargoResult, CargoResultExt, HttpNot200};
 
@@ -43,7 +44,7 @@ impl<'cfg> RemoteRegistry<'cfg> {
     }
 
     fn repo(&self) -> CargoResult<&git2::Repository> {
-        self.repo.get_or_try_init(|| {
+        self.repo.try_borrow_with(|| {
             let path = self.index_path.clone().into_path_unlocked();
 
             // Fast path without a lock
@@ -153,6 +154,13 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
     }
 
     fn update_index(&mut self) -> CargoResult<()> {
+        if self.config.cli_unstable().offline {
+            return Ok(());
+        }
+        if self.config.cli_unstable().no_index_update {
+            return Ok(());
+        }
+
         // Ensure that we'll actually be able to acquire an HTTP handle later on
         // once we start trying to download crates. This will weed out any
         // problems with `.cargo/config` configuration related to HTTP.
@@ -216,14 +224,13 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         // TODO: don't download into memory, but ensure that if we ctrl-c a
         //       download we should resume either from the start or the middle
         //       on the next time
-        let url = url.to_string();
         let mut handle = self.config.http()?.borrow_mut();
         handle.get(true)?;
-        handle.url(&url)?;
+        handle.url(&url.to_string())?;
         handle.follow_location(true)?;
         let mut state = Sha256::new();
         let mut body = Vec::new();
-        network::with_retry(self.config, || {
+        network::with_retry(self.config, &url, || {
             state = Sha256::new();
             body = Vec::new();
             let mut pb = Progress::new("Fetch", self.config);
@@ -242,15 +249,17 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
             }
             let code = handle.response_code()?;
             if code != 200 && code != 0 {
-                let url = handle.effective_url()?.unwrap_or(&url);
-                Err(HttpNot200 { code, url: url.to_string() }.into())
+                let url = handle.effective_url()?
+                    .map(|url| url.to_string())
+                    .unwrap_or_else(|| url.to_string());
+                Err(HttpNot200 { code, url }.into())
             } else {
                 Ok(())
             }
         })?;
 
         // Verify what we just downloaded
-        if state.finish().to_hex() != checksum {
+        if hex::encode(state.finish()) != checksum {
             bail!("failed to verify the checksum of `{}`", pkg)
         }
 
@@ -258,6 +267,20 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         dst.seek(SeekFrom::Start(0))?;
         Ok(dst)
     }
+
+
+    fn is_crate_downloaded(&self, pkg: &PackageId) -> bool {
+        let filename = format!("{}-{}.crate", pkg.name(), pkg.version());
+        let path = Path::new(&filename);
+
+        if let Ok(dst) = self.cache_path.open_ro(path, self.config, &filename) {
+            if let Ok(meta) = dst.file().metadata(){
+                return meta.len() > 0;
+            }
+        }
+        false
+    }
+
 }
 
 impl<'cfg> Drop for RemoteRegistry<'cfg> {

@@ -31,12 +31,6 @@ pub fn package(ws: &Workspace,
     let pkg = ws.current()?;
     let config = ws.config();
 
-    // Allow packaging if a registry has been provided, or if there are no nightly
-    // features enabled.
-    if opts.registry.is_none() && !pkg.manifest().features().activated().is_empty() {
-        bail!("cannot package or publish crates which activate nightly-only \
-               cargo features")
-    }
     let mut src = PathSource::new(pkg.root(),
                                   pkg.package_id().source_id(),
                                   config);
@@ -255,7 +249,7 @@ fn tar(ws: &Workspace,
             })?;
 
             let mut header = Header::new_ustar();
-            let toml = pkg.to_registry_toml()?;
+            let toml = pkg.to_registry_toml(ws.config())?;
             header.set_path(&path)?;
             header.set_entry_type(EntryType::file());
             header.set_mode(0o644);

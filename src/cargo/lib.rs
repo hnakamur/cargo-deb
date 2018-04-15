@@ -21,6 +21,7 @@ extern crate hex;
 extern crate home;
 extern crate ignore;
 extern crate jobserver;
+extern crate lazycell;
 extern crate libc;
 extern crate libgit2_sys;
 extern crate num_cpus;
@@ -142,7 +143,7 @@ pub fn exit_with_error(err: CliError, shell: &mut Shell) -> ! {
         } else if fatal {
             drop(shell.error(&error))
         } else {
-            drop(writeln!(shell.err(), "{}", error))
+            println!("{}", error);
         }
 
         if !handle_cause(&error, shell) || hide {

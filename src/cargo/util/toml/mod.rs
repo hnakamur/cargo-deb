@@ -14,9 +14,9 @@ use url::Url;
 
 use core::{SourceId, Profiles, PackageIdSpec, GitReference, WorkspaceConfig, WorkspaceRootConfig};
 use core::{Summary, Manifest, Target, Dependency, PackageId};
-use core::{EitherManifest, VirtualManifest, Features, Feature};
+use core::{EitherManifest, Epoch, VirtualManifest, Features, Feature};
 use core::dependency::{Kind, Platform};
-use core::manifest::{LibKind, Profile, ManifestMetadata};
+use core::manifest::{LibKind, Profile, ManifestMetadata, Lto};
 use sources::CRATES_IO;
 use util::paths;
 use util::{self, ToUrl, Config};
@@ -178,9 +178,11 @@ impl<'de> de::Deserialize<'de> for TomlDependency {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "kebab-case")]
 pub struct DetailedTomlDependency {
     version: Option<String>,
     registry: Option<String>,
+    registry_index: Option<String>,
     path: Option<String>,
     git: Option<String>,
     branch: Option<String>,
@@ -188,15 +190,14 @@ pub struct DetailedTomlDependency {
     rev: Option<String>,
     features: Option<Vec<String>>,
     optional: Option<bool>,
-    #[serde(rename = "default-features")]
     default_features: Option<bool>,
     #[serde(rename = "default_features")]
     default_features2: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct TomlManifest {
-    #[serde(rename = "cargo-features")]
     cargo_features: Option<Vec<String>>,
     package: Option<Box<TomlProject>>,
     project: Option<Box<TomlProject>>,
@@ -207,11 +208,9 @@ pub struct TomlManifest {
     test: Option<Vec<TomlTestTarget>>,
     bench: Option<Vec<TomlTestTarget>>,
     dependencies: Option<BTreeMap<String, TomlDependency>>,
-    #[serde(rename = "dev-dependencies")]
     dev_dependencies: Option<BTreeMap<String, TomlDependency>>,
     #[serde(rename = "dev_dependencies")]
     dev_dependencies2: Option<BTreeMap<String, TomlDependency>>,
-    #[serde(rename = "build-dependencies")]
     build_dependencies: Option<BTreeMap<String, TomlDependency>>,
     #[serde(rename = "build_dependencies")]
     build_dependencies2: Option<BTreeMap<String, TomlDependency>>,
@@ -328,7 +327,7 @@ impl<'de> de::Deserialize<'de> for U32OrBool {
 pub struct TomlProfile {
     #[serde(rename = "opt-level")]
     opt_level: Option<TomlOptLevel>,
-    lto: Option<bool>,
+    lto: Option<StringOrBool>,
     #[serde(rename = "codegen-units")]
     codegen_units: Option<u32>,
     debug: Option<U32OrBool>,
@@ -442,6 +441,7 @@ pub struct TomlProject {
     license_file: Option<String>,
     repository: Option<String>,
     metadata: Option<toml::Value>,
+    rust: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -471,13 +471,13 @@ struct Context<'a, 'b> {
 }
 
 impl TomlManifest {
-    pub fn prepare_for_publish(&self) -> TomlManifest {
+    pub fn prepare_for_publish(&self, config: &Config) -> CargoResult<TomlManifest> {
         let mut package = self.package.as_ref()
                               .or_else(|| self.project.as_ref())
                               .unwrap()
                               .clone();
         package.workspace = None;
-        return TomlManifest {
+        return Ok(TomlManifest {
             package: Some(package),
             project: None,
             profile: self.profile.clone(),
@@ -486,56 +486,68 @@ impl TomlManifest {
             example: self.example.clone(),
             test: self.test.clone(),
             bench: self.bench.clone(),
-            dependencies: map_deps(self.dependencies.as_ref()),
-            dev_dependencies: map_deps(self.dev_dependencies.as_ref()
-                                         .or_else(|| self.dev_dependencies2.as_ref())),
+            dependencies: map_deps(config, self.dependencies.as_ref())?,
+            dev_dependencies: map_deps(config, self.dev_dependencies.as_ref()
+                                         .or_else(|| self.dev_dependencies2.as_ref()))?,
             dev_dependencies2: None,
-            build_dependencies: map_deps(self.build_dependencies.as_ref()
-                                         .or_else(|| self.build_dependencies2.as_ref())),
+            build_dependencies: map_deps(config, self.build_dependencies.as_ref()
+                                         .or_else(|| self.build_dependencies2.as_ref()))?,
             build_dependencies2: None,
             features: self.features.clone(),
-            target: self.target.as_ref().map(|target_map| {
+            target: match self.target.as_ref().map(|target_map| {
                 target_map.iter().map(|(k, v)| {
-                    (k.clone(), TomlPlatform {
-                        dependencies: map_deps(v.dependencies.as_ref()),
-                        dev_dependencies: map_deps(v.dev_dependencies.as_ref()
-                                                     .or_else(|| v.dev_dependencies2.as_ref())),
+                    Ok((k.clone(), TomlPlatform {
+                        dependencies: map_deps(config, v.dependencies.as_ref())?,
+                        dev_dependencies: map_deps(config, v.dev_dependencies.as_ref()
+                                                     .or_else(|| v.dev_dependencies2.as_ref()))?,
                         dev_dependencies2: None,
-                        build_dependencies: map_deps(v.build_dependencies.as_ref()
-                                                     .or_else(|| v.build_dependencies2.as_ref())),
+                        build_dependencies: map_deps(config, v.build_dependencies.as_ref()
+                                                     .or_else(|| v.build_dependencies2.as_ref()))?,
                         build_dependencies2: None,
-                    })
+                    }))
                 }).collect()
-            }),
+            }) {
+                Some(Ok(v)) => Some(v),
+                Some(Err(e)) => return Err(e),
+                None => None,
+            },
             replace: None,
             patch: None,
             workspace: None,
             badges: self.badges.clone(),
             cargo_features: self.cargo_features.clone(),
-        };
+        });
 
-        fn map_deps(deps: Option<&BTreeMap<String, TomlDependency>>)
-                        -> Option<BTreeMap<String, TomlDependency>>
+        fn map_deps(config: &Config, deps: Option<&BTreeMap<String, TomlDependency>>)
+                        -> CargoResult<Option<BTreeMap<String, TomlDependency>>>
         {
             let deps = match deps {
                 Some(deps) => deps,
-                None => return None
+                None => return Ok(None),
             };
-            Some(deps.iter().map(|(k, v)| (k.clone(), map_dependency(v))).collect())
+            let deps = deps.iter()
+                .map(|(k, v)| Ok((k.clone(), map_dependency(config, v)?)))
+                .collect::<CargoResult<BTreeMap<_, _>>>()?;
+            Ok(Some(deps))
         }
 
-        fn map_dependency(dep: &TomlDependency) -> TomlDependency {
+        fn map_dependency(config: &Config, dep: &TomlDependency) -> CargoResult<TomlDependency> {
             match *dep {
                 TomlDependency::Detailed(ref d) => {
                     let mut d = d.clone();
                     d.path.take(); // path dependencies become crates.io deps
-                    TomlDependency::Detailed(d)
+                    // registry specifications are elaborated to the index URL
+                    if let Some(registry) = d.registry.take() {
+                        let src = SourceId::alt_registry(config, &registry)?;
+                        d.registry_index = Some(src.url().to_string());
+                    }
+                    Ok(TomlDependency::Detailed(d))
                 }
                 TomlDependency::Simple(ref s) => {
-                    TomlDependency::Detailed(DetailedTomlDependency {
+                    Ok(TomlDependency::Detailed(DetailedTomlDependency {
                         version: Some(s.clone()),
                         ..Default::default()
-                    })
+                    }))
                 }
             }
         }
@@ -704,6 +716,19 @@ impl TomlManifest {
             Some(VecStringOrBool::Bool(false)) => Some(vec![]),
             None | Some(VecStringOrBool::Bool(true)) => None,
         };
+
+        let epoch = if let Some(ref epoch) = project.rust {
+            features.require(Feature::epoch()).chain_err(|| {
+                "epoches are unstable"
+            })?;
+            if let Ok(epoch) = epoch.parse() {
+                epoch
+            } else {
+                bail!("the `rust` key must be one of: `2015`, `2018`")
+            }
+        } else {
+                Epoch::Epoch2015
+        };
         let mut manifest = Manifest::new(summary,
                                          targets,
                                          exclude,
@@ -716,6 +741,7 @@ impl TomlManifest {
                                          patch,
                                          workspace_config,
                                          features,
+                                         epoch,
                                          project.im_a_teapot,
                                          Rc::clone(me));
         if project.license_file.is_some() && project.license.is_some() {
@@ -925,12 +951,26 @@ impl TomlDependency {
             }
         }
 
-        let new_source_id = match (details.git.as_ref(), details.path.as_ref(), details.registry.as_ref()) {
-            (Some(_), _, Some(_)) => bail!("dependency ({}) specification is ambiguous. \
+        let registry_id = match details.registry {
+            Some(ref registry) => {
+                cx.features.require(Feature::alternative_registries())?;
+                SourceId::alt_registry(cx.config, registry)?
+            }
+            None => SourceId::crates_io(cx.config)?
+        };
+
+        let new_source_id = match (
+            details.git.as_ref(),
+            details.path.as_ref(),
+            details.registry.as_ref(),
+            details.registry_index.as_ref(),
+        ) {
+            (Some(_), _, Some(_), _) |
+            (Some(_), _, _, Some(_))=> bail!("dependency ({}) specification is ambiguous. \
                                             Only one of `git` or `registry` is allowed.", name),
-            (_, Some(_), Some(_)) => bail!("dependency ({}) specification is ambiguous. \
-                                            Only one of `path` or `registry` is allowed.", name),
-            (Some(git), maybe_path, _) => {
+            (_, _, Some(_), Some(_)) => bail!("dependency ({}) specification is ambiguous. \
+                                            Only one of `registry` or `registry-index` is allowed.", name),
+            (Some(git), maybe_path, _, _) => {
                 if maybe_path.is_some() {
                     let msg = format!("dependency ({}) specification is ambiguous. \
                                        Only one of `git` or `path` is allowed. \
@@ -957,7 +997,7 @@ impl TomlDependency {
                 let loc = git.to_url()?;
                 SourceId::for_git(&loc, reference)?
             },
-            (None, Some(path), _) => {
+            (None, Some(path), _, _) => {
                 cx.nested_paths.push(PathBuf::from(path));
                 // If the source id for the package we're parsing is a path
                 // source, then we normalize the path here to get rid of
@@ -975,11 +1015,12 @@ impl TomlDependency {
                     cx.source_id.clone()
                 }
             },
-            (None, None, Some(registry)) => {
-                cx.features.require(Feature::alternative_registries())?;
-                SourceId::alt_registry(cx.config, registry)?
+            (None, None, Some(registry), None) => SourceId::alt_registry(cx.config, registry)?,
+            (None, None, None, Some(registry_index)) => {
+                let url = registry_index.to_url()?;
+                SourceId::for_registry(&url)?
             }
-            (None, None, None) => SourceId::crates_io(cx.config)?,
+            (None, None, None, None) => SourceId::crates_io(cx.config)?,
         };
 
         let version = details.version.as_ref().map(|v| &v[..]);
@@ -995,7 +1036,8 @@ impl TomlDependency {
                                         .or(details.default_features2)
                                         .unwrap_or(true))
            .set_optional(details.optional.unwrap_or(false))
-           .set_platform(cx.platform.clone());
+           .set_platform(cx.platform.clone())
+           .set_registry_id(&registry_id);
         if let Some(kind) = kind {
             dep.set_kind(kind);
         }
@@ -1123,7 +1165,7 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
 
     fn merge(profile: Profile, toml: Option<&TomlProfile>) -> Profile {
         let &TomlProfile {
-            ref opt_level, lto, codegen_units, ref debug, debug_assertions, rpath,
+            ref opt_level, ref lto, codegen_units, ref debug, debug_assertions, rpath,
             ref panic, ref overflow_checks, ref incremental,
         } = match toml {
             Some(toml) => toml,
@@ -1137,7 +1179,11 @@ fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
         };
         Profile {
             opt_level: opt_level.clone().unwrap_or(TomlOptLevel(profile.opt_level)).0,
-            lto: lto.unwrap_or(profile.lto),
+            lto: match *lto {
+                Some(StringOrBool::Bool(b)) => Lto::Bool(b),
+                Some(StringOrBool::String(ref n)) => Lto::Named(n.clone()),
+                None => profile.lto,
+            },
             codegen_units: codegen_units,
             rustc_args: None,
             rustdoc_args: None,
