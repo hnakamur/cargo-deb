@@ -42,6 +42,12 @@ pub struct PublishOpts<'cfg> {
 pub fn publish(ws: &Workspace, opts: &PublishOpts) -> CargoResult<()> {
     let pkg = ws.current()?;
 
+    // Allow publishing if a registry has been provided, or if there are no nightly
+    // features enabled.
+    if opts.registry.is_none() && !pkg.manifest().features().activated().is_empty() {
+        bail!("cannot publish crates which activate nightly-only cargo features to crates.io")
+    }
+
     if let &Some(ref allowed_registries) = pkg.publish() {
         if !match opts.registry {
             Some(ref registry) => allowed_registries.contains(registry),
@@ -124,13 +130,17 @@ fn transmit(config: &Config,
 
         // If the dependency is from a different registry, then include the
         // registry in the dependency.
-        let dep_registry = if dep.source_id() != registry_id {
-            Some(dep.source_id().url().to_string())
+        let dep_registry_id = match dep.registry_id() {
+            Some(id) => id,
+            None => bail!("dependency missing registry ID"),
+        };
+        let dep_registry = if dep_registry_id != registry_id {
+            Some(dep_registry_id.url().to_string())
         } else {
             None
         };
 
-        NewCrateDependency {
+        Ok(NewCrateDependency {
             optional: dep.is_optional(),
             default_features: dep.uses_default_features(),
             name: dep.name().to_string(),
@@ -143,8 +153,8 @@ fn transmit(config: &Config,
                 Kind::Development => "dev",
             }.to_string(),
             registry: dep_registry,
-        }
-    }).collect::<Vec<NewCrateDependency>>();
+        })
+    }).collect::<CargoResult<Vec<NewCrateDependency>>>()?;
     let manifest = pkg.manifest();
     let ManifestMetadata {
         ref authors, ref description, ref homepage, ref documentation,
@@ -210,7 +220,7 @@ fn transmit(config: &Config,
 
             Ok(())
         },
-        Err(e) => Err(e.into()),
+        Err(e) => Err(e),
     }
 }
 
@@ -220,7 +230,7 @@ pub fn registry_configuration(config: &Config,
     let (index, token) = match registry {
         Some(registry) => {
             (Some(config.get_registry_index(&registry)?.to_string()),
-             config.get_string(&format!("registry.{}.token", registry))?.map(|p| p.val))
+             config.get_string(&format!("registries.{}.token", registry))?.map(|p| p.val))
         }
         None => {
             // Checking out for default index and token
@@ -263,9 +273,12 @@ pub fn registry(config: &Config,
 
 /// Create a new HTTP handle with appropriate global configuration for cargo.
 pub fn http_handle(config: &Config) -> CargoResult<Easy> {
-    if !config.network_allowed() {
+    if config.frozen() {
         bail!("attempting to make an HTTP request, but --frozen was \
                specified")
+    }
+    if !config.network_allowed() {
+        bail!("can't make HTTP request in the offline mode")
     }
 
     // The timeout option for libcurl by default times out the entire transfer,
@@ -424,7 +437,7 @@ pub fn modify_owners(config: &Config, opts: &OwnersOptions) -> CargoResult<()> {
                 (Some(name), Some(email)) => println!(" ({} <{}>)", name, email),
                 (Some(s), None) |
                 (None, Some(s)) => println!(" ({})", s),
-                (None, None) => println!(""),
+                (None, None) => println!(),
             }
         }
     }

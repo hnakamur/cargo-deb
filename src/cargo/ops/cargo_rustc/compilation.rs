@@ -1,10 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeSet};
 use std::ffi::OsStr;
 use std::path::PathBuf;
+
 use semver::Version;
+use lazycell::LazyCell;
 
 use core::{PackageId, Package, Target, TargetKind};
-use util::{self, CargoResult, Config, LazyCell, ProcessBuilder, process, join_paths};
+use util::{self, CargoResult, Config, ProcessBuilder, process, join_paths};
 
 /// A structure returning the result of a compilation.
 pub struct Compilation<'cfg> {
@@ -22,8 +24,10 @@ pub struct Compilation<'cfg> {
     ///
     /// This is currently used to drive some entries which are added to the
     /// LD_LIBRARY_PATH as appropriate.
+    ///
+    /// The order should be deterministic.
     // TODO: deprecated, remove
-    pub native_dirs: HashSet<PathBuf>,
+    pub native_dirs: BTreeSet<PathBuf>,
 
     /// Root output directory (for the local package's artifacts)
     pub root_output: PathBuf,
@@ -64,7 +68,7 @@ impl<'cfg> Compilation<'cfg> {
     pub fn new(config: &'cfg Config) -> Compilation<'cfg> {
         Compilation {
             libraries: HashMap::new(),
-            native_dirs: HashSet::new(),  // TODO: deprecated, remove
+            native_dirs: BTreeSet::new(),  // TODO: deprecated, remove
             root_output: PathBuf::from("/"),
             deps_output: PathBuf::from("/"),
             host_deps_output: PathBuf::from("/"),
@@ -99,7 +103,7 @@ impl<'cfg> Compilation<'cfg> {
     }
 
     fn target_runner(&self) -> CargoResult<&Option<(PathBuf, Vec<String>)>> {
-        self.target_runner.get_or_try_init(|| {
+        self.target_runner.try_borrow_with(|| {
             let key = format!("target.{}.runner", self.target);
             Ok(self.config.get_path_and_args(&key)?.map(|v| v.val))
         })

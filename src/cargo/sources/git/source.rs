@@ -151,6 +151,11 @@ impl<'cfg> Source for GitSource<'cfg> {
 
         let db_path = lock.parent().join("db").join(&self.ident);
 
+        if self.config.cli_unstable().offline && !db_path.exists() {
+            bail!("can't checkout from '{}': you are in the offline mode (-Z offline)",
+                self.remote.url());
+        }
+
         // Resolve our reference to an actual revision, and check if the
         // database already has that revision. If it does, we just load a
         // database pinned at that revision, and if we don't we issue an update
@@ -159,7 +164,7 @@ impl<'cfg> Source for GitSource<'cfg> {
         let should_update = actual_rev.is_err() ||
                             self.source_id.precise().is_none();
 
-        let (repo, actual_rev) = if should_update {
+        let (db, actual_rev) = if should_update && !self.config.cli_unstable().offline {
             self.config.shell().status("Updating",
                 format!("git repository `{}`", self.remote.url()))?;
 
@@ -175,7 +180,7 @@ impl<'cfg> Source for GitSource<'cfg> {
         // Don’t use the full hash,
         // to contribute less to reaching the path length limit on Windows:
         // https://github.com/servo/servo/pull/14397
-        let short_id = repo.to_short_id(actual_rev.clone()).unwrap();
+        let short_id = db.to_short_id(actual_rev.clone()).unwrap();
 
         let checkout_path = lock.parent().join("checkouts")
             .join(&self.ident).join(short_id.as_str());
@@ -185,7 +190,7 @@ impl<'cfg> Source for GitSource<'cfg> {
         // in scope so the destructors here won't tamper with too much.
         // Checkout is immutable, so we don't need to protect it with a lock once
         // it is created.
-        repo.copy_to(actual_rev.clone(), &checkout_path, self.config)?;
+        db.copy_to(actual_rev.clone(), &checkout_path, self.config)?;
 
         let source_id = self.source_id.with_precise(Some(actual_rev.to_string()));
         let path_source = PathSource::new_recursive(&checkout_path,

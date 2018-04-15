@@ -19,9 +19,14 @@ pub struct UpdateOptions<'a> {
 
 pub fn generate_lockfile(ws: &Workspace) -> CargoResult<()> {
     let mut registry = PackageRegistry::new(ws.config())?;
-    let resolve = ops::resolve_with_previous(&mut registry, ws,
+    let resolve = ops::resolve_with_previous(&mut registry,
+                                             ws,
                                              Method::Everything,
-                                             None, None, &[], true)?;
+                                             None,
+                                             None,
+                                             &[],
+                                             true,
+                                             true)?;
     ops::write_pkg_lockfile(ws, &resolve)?;
     Ok(())
 }
@@ -35,6 +40,10 @@ pub fn update_lockfile(ws: &Workspace, opts: &UpdateOptions)
 
     if ws.members().is_empty() {
         bail!("you can't generate a lockfile for an empty workspace.")
+    }
+
+    if opts.config.cli_unstable().offline {
+        bail!("you can't update in the offline mode");
     }
 
     let previous_resolve = match ops::load_pkg_lockfile(ws)? {
@@ -77,12 +86,13 @@ pub fn update_lockfile(ws: &Workspace, opts: &UpdateOptions)
     }
 
     let resolve = ops::resolve_with_previous(&mut registry,
-                                                  ws,
-                                                  Method::Everything,
-                                                  Some(&previous_resolve),
-                                                  Some(&to_avoid),
-                                                  &[],
-                                                  true)?;
+                                             ws,
+                                             Method::Everything,
+                                             Some(&previous_resolve),
+                                             Some(&to_avoid),
+                                             &[],
+                                             true,
+                                             true)?;
 
     // Summarize what is changing for the user.
     let print_change = |status: &str, msg: String, color: Color| {

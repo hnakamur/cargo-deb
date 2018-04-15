@@ -41,7 +41,7 @@ use super::{Kind, Compilation, BuildConfig};
 /// all that out.
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Unit<'a> {
-    /// Information about avaiable targets, which files to include/exclude, etc. Basically stuff in
+    /// Information about available targets, which files to include/exclude, etc. Basically stuff in
     /// `Cargo.toml`.
     pub pkg: &'a Package,
     /// Information about the specific target to build, out of the possible targets in `pkg`. Not
@@ -940,7 +940,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             ret.push(Unit {
                 pkg: dep,
                 target: lib,
-                profile: self.lib_profile(),
+                profile: self.lib_or_check_profile(unit, lib),
                 kind: unit.kind.for_target(lib),
             });
             if self.build_config.doc_all {
@@ -1055,11 +1055,12 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
     }
 
     pub fn lib_or_check_profile(&self, unit: &Unit, target: &Target) -> &'a Profile {
-        if unit.profile.check && !target.is_custom_build() && !target.for_host() {
-            &self.profiles.check
-        } else {
-            self.lib_profile()
+        if !target.is_custom_build() && !target.for_host() {
+            if unit.profile.check || (unit.profile.doc && !unit.profile.test) {
+                return &self.profiles.check
+            }
         }
+        self.lib_profile()
     }
 
     pub fn build_script_profile(&self, _pkg: &PackageId) -> &'a Profile {
@@ -1221,6 +1222,16 @@ fn env_args(config: &Config,
                     None
                 }
             });
+
+            // Note that we may have multiple matching `[target]` sections and
+            // because we're passing flags to the compiler this can affect
+            // cargo's caching and whether it rebuilds. Ensure a deterministic
+            // ordering through sorting for now. We may perhaps one day wish to
+            // ensure a deterministic ordering via the order keys were defined
+            // in files perhaps.
+            let mut cfgs = cfgs.collect::<Vec<_>>();
+            cfgs.sort();
+
             for n in cfgs {
                 let key = format!("target.{}.{}", n, name);
                 if let Some(args) = config.get_list_or_split_string(&key)? {

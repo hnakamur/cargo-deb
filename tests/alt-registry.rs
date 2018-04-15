@@ -3,8 +3,10 @@ extern crate hamcrest;
 
 use cargotest::ChannelChanger;
 use cargotest::support::registry::{self, Package, alt_api_path};
-use cargotest::support::{project, execs};
+use cargotest::support::{paths, project, execs};
 use hamcrest::assert_that;
+use std::fs::File;
+use std::io::Write;
 
 #[test]
 fn is_feature_gated() {
@@ -180,7 +182,9 @@ fn depend_on_alt_registry_depends_on_crates_io() {
 }
 
 #[test]
-fn registry_incompatible_with_path() {
+fn registry_and_path_dep_works() {
+    registry::init();
+
     let p = project("foo")
         .file("Cargo.toml", r#"
             cargo-features = ["alternative-registries"]
@@ -191,19 +195,33 @@ fn registry_incompatible_with_path() {
             authors = []
 
             [dependencies.bar]
-            path = ""
+            path = "bar"
             registry = "alternative"
         "#)
         .file("src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("bar/src/lib.rs", "")
         .build();
 
     assert_that(p.cargo("build").masquerade_as_nightly_cargo(),
-                execs().with_status(101)
-                .with_stderr_contains("  dependency (bar) specification is ambiguous. Only one of `path` or `registry` is allowed."));
+                execs().with_status(0)
+                .with_stderr(&format!("\
+[COMPILING] bar v0.0.1 ({dir}/bar)
+[COMPILING] foo v0.0.1 ({dir})
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..] secs
+",
+        dir = p.url())));
 }
 
 #[test]
 fn registry_incompatible_with_git() {
+    registry::init();
+
     let p = project("foo")
         .file("Cargo.toml", r#"
             cargo-features = ["alternative-registries"]
@@ -406,4 +424,36 @@ fn publish_with_crates_io_dep() {
     assert_that(p.cargo("publish").masquerade_as_nightly_cargo()
                  .arg("--registry").arg("alternative").arg("-Zunstable-options"),
                 execs().with_status(0));
+}
+
+#[test]
+fn credentials_in_url_forbidden() {
+    registry::init();
+
+    let config = paths::home().join(".cargo/config");
+
+    File::create(config)
+        .unwrap()
+        .write_all(br#"
+        [registries.alternative]
+        index = "ssh://git:secret@foobar.com"
+        "#)
+        .unwrap();
+
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            cargo-features = ["alternative-registries"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(p.cargo("publish").masquerade_as_nightly_cargo()
+                 .arg("--registry").arg("alternative").arg("-Zunstable-options"),
+                execs().with_status(101)
+                    .with_stderr_contains("error: Registry URLs may not contain credentials"));
 }

@@ -88,7 +88,7 @@ fn simple() {
 hoare = \"0.1.1\"    # Design by contract style assertions for Rust"));
 }
 
-// TODO: Depricated
+// TODO: Deprecated
 // remove once it has been decided '--host' can be safely removed
 #[test]
 fn simple_with_host() {
@@ -140,7 +140,7 @@ fn simple_with_host() {
 [WARNING] The flag '--host' is no longer valid.
 
 Previous versions of Cargo accepted this flag, but it is being
-depricated. The flag is being renamed to 'index', as the flag
+deprecated. The flag is being renamed to 'index', as the flag
 wants the location of the index in which to search. Please
 use '--index' instead.
 
@@ -154,7 +154,7 @@ about this warning.
 hoare = \"0.1.1\"    # Design by contract style assertions for Rust"));
 }
 
-// TODO: Depricated
+// TODO: Deprecated
 // remove once it has been decided '--host' can be safely removed
 #[test]
 fn simple_with_index_and_host() {
@@ -207,7 +207,7 @@ fn simple_with_index_and_host() {
 [WARNING] The flag '--host' is no longer valid.
 
 Previous versions of Cargo accepted this flag, but it is being
-depricated. The flag is being renamed to 'index', as the flag
+deprecated. The flag is being renamed to 'index', as the flag
 wants the location of the index in which to search. Please
 use '--index' instead.
 
@@ -277,4 +277,9 @@ fn help() {
                 execs().with_status(0));
     assert_that(cargo_process("help").arg("search"),
                 execs().with_status(0));
+    // Ensure that help output goes to stdout, not stderr.
+    assert_that(cargo_process("search").arg("--help"),
+                execs().with_stderr(""));
+    assert_that(cargo_process("search").arg("--help"),
+                execs().with_stdout_contains("[..] --frozen [..]"));
 }
