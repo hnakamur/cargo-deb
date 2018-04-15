@@ -369,6 +369,15 @@ Copyright: 2015, Steffen Butzer <steffen.butzer@outlook.com>
 License: MIT
 Comment: see https://github.com/steffengy/schannel-rs/
 
+Files: vendor/humantime-*
+Copyright: 2016, The humantime Developers
+License: MIT or Apache-2.0
+Comment:
+ Includes parts of http date with copyright: 2016, Pyfisch and portions of musl
+ libc with copyright 2005-2013 Rich Felker.
+ .
+ See https://github.com/tailhook/humantime
+
 Files: debian/*
 Copyright: 2017 Ximin Luo <infinity0@debian.org>
            2015-2016 Luca Bruno <lucab@debian.org>
