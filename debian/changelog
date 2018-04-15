@@ -1,4 +1,4 @@
-cargo (0.26.0-1~exp1) experimental; urgency=medium
+cargo (0.26.0-1~exp1) UNRELEASED; urgency=medium
 
   [upstream]
   * cargo new now defaults to create binary crate instead of library
@@ -23,7 +23,7 @@ cargo (0.26.0-1~exp1) experimental; urgency=medium
     longer present in new release.
   * debian/copyright: Add copyright for humantime crate.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 15 Apr 2018 22:14:31 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 15 Apr 2018 22:17:24 +0530
 
 cargo (0.25.0-3) unstable; urgency=medium
 
