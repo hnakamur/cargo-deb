@@ -1,3 +1,14 @@
+cargo (0.25.0-3) unstable; urgency=medium
+
+  [ Ximin Luo ]
+  * Update Vcs-* fields to salsa
+
+  [ Vasudev Kamath ]
+  * Add patch to prevent incremental builds on sparc64.
+    Closes: bug#895300, Thanks to John Paul Adrian Glaubitz.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 15 Apr 2018 12:28:29 +0530
+
 cargo (0.25.0-2) unstable; urgency=medium
 
   [ Ximin Luo ]
