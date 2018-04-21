@@ -96,6 +96,11 @@ Comment: see upstream projects,
  * https://github.com/BurntSushi/same-file
  * https://github.com/BurntSushi/walkdir
 
+Files: vendor/ucd-util-*
+Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/BurntSushi/rucd
+
 Files: vendor/kernel32-*
        vendor/winapi-*
        vendor/advapi32-sys-*
@@ -146,6 +151,11 @@ Files: vendor/idna-0*
 Copyright: 2013 Simon Sapin <simon.sapin@exyr.org>
            2013-2014 Valentin Gosu
            1991-2015 Unicode, Inc
+License: MIT or Apache-2.0
+
+Files: vendor/lazycell-*
+Copyright: 20014, The Rust Project Developers
+           2016-2017, Nikita Pekin and lazycell contributors
 License: MIT or Apache-2.0
 
 Files: vendor/idna-0*/src/IdnaMappingTable.txt
@@ -293,9 +303,13 @@ Comment: see https://github.com/softprops/atty
 
 Files: vendor/fnv-*
  vendor/cc-*
-Copyright: 2017, Alex Crichton <alex@alexcrichton.com>
+ vendor/proc-macro2-*
+Copyright: 2017-2018, Alex Crichton <alex@alexcrichton.com>
 License: MIT or Apache-2.0
-Comment: see https://github.com/servo/rust-fnv/
+Comment:
+ see https://github.com/servo/rust-fnv/
+ see https://github.com/alexcrichton/proc-macro
+
 
 Files: vendor/home-*
 Copyright: Brian Anderson <andersb@gmail.com>
@@ -335,6 +349,10 @@ Files: vendor/redox_syscall-*
        vendor/redox_termios-*
 Copyright: 2017, Redox OS Developers
 License: MIT
+
+Files: vendor/quick-error-*
+Copyright: 2015, The quick-error developers
+License: MIT or Apache-2.0
 
 Files: vendor/termion-*
 Copyright: 2016, Ticki
