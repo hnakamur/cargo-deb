@@ -1,4 +1,4 @@
-cargo (0.26.0-1~exp1) UNRELEASED; urgency=medium
+cargo (0.26.0-1~exp1) experimental; urgency=medium
 
   [upstream]
   * cargo new now defaults to create binary crate instead of library
@@ -21,9 +21,13 @@ cargo (0.26.0-1~exp1) UNRELEASED; urgency=medium
     + Refresh patch 1001 with new upstream release.
   * debian/rules: disable execution of src/ci/dox.sh, this script is no
     longer present in new release.
-  * debian/copyright: Add copyright for humantime crate.
+  * debian/copyright:
+    + Add copyright for humantime crate.
+    + Add copyright for lazycell crate.
+    + Add copyright for quick-error crate
+    + Add copyright for proc-macro2 crate.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 15 Apr 2018 22:17:24 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 21 Apr 2018 20:59:39 +0530
 
 cargo (0.25.0-3) unstable; urgency=medium
 
