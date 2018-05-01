@@ -74,7 +74,6 @@ fn adding_and_removing_packages() {
     assert_eq!(lock1, lock4);
 }
 
-#[test]
 fn no_index_update() {
     use cargotest::ChannelChanger;
     let p = project("foo")
