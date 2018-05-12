@@ -3,9 +3,9 @@ Description: Disable incremental builds on sparc64
  disable them by default for the time being.
 Last-Update: 2018-04-09
 
---- cargo-0.25.0.orig/src/cargo/core/manifest.rs
-+++ cargo-0.25.0/src/cargo/core/manifest.rs
-@@ -633,6 +633,9 @@ impl Profile {
+--- a/src/cargo/core/manifest.rs
++++ b/src/cargo/core/manifest.rs
+@@ -711,6 +711,9 @@
              debuginfo: Some(2),
              debug_assertions: true,
              overflow_checks: true,
