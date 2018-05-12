@@ -3,9 +3,9 @@ Author: Ximin Luo <infinity0@debian.org>
 Forwarded: TODO
 ---
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
---- a/tests/build-auth.rs
-+++ b/tests/build-auth.rs
-@@ -14,7 +14,7 @@
+--- a/tests/testsuite/build_auth.rs
++++ b/tests/testsuite/build_auth.rs
+@@ -11,7 +11,7 @@
  use hamcrest::assert_that;
  
  // Test that HTTP auth is offered from `credential.helper`
@@ -14,7 +14,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn http_auth_offered() {
      let server = TcpListener::bind("127.0.0.1:0").unwrap();
      let addr = server.local_addr().unwrap();
-@@ -129,7 +129,7 @@
+@@ -156,7 +156,7 @@
  }
  
  // Boy, sure would be nice to have a TLS implementation in rust!
@@ -23,7 +23,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn https_something_happens() {
      let server = TcpListener::bind("127.0.0.1:0").unwrap();
      let addr = server.local_addr().unwrap();
-@@ -180,7 +180,7 @@
+@@ -223,7 +223,7 @@
  }
  
  // Boy, sure would be nice to have an SSH implementation in rust!
@@ -32,44 +32,44 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn ssh_something_happens() {
      let server = TcpListener::bind("127.0.0.1:0").unwrap();
      let addr = server.local_addr().unwrap();
---- a/tests/net-config.rs
-+++ b/tests/net-config.rs
-@@ -4,7 +4,7 @@
- use cargotest::support::{project, execs};
+--- a/tests/testsuite/net_config.rs
++++ b/tests/testsuite/net_config.rs
+@@ -1,7 +1,7 @@
+ use cargotest::support::{execs, project};
  use hamcrest::assert_that;
  
 -#[test]
 +//#[test]
  fn net_retry_loads_from_config() {
      let p = project("foo")
-         .file("Cargo.toml", r#"
-@@ -30,7 +30,7 @@
- (1 tries remaining): [..]"));
+         .file(
+@@ -37,7 +37,7 @@
+     );
  }
  
 -#[test]
 +//#[test]
  fn net_retry_git_outputs_warning() {
      let p = project("foo")
-         .file("Cargo.toml", r#"
---- a/tests/test.rs
-+++ b/tests/test.rs
-@@ -2264,7 +2264,7 @@
-                 execs().with_status(0));
+         .file(
+--- a/tests/testsuite/test.rs
++++ b/tests/testsuite/test.rs
+@@ -3049,7 +3049,7 @@
+     );
  }
  
 -#[test]
 +//#[test]
  fn pass_correct_cfgs_flags_to_rustdoc() {
      let p = project("foo")
-         .file("Cargo.toml", r#"
---- a/tests/generate-lockfile.rs
-+++ b/tests/generate-lockfile.rs
-@@ -74,7 +74,6 @@
+         .file(
+--- a/tests/testsuite/generate_lockfile.rs
++++ b/tests/testsuite/generate_lockfile.rs
+@@ -90,7 +90,6 @@
      assert_eq!(lock1, lock4);
  }
  
 -#[test]
  fn no_index_update() {
-     use cargotest::ChannelChanger;
-     let p = project("foo")
+     Package::new("serde", "1.0.0").publish();
+ 
