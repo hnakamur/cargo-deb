@@ -43,6 +43,10 @@ termion-*/logo.svg
 tar-*/Cargo.toml
 schannel-*/LICENSE.md
 lazy_static-*/src/lib.rs
+clap-*/.github/CONTRIBUTING.md
+clap-*/CONTRIBUTORS.md
+clap-*/CHANGELOG.md
+vec_map-*/Cargo.toml
 
 # test data for schanel
 schannel-*/test/*
