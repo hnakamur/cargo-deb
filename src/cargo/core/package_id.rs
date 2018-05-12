@@ -11,6 +11,7 @@ use serde::ser;
 
 use util::{CargoResult, ToSemver};
 use core::source::SourceId;
+use core::interning::InternedString;
 
 /// Identifier for a specific version of a package in a specific source.
 #[derive(Clone)]
@@ -20,25 +21,29 @@ pub struct PackageId {
 
 #[derive(PartialEq, PartialOrd, Eq, Ord)]
 struct PackageIdInner {
-    name: String,
+    name: InternedString,
     version: semver::Version,
     source_id: SourceId,
 }
 
 impl ser::Serialize for PackageId {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
-        where S: ser::Serializer
+    where
+        S: ser::Serializer,
     {
-        s.collect_str(&format_args!("{} {} ({})",
-                                    self.inner.name,
-                                    self.inner.version,
-                                    self.inner.source_id.to_url()))
+        s.collect_str(&format_args!(
+            "{} {} ({})",
+            self.inner.name,
+            self.inner.version,
+            self.inner.source_id.to_url()
+        ))
     }
 }
 
 impl<'de> de::Deserialize<'de> for PackageId {
     fn deserialize<D>(d: D) -> Result<PackageId, D::Error>
-        where D: de::Deserializer<'de>
+    where
+        D: de::Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
         let mut s = string.splitn(3, ' ');
@@ -47,8 +52,7 @@ impl<'de> de::Deserialize<'de> for PackageId {
             Some(s) => s,
             None => return Err(de::Error::custom("invalid serialized PackageId")),
         };
-        let version = semver::Version::parse(version)
-                            .map_err(de::Error::custom)?;
+        let version = semver::Version::parse(version).map_err(de::Error::custom)?;
         let url = match s.next() {
             Some(s) => s,
             None => return Err(de::Error::custom("invalid serialized PackageId")),
@@ -56,16 +60,15 @@ impl<'de> de::Deserialize<'de> for PackageId {
         let url = if url.starts_with('(') && url.ends_with(')') {
             &url[1..url.len() - 1]
         } else {
-            return Err(de::Error::custom("invalid serialized PackageId"))
-
+            return Err(de::Error::custom("invalid serialized PackageId"));
         };
         let source_id = SourceId::from_url(url).map_err(de::Error::custom)?;
 
         Ok(PackageId {
             inner: Arc::new(PackageIdInner {
-                name: name.to_string(),
-                version: version,
-                source_id: source_id,
+                name: InternedString::new(name),
+                version,
+                source_id,
             }),
         })
     }
@@ -97,26 +100,31 @@ impl Ord for PackageId {
 }
 
 impl PackageId {
-    pub fn new<T: ToSemver>(name: &str, version: T,
-                             sid: &SourceId) -> CargoResult<PackageId> {
+    pub fn new<T: ToSemver>(name: &str, version: T, sid: &SourceId) -> CargoResult<PackageId> {
         let v = version.to_semver()?;
         Ok(PackageId {
             inner: Arc::new(PackageIdInner {
-                name: name.to_string(),
+                name: InternedString::new(name),
                 version: v,
                 source_id: sid.clone(),
             }),
         })
     }
 
-    pub fn name(&self) -> &str { &self.inner.name }
-    pub fn version(&self) -> &semver::Version { &self.inner.version }
-    pub fn source_id(&self) -> &SourceId { &self.inner.source_id }
+    pub fn name(&self) -> InternedString {
+        self.inner.name
+    }
+    pub fn version(&self) -> &semver::Version {
+        &self.inner.version
+    }
+    pub fn source_id(&self) -> &SourceId {
+        &self.inner.source_id
+    }
 
     pub fn with_precise(&self, precise: Option<String>) -> PackageId {
         PackageId {
             inner: Arc::new(PackageIdInner {
-                name: self.inner.name.to_string(),
+                name: self.inner.name,
                 version: self.inner.version.clone(),
                 source_id: self.inner.source_id.with_precise(precise),
             }),
@@ -126,7 +134,7 @@ impl PackageId {
     pub fn with_source_id(&self, source: &SourceId) -> PackageId {
         PackageId {
             inner: Arc::new(PackageIdInner {
-                name: self.inner.name.to_string(),
+                name: self.inner.name,
                 version: self.inner.version.clone(),
                 source_id: source.clone(),
             }),
@@ -163,10 +171,10 @@ impl fmt::Display for PackageId {
 impl fmt::Debug for PackageId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("PackageId")
-         .field("name", &self.inner.name)
-         .field("version", &self.inner.version.to_string())
-         .field("source", &self.inner.source_id.to_string())
-         .finish()
+            .field("name", &self.inner.name)
+            .field("version", &self.inner.version.to_string())
+            .field("source", &self.inner.source_id.to_string())
+            .finish()
     }
 }
 

@@ -81,6 +81,10 @@ of helpers to minimize boilerplate.
 installed locally, ignore the cross-compile test failures or disable them by
 using `CFG_DISABLE_CROSS_TESTS=1 cargo test`. Note that some tests are enabled
 only on `nightly` toolchain. If you can, test both toolchains.
+* All code is expected to comply with the formatting suggested by `rustfmt`;
+discrepancy is considered an error by CI, so a pull request with unsound
+formatting will not be accepted. You can use `rustup component add rustfmt-preview`
+to install `rustfmt` and use `cargo fmt` to automatically format your code.
 * Push your commits to GitHub and create a pull request against Cargo's
 `master` branch.
 
@@ -109,12 +113,15 @@ and [merges][mergequeue] it into Cargo's `master` branch.
 
 To contribute to the documentation, all you need to do is change the markdown
 files in the `src/doc` directory. To view the rendered version of changes you
-have made locally, run:
+have made locally, make sure you have `mdbook` installed and run:
 
 ```sh
-sh src/ci/dox.sh
-open target/doc/index.html
+cd src/doc
+mdbook build
+open book/index.html
 ```
+
+To install `mdbook` run `cargo install mdbook`.
 
 
 ## Issue Triage
