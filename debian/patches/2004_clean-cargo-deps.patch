@@ -11,7 +11,7 @@ Forwarded: not-needed
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -56,26 +56,26 @@
+@@ -61,27 +61,27 @@
  [target.'cfg(target_os = "macos")'.dependencies]
  core-foundation = { version = "0.5.1", features = ["mac_os_10_7_support"] }
  
@@ -28,6 +28,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 -  "jobapi2",
 -  "minwindef",
 -  "ntdef",
+-  "ntstatus",
 -  "processenv",
 -  "processthreadsapi",
 -  "psapi",
@@ -45,6 +46,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 +#   "jobapi2",
 +#   "minwindef",
 +#   "ntdef",
++#   "ntstatus",
 +#   "processenv",
 +#   "processthreadsapi",
 +#   "psapi",
