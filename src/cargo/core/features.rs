@@ -46,8 +46,7 @@ use std::str::FromStr;
 use util::errors::CargoResult;
 
 /// The epoch of the compiler (RFC 2052)
-#[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, Eq, PartialEq)]
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Epoch {
     /// The 2015 epoch
     Epoch2015,
@@ -69,7 +68,7 @@ impl FromStr for Epoch {
         match s {
             "2015" => Ok(Epoch::Epoch2015),
             "2018" => Ok(Epoch::Epoch2018),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -99,7 +98,7 @@ macro_rules! features {
                     }
                     static FEAT: Feature = Feature {
                         name: stringify!($feature),
-                        get: get,
+                        get,
                     };
                     &FEAT
                 }
@@ -159,6 +158,12 @@ features! {
 
         // Using epochs
         [unstable] epoch: bool,
+
+        // Renaming a package in the manifest via the `package` key
+        [unstable] rename_dependency: bool,
+
+        // Whether a lock file is published with this crate
+        [unstable] publish_lockfile: bool,
     }
 }
 
@@ -168,8 +173,7 @@ pub struct Feature {
 }
 
 impl Features {
-    pub fn new(features: &[String],
-               warnings: &mut Vec<String>) -> CargoResult<Features> {
+    pub fn new(features: &[String], warnings: &mut Vec<String>) -> CargoResult<Features> {
         let mut ret = Features::default();
         for feature in features {
             ret.add(feature, warnings)?;
@@ -190,17 +194,20 @@ impl Features {
 
         match status {
             Status::Stable => {
-                let warning = format!("the cargo feature `{}` is now stable \
-                                       and is no longer necessary to be listed \
-                                       in the manifest", feature);
+                let warning = format!(
+                    "the cargo feature `{}` is now stable \
+                     and is no longer necessary to be listed \
+                     in the manifest",
+                    feature
+                );
                 warnings.push(warning);
             }
-            Status::Unstable if !nightly_features_allowed() => {
-                bail!("the cargo feature `{}` requires a nightly version of \
-                       Cargo, but this is the `{}` channel",
-                      feature,
-                      channel())
-            }
+            Status::Unstable if !nightly_features_allowed() => bail!(
+                "the cargo feature `{}` requires a nightly version of \
+                 Cargo, but this is the `{}` channel",
+                feature,
+                channel()
+            ),
             Status::Unstable => {}
         }
 
@@ -221,15 +228,20 @@ impl Features {
             let mut msg = format!("feature `{}` is required", feature);
 
             if nightly_features_allowed() {
-                let s = format!("\n\nconsider adding `cargo-features = [\"{0}\"]` \
-                                 to the manifest", feature);
+                let s = format!(
+                    "\n\nconsider adding `cargo-features = [\"{0}\"]` \
+                     to the manifest",
+                    feature
+                );
                 msg.push_str(&s);
             } else {
-                let s = format!("\n\n\
-                    this Cargo does not support nightly features, but if you\n\
-                    switch to nightly channel you can add\n\
-                    `cargo-features = [\"{}\"]` to enable this feature",
-                    feature);
+                let s = format!(
+                    "\n\n\
+                     this Cargo does not support nightly features, but if you\n\
+                     switch to nightly channel you can add\n\
+                     `cargo-features = [\"{}\"]` to enable this feature",
+                    feature
+                );
                 msg.push_str(&s);
             }
             bail!("{}", msg);
@@ -272,6 +284,8 @@ pub struct CliUnstable {
     pub unstable_options: bool,
     pub offline: bool,
     pub no_index_update: bool,
+    pub avoid_dev_deps: bool,
+    pub minimal_versions: bool,
 }
 
 impl CliUnstable {
@@ -292,8 +306,7 @@ impl CliUnstable {
 
         fn parse_bool(value: Option<&str>) -> CargoResult<bool> {
             match value {
-                None |
-                Some("yes") => Ok(true),
+                None | Some("yes") => Ok(true),
                 Some("no") => Ok(false),
                 Some(s) => bail!("expected `no` or `yes`, found: {}", s),
             }
@@ -304,6 +317,8 @@ impl CliUnstable {
             "unstable-options" => self.unstable_options = true,
             "offline" => self.offline = true,
             "no-index-update" => self.no_index_update = true,
+            "avoid-dev-deps" => self.avoid_dev_deps = true,
+            "minimal-versions" => self.minimal_versions = true,
             _ => bail!("unknown `-Z` flag specified: {}", k),
         }
 
@@ -313,7 +328,9 @@ impl CliUnstable {
 
 fn channel() -> String {
     env::var("__CARGO_TEST_CHANNEL_OVERRIDE_DO_NOT_USE_THIS").unwrap_or_else(|_| {
-        ::version().cfg_info.map(|c| c.release_channel)
+        ::version()
+            .cfg_info
+            .map(|c| c.release_channel)
             .unwrap_or_else(|| String::from("dev"))
     })
 }

@@ -296,10 +296,10 @@ lto = false        # Link Time Optimization usually reduces size of binaries
                    # and static libraries. Increases compilation time.
                    # If true, passes `-C lto` flag to the compiler, and if a
                    # string is specified like 'thin' then `-C lto=thin` will
-                   # be passed
+                   # be passed.
 debug-assertions = true # controls whether debug assertions are enabled
                    # (e.g. debug_assert!() and arithmetic overflow checks)
-codegen-units = 1  # if > 1 enables parallel code generation which improves
+codegen-units = 16 # if > 1 enables parallel code generation which improves
                    # compile times, but prevents some optimizations.
                    # Passes `-C codegen-units`.
 panic = 'unwind'   # panic strategy (`-C panic=...`), can also be 'abort'
@@ -314,7 +314,7 @@ debug = false
 rpath = false
 lto = false
 debug-assertions = false
-codegen-units = 1
+codegen-units = 16
 panic = 'unwind'
 incremental = false
 overflow-checks = false
@@ -326,7 +326,7 @@ debug = 2
 rpath = false
 lto = false
 debug-assertions = true
-codegen-units = 1
+codegen-units = 16
 panic = 'unwind'
 incremental = true
 overflow-checks = true
@@ -338,7 +338,7 @@ debug = false
 rpath = false
 lto = false
 debug-assertions = false
-codegen-units = 1
+codegen-units = 16
 panic = 'unwind'
 incremental = false
 overflow-checks = false
@@ -350,7 +350,7 @@ debug = 2
 rpath = false
 lto = false
 debug-assertions = true
-codegen-units = 1
+codegen-units = 16
 panic = 'unwind'
 incremental = true
 overflow-checks = true
@@ -792,8 +792,7 @@ source's original crate is replaced.
 
 More information about overriding dependencies can be found in the [overriding
 dependencies][replace] section of the documentation and [RFC 1969] for the
-technical specification of this feature. (Note that the `[patch]` feature will
-first become available in Rust 1.21, set to be released on 2017-10-12.)
+technical specification of this feature.
 
 [RFC 1969]: https://github.com/rust-lang/rfcs/pull/1969
 [replace]: reference/specifying-dependencies.html#overriding-dependencies

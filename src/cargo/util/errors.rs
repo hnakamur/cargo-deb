@@ -1,27 +1,31 @@
 #![allow(unknown_lints)]
 
 use std::fmt;
-use std::process::{Output, ExitStatus};
+use std::process::{ExitStatus, Output};
 use std::str;
 
-use core::TargetKind;
+use core::{TargetKind, Workspace};
 use failure::{Context, Error, Fail};
+use clap;
 
 pub use failure::Error as CargoError;
 pub type CargoResult<T> = Result<T, Error>;
 
 pub trait CargoResultExt<T, E> {
     fn chain_err<F, D>(self, f: F) -> Result<T, Context<D>>
-        where F: FnOnce() -> D,
-              D: fmt::Display + Send + Sync + 'static;
+    where
+        F: FnOnce() -> D,
+        D: fmt::Display + Send + Sync + 'static;
 }
 
 impl<T, E> CargoResultExt<T, E> for Result<T, E>
-	where E: Into<Error>,
+where
+    E: Into<Error>,
 {
     fn chain_err<F, D>(self, f: F) -> Result<T, Context<D>>
-        where F: FnOnce() -> D,
-              D: fmt::Display + Send + Sync + 'static,
+    where
+        F: FnOnce() -> D,
+        D: fmt::Display + Send + Sync + 'static,
     {
         self.map_err(|failure| {
             let context = f();
@@ -92,7 +96,11 @@ pub struct CargoTestError {
 pub enum Test {
     Multiple,
     Doc,
-    UnitTest(TargetKind, String)
+    UnitTest {
+        kind: TargetKind,
+        name: String,
+        pkg_name: String,
+    },
 }
 
 impl CargoTestError {
@@ -100,32 +108,51 @@ impl CargoTestError {
         if errors.is_empty() {
             panic!("Cannot create CargoTestError from empty Vec")
         }
-        let desc = errors.iter().map(|error| error.desc.clone())
-                                .collect::<Vec<String>>()
-                                .join("\n");
+        let desc = errors
+            .iter()
+            .map(|error| error.desc.clone())
+            .collect::<Vec<String>>()
+            .join("\n");
         CargoTestError {
-            test: test,
-            desc: desc,
+            test,
+            desc,
             exit: errors[0].exit,
             causes: errors,
         }
     }
 
-    pub fn hint(&self) -> String {
+    pub fn hint(&self, ws: &Workspace) -> String {
         match self.test {
-            Test::UnitTest(ref kind, ref name) => {
+            Test::UnitTest {
+                ref kind,
+                ref name,
+                ref pkg_name,
+            } => {
+                let pkg_info = if ws.members().count() > 1 && ws.is_virtual() {
+                    format!("-p {} ", pkg_name)
+                } else {
+                    String::new()
+                };
+
                 match *kind {
-                    TargetKind::Bench => format!("test failed, to rerun pass '--bench {}'", name),
-                    TargetKind::Bin => format!("test failed, to rerun pass '--bin {}'", name),
-                    TargetKind::Lib(_) => "test failed, to rerun pass '--lib'".into(),
-                    TargetKind::Test => format!("test failed, to rerun pass '--test {}'", name),
-                    TargetKind::ExampleBin | TargetKind::ExampleLib(_) =>
-                        format!("test failed, to rerun pass '--example {}", name),
-                    _ => "test failed.".into()
+                    TargetKind::Bench => {
+                        format!("test failed, to rerun pass '{}--bench {}'", pkg_info, name)
+                    }
+                    TargetKind::Bin => {
+                        format!("test failed, to rerun pass '{}--bin {}'", pkg_info, name)
+                    }
+                    TargetKind::Lib(_) => format!("test failed, to rerun pass '{}--lib'", pkg_info),
+                    TargetKind::Test => {
+                        format!("test failed, to rerun pass '{}--test {}'", pkg_info, name)
+                    }
+                    TargetKind::ExampleBin | TargetKind::ExampleLib(_) => {
+                        format!("test failed, to rerun pass '{}--example {}", pkg_info, name)
+                    }
+                    _ => "test failed.".into(),
                 }
-            },
+            }
             Test::Doc => "test failed, to rerun pass '--doc'".into(),
-            _ => "test failed.".into()
+            _ => "test failed.".into(),
         }
     }
 }
@@ -139,17 +166,25 @@ pub type CliResult = Result<(), CliError>;
 pub struct CliError {
     pub error: Option<CargoError>,
     pub unknown: bool,
-    pub exit_code: i32
+    pub exit_code: i32,
 }
 
 impl CliError {
     pub fn new(error: CargoError, code: i32) -> CliError {
         let unknown = error.downcast_ref::<Internal>().is_some();
-        CliError { error: Some(error), exit_code: code, unknown }
+        CliError {
+            error: Some(error),
+            exit_code: code,
+            unknown,
+        }
     }
 
     pub fn code(code: i32) -> CliError {
-        CliError { error: None, exit_code: code, unknown: false }
+        CliError {
+            error: None,
+            exit_code: code,
+            unknown: false,
+        }
     }
 }
 
@@ -159,14 +194,21 @@ impl From<CargoError> for CliError {
     }
 }
 
+impl From<clap::Error> for CliError {
+    fn from(err: clap::Error) -> CliError {
+        let code = if err.use_stderr() { 1 } else { 0 };
+        CliError::new(err.into(), code)
+    }
+}
 
 // =============================================================================
 // Construction helpers
 
-pub fn process_error(msg: &str,
-                     status: Option<&ExitStatus>,
-                     output: Option<&Output>) -> ProcessError
-{
+pub fn process_error(
+    msg: &str,
+    status: Option<&ExitStatus>,
+    output: Option<&Output>,
+) -> ProcessError {
     let exit = match status {
         Some(s) => status_to_string(s),
         None => "never executed".to_string(),
@@ -191,7 +233,7 @@ pub fn process_error(msg: &str,
     }
 
     return ProcessError {
-        desc: desc,
+        desc,
         exit: status.cloned(),
         output: output.cloned(),
     };

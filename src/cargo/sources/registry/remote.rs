@@ -1,4 +1,4 @@
-use std::cell::{RefCell, Ref, Cell};
+use std::cell::{Cell, Ref, RefCell};
 use std::fmt::Write as FmtWrite;
 use std::io::SeekFrom;
 use std::io::prelude::*;
@@ -13,10 +13,10 @@ use lazycell::LazyCell;
 
 use core::{PackageId, SourceId};
 use sources::git;
-use sources::registry::{RegistryData, RegistryConfig, INDEX_LOCK, CRATE_TEMPLATE, VERSION_TEMPLATE};
+use sources::registry::{RegistryConfig, RegistryData, CRATE_TEMPLATE, INDEX_LOCK, VERSION_TEMPLATE};
 use util::network;
 use util::{FileLock, Filesystem};
-use util::{Config, Sha256, ToUrl, Progress};
+use util::{Config, Progress, Sha256, ToUrl};
 use util::errors::{CargoResult, CargoResultExt, HttpNot200};
 
 pub struct RemoteRegistry<'cfg> {
@@ -30,13 +30,12 @@ pub struct RemoteRegistry<'cfg> {
 }
 
 impl<'cfg> RemoteRegistry<'cfg> {
-    pub fn new(source_id: &SourceId, config: &'cfg Config, name: &str)
-               -> RemoteRegistry<'cfg> {
+    pub fn new(source_id: &SourceId, config: &'cfg Config, name: &str) -> RemoteRegistry<'cfg> {
         RemoteRegistry {
             index_path: config.registry_index_path().join(name),
             cache_path: config.registry_cache_path().join(name),
             source_id: source_id.clone(),
-            config: config,
+            config,
             tree: RefCell::new(None),
             repo: LazyCell::new(),
             head: Cell::new(None),
@@ -49,13 +48,13 @@ impl<'cfg> RemoteRegistry<'cfg> {
 
             // Fast path without a lock
             if let Ok(repo) = git2::Repository::open(&path) {
-                return Ok(repo)
+                return Ok(repo);
             }
 
             // Ok, now we need to lock and try the whole thing over again.
-            let lock = self.index_path.open_rw(Path::new(INDEX_LOCK),
-                                               self.config,
-                                               "the registry index")?;
+            let lock =
+                self.index_path
+                    .open_rw(Path::new(INDEX_LOCK), self.config, "the registry index")?;
             match git2::Repository::open(&path) {
                 Ok(repo) => Ok(repo),
                 Err(_) => {
@@ -90,7 +89,7 @@ impl<'cfg> RemoteRegistry<'cfg> {
         {
             let tree = self.tree.borrow();
             if tree.is_some() {
-                return Ok(Ref::map(tree, |s| s.as_ref().unwrap()))
+                return Ok(Ref::map(tree, |s| s.as_ref().unwrap()));
             }
         }
         let repo = self.repo()?;
@@ -109,9 +108,7 @@ impl<'cfg> RemoteRegistry<'cfg> {
         // (`RemoteRegistry`) so we then just need to ensure that the tree is
         // destroyed first in the destructor, hence the destructor on
         // `RemoteRegistry` below.
-        let tree = unsafe {
-            mem::transmute::<git2::Tree, git2::Tree<'static>>(tree)
-        };
+        let tree = unsafe { mem::transmute::<git2::Tree, git2::Tree<'static>>(tree) };
         *self.tree.borrow_mut() = Some(tree);
         Ok(Ref::map(self.tree.borrow(), |s| s.as_ref().unwrap()))
     }
@@ -122,10 +119,12 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         &self.index_path
     }
 
-    fn load(&self,
-            _root: &Path,
-            path: &Path,
-            data: &mut FnMut(&[u8]) -> CargoResult<()>) -> CargoResult<()> {
+    fn load(
+        &self,
+        _root: &Path,
+        path: &Path,
+        data: &mut FnMut(&[u8]) -> CargoResult<()>,
+    ) -> CargoResult<()> {
         // Note that the index calls this method and the filesystem is locked
         // in the index, so we don't need to worry about an `update_index`
         // happening in a different process.
@@ -142,9 +141,9 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
 
     fn config(&mut self) -> CargoResult<Option<RegistryConfig>> {
         self.repo()?; // create intermediate dirs and initialize the repo
-        let _lock = self.index_path.open_ro(Path::new(INDEX_LOCK),
-                                            self.config,
-                                            "the registry index")?;
+        let _lock =
+            self.index_path
+                .open_ro(Path::new(INDEX_LOCK), self.config, "the registry index")?;
         let mut config = None;
         self.load(Path::new(""), Path::new("config.json"), &mut |json| {
             config = Some(serde_json::from_slice(json)?);
@@ -172,23 +171,23 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         self.repo()?;
         self.head.set(None);
         *self.tree.borrow_mut() = None;
-        let _lock = self.index_path.open_rw(Path::new(INDEX_LOCK),
-                                            self.config,
-                                            "the registry index")?;
-        self.config.shell().status("Updating", self.source_id.display_registry())?;
+        let _lock =
+            self.index_path
+                .open_rw(Path::new(INDEX_LOCK), self.config, "the registry index")?;
+        self.config
+            .shell()
+            .status("Updating", self.source_id.display_registry())?;
 
         // git fetch origin master
         let url = self.source_id.url();
         let refspec = "refs/heads/master:refs/remotes/origin/master";
         let repo = self.repo.borrow_mut().unwrap();
-        git::fetch(repo, url, refspec, self.config).chain_err(|| {
-            format!("failed to fetch `{}`", url)
-        })?;
+        git::fetch(repo, url, refspec, self.config)
+            .chain_err(|| format!("failed to fetch `{}`", url))?;
         Ok(())
     }
 
-    fn download(&mut self, pkg: &PackageId, checksum: &str)
-                -> CargoResult<FileLock> {
+    fn download(&mut self, pkg: &PackageId, checksum: &str) -> CargoResult<FileLock> {
         let filename = format!("{}-{}.crate", pkg.name(), pkg.version());
         let path = Path::new(&filename);
 
@@ -201,13 +200,13 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         if let Ok(dst) = self.cache_path.open_ro(path, self.config, &filename) {
             let meta = dst.file().metadata()?;
             if meta.len() > 0 {
-                return Ok(dst)
+                return Ok(dst);
             }
         }
         let mut dst = self.cache_path.open_rw(path, self.config, &filename)?;
         let meta = dst.file().metadata()?;
         if meta.len() > 0 {
-            return Ok(dst)
+            return Ok(dst);
         }
         self.config.shell().status("Downloading", pkg)?;
 
@@ -216,21 +215,21 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         if !url.contains(CRATE_TEMPLATE) && !url.contains(VERSION_TEMPLATE) {
             write!(url, "/{}/{}/download", CRATE_TEMPLATE, VERSION_TEMPLATE).unwrap();
         }
-        let url = url
-            .replace(CRATE_TEMPLATE, pkg.name())
+        let url = url.replace(CRATE_TEMPLATE, &*pkg.name())
             .replace(VERSION_TEMPLATE, &pkg.version().to_string())
             .to_url()?;
 
         // TODO: don't download into memory, but ensure that if we ctrl-c a
         //       download we should resume either from the start or the middle
         //       on the next time
+        let url = url.to_string();
         let mut handle = self.config.http()?.borrow_mut();
         handle.get(true)?;
-        handle.url(&url.to_string())?;
+        handle.url(&url)?;
         handle.follow_location(true)?;
         let mut state = Sha256::new();
         let mut body = Vec::new();
-        network::with_retry(self.config, &url, || {
+        network::with_retry(self.config, || {
             state = Sha256::new();
             body = Vec::new();
             let mut pb = Progress::new("Fetch", self.config);
@@ -249,10 +248,11 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
             }
             let code = handle.response_code()?;
             if code != 200 && code != 0 {
-                let url = handle.effective_url()?
-                    .map(|url| url.to_string())
-                    .unwrap_or_else(|| url.to_string());
-                Err(HttpNot200 { code, url }.into())
+                let url = handle.effective_url()?.unwrap_or(&url);
+                Err(HttpNot200 {
+                    code,
+                    url: url.to_string(),
+                }.into())
             } else {
                 Ok(())
             }
@@ -268,19 +268,17 @@ impl<'cfg> RegistryData for RemoteRegistry<'cfg> {
         Ok(dst)
     }
 
-
     fn is_crate_downloaded(&self, pkg: &PackageId) -> bool {
         let filename = format!("{}-{}.crate", pkg.name(), pkg.version());
         let path = Path::new(&filename);
 
         if let Ok(dst) = self.cache_path.open_ro(path, self.config, &filename) {
-            if let Ok(meta) = dst.file().metadata(){
+            if let Ok(meta) = dst.file().metadata() {
                 return meta.len() > 0;
             }
         }
         false
     }
-
 }
 
 impl<'cfg> Drop for RemoteRegistry<'cfg> {

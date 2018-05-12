@@ -1,14 +1,17 @@
 use std::fmt;
 
-use util::{CargoResult, Fresh, Dirty, Freshness};
+use util::{CargoResult, Dirty, Fresh, Freshness};
 use super::job_queue::JobState;
 
-pub struct Job { dirty: Work, fresh: Work }
+pub struct Job {
+    dirty: Work,
+    fresh: Work,
+}
 
 /// Each proc should send its description before starting.
 /// It should send either once or close immediately.
 pub struct Work {
-    inner: Box<for <'a, 'b> FnBox<&'a JobState<'b>, CargoResult<()>> + Send>,
+    inner: Box<for<'a, 'b> FnBox<&'a JobState<'b>, CargoResult<()>> + Send>,
 }
 
 trait FnBox<A, R> {
@@ -23,7 +26,8 @@ impl<A, R, F: FnOnce(A) -> R> FnBox<A, R> for F {
 
 impl Work {
     pub fn new<F>(f: F) -> Work
-        where F: FnOnce(&JobState) -> CargoResult<()> + Send + 'static
+    where
+        F: FnOnce(&JobState) -> CargoResult<()> + Send + 'static,
     {
         Work { inner: Box::new(f) }
     }
@@ -47,7 +51,7 @@ impl Work {
 impl Job {
     /// Create a new job representing a unit of work.
     pub fn new(dirty: Work, fresh: Work) -> Job {
-        Job { dirty: dirty, fresh: fresh }
+        Job { dirty, fresh }
     }
 
     /// Consumes this job by running it, returning the result of the

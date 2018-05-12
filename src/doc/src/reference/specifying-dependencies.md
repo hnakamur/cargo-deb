@@ -29,10 +29,11 @@ if we had specified `"^0.1.12"`, which is called a caret requirement.
 **Caret requirements** allow SemVer compatible updates to a specified version.
 An update is allowed if the new version number does not modify the left-most
 non-zero digit in the major, minor, patch grouping. In this case, if we ran
-`cargo update -p time`, cargo would update us to version `0.1.13` if it was
-available, but would not update us to `0.2.0`. If instead we had specified the
-version string as `^1.0`, cargo would update to `1.1` but not `2.0`. The version
-`0.0.x` is not considered compatible with any other version.
+`cargo update -p time`, cargo should update us to version `0.1.13` if it is the
+latest `0.1.z` release, but would not update us to `0.2.0`. If instead we had
+specified the version string as `^1.0`, cargo should update to `1.1` if it is
+the latest `1.y` release, but not `2.0`. The version `0.0.x` is not considered
+compatible with any other version.
 
 Here are some more examples of caret requirements and the versions that would
 be allowed with them:
@@ -42,6 +43,7 @@ be allowed with them:
 ^1.2 := >=1.2.0 <2.0.0
 ^1 := >=1.0.0 <2.0.0
 ^0.2.3 := >=0.2.3 <0.3.0
+^0.2 := >= 0.2.0 < 0.3.0
 ^0.0.3 := >=0.0.3 <0.0.4
 ^0.0 := >=0.0.0 <0.1.0
 ^0 := >=0.0.0 <1.0.0
@@ -307,7 +309,7 @@ resolve to 1.0.1 inside the repository instead of trying to download a version
 from crates.io. Once 1.0.1 is published on crates.io the `[patch]` section can
 be deleted.
 
-It's also worth nothing that `[patch]` applies *transitively*. Let's say you use
+It's also worth noting that `[patch]` applies *transitively*. Let's say you use
 `my-library` in a larger project, such as:
 
 ```toml
