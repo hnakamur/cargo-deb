@@ -5,8 +5,29 @@ Forwarded: TODO
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/tests/testsuite/build_auth.rs
 +++ b/tests/testsuite/build_auth.rs
-@@ -11,259 +11,259 @@
- use hamcrest::assert_that;
+@@ -1,269 +1,269 @@
+-use std;
+-use std::collections::HashSet;
+-use std::io::prelude::*;
+-use std::net::TcpListener;
+-use std::thread;
+-
+-use git2;
+-use bufstream::BufStream;
+-use cargotest::support::paths;
+-use cargotest::support::{execs, project};
+-use hamcrest::assert_that;
++// use std;
++// use std::collections::HashSet;
++// use std::io::prelude::*;
++// use std::net::TcpListener;
++// use std::thread;
++
++// use git2;
++// use bufstream::BufStream;
++// use cargotest::support::paths;
++// use cargotest::support::{execs, project};
++// use hamcrest::assert_that;
  
  // Test that HTTP auth is offered from `credential.helper`
 -#[test]
@@ -521,8 +542,10 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 --- a/tests/testsuite/net_config.rs
 +++ b/tests/testsuite/net_config.rs
 @@ -1,75 +1,75 @@
- use cargotest::support::{execs, project};
- use hamcrest::assert_that;
+-use cargotest::support::{execs, project};
+-use hamcrest::assert_that;
++// use cargotest::support::{execs, project};
++// use hamcrest::assert_that;
  
 -#[test]
 -fn net_retry_loads_from_config() {
@@ -895,6 +918,17 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn test_release_ignore_panic() {
 --- a/tests/testsuite/generate_lockfile.rs
 +++ b/tests/testsuite/generate_lockfile.rs
+@@ -2,8 +2,8 @@
+ use std::io::prelude::*;
+ 
+ use cargotest::support::{execs, project};
+-use cargotest::support::registry::Package;
+-use cargotest::ChannelChanger;
++// use cargotest::support::registry::Package;
++// use cargotest::ChannelChanger;
+ use hamcrest::{assert_that, existing_file, is_not};
+ 
+ #[test]
 @@ -90,38 +90,37 @@
      assert_eq!(lock1, lock4);
  }
@@ -902,9 +936,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 -#[test]
 -fn no_index_update() {
 -    Package::new("serde", "1.0.0").publish();
-+// fn no_index_update() {
-+//     Package::new("serde", "1.0.0").publish();
- 
+-
 -    let p = project("foo")
 -        .file(
 -            "Cargo.toml",
@@ -920,7 +952,9 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 -        )
 -        .file("src/main.rs", "fn main() {}")
 -        .build();
--
++// fn no_index_update() {
++//     Package::new("serde", "1.0.0").publish();
+ 
 -    assert_that(
 -        p.cargo("generate-lockfile"),
 -        execs().with_stderr("[UPDATING] registry `[..]`"),
