@@ -1,3 +1,25 @@
+cargo (0.27.0-1~exp1) UNRELEASED; urgency=medium
+
+  [ upstream ]
+  * Cargo will now output path to custom commands when -v is passed with
+    --list.
+  * Cargo binary version is now same as the Rust version.
+  * Cargo.lock files are now included in published crates.
+
+  [ Vasudev Kamath ]
+  * Update  patch 2004 for the new release.
+  * Add files from clap and vec_map to unsuspicious list.
+  * debian/patches:
+    + Update path to libgit2-sys in patch 2001.
+    + Adjust file name and paths to test files to be patched in patch
+      2002.
+    + Drop all unused imports and comment out functions not just drop
+      #[test] in patch 2002.
+    + Drop patch 1001 as its now part of new cargo release.
+    + Refresh patch 2007.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 19 May 2018 19:09:09 +0530
+
 cargo (0.26.0-1) unstable; urgency=medium
 
   * Upload to unstable.
