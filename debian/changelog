@@ -1,4 +1,4 @@
-cargo (0.27.0-1~exp1) UNRELEASED; urgency=medium
+cargo (0.27.0-1~exp1) experimental; urgency=medium
 
   [ upstream ]
   * Cargo will now output path to custom commands when -v is passed with
@@ -17,8 +17,10 @@ cargo (0.27.0-1~exp1) UNRELEASED; urgency=medium
       #[test] in patch 2002.
     + Drop patch 1001 as its now part of new cargo release.
     + Refresh patch 2007.
+  * debian/copyright:
+    + Update copyright information for new vendored crates.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 19 May 2018 19:09:09 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 02 Jun 2018 15:10:38 +0530
 
 cargo (0.26.0-1) unstable; urgency=medium
 
