@@ -711,6 +711,9 @@ impl Profile {
             debuginfo: Some(2),
             debug_assertions: true,
             overflow_checks: true,
+	    #[cfg(target_arch = "sparc64")]
+            incremental: false,
+	    #[cfg(not(target_arch = "sparc64"))]
             incremental: true,
             ..Profile::default()
         }
