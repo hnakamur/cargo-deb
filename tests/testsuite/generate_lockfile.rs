@@ -2,8 +2,8 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 
 use cargotest::support::{execs, project};
-use cargotest::support::registry::Package;
-use cargotest::ChannelChanger;
+// use cargotest::support::registry::Package;
+// use cargotest::ChannelChanger;
 use hamcrest::{assert_that, existing_file, is_not};
 
 #[test]
@@ -90,38 +90,37 @@ fn adding_and_removing_packages() {
     assert_eq!(lock1, lock4);
 }
 
-#[test]
-fn no_index_update() {
-    Package::new("serde", "1.0.0").publish();
+// fn no_index_update() {
+//     Package::new("serde", "1.0.0").publish();
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            authors = []
-            version = "0.0.1"
+//     let p = project("foo")
+//         .file(
+//             "Cargo.toml",
+//             r#"
+//             [package]
+//             name = "foo"
+//             authors = []
+//             version = "0.0.1"
 
-            [dependencies]
-            serde = "1.0"
-        "#,
-        )
-        .file("src/main.rs", "fn main() {}")
-        .build();
+//             [dependencies]
+//             serde = "1.0"
+//         "#,
+//         )
+//         .file("src/main.rs", "fn main() {}")
+//         .build();
 
-    assert_that(
-        p.cargo("generate-lockfile"),
-        execs().with_stderr("[UPDATING] registry `[..]`"),
-    );
+//     assert_that(
+//         p.cargo("generate-lockfile"),
+//         execs().with_stderr("[UPDATING] registry `[..]`"),
+//     );
 
-    assert_that(
-        p.cargo("generate-lockfile")
-            .masquerade_as_nightly_cargo()
-            .arg("-Zno-index-update"),
-        execs().with_status(0).with_stdout("").with_stderr(""),
-    );
-}
+//     assert_that(
+//         p.cargo("generate-lockfile")
+//             .masquerade_as_nightly_cargo()
+//             .arg("-Zno-index-update"),
+//         execs().with_status(0).with_stdout("").with_stderr(""),
+//     );
+// }
 
 #[test]
 fn preserve_metadata() {

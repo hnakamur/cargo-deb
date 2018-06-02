@@ -3049,114 +3049,114 @@ fn panic_abort_multiple() {
     );
 }
 
-#[test]
-fn pass_correct_cfgs_flags_to_rustdoc() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.1.0"
-            authors = []
+//#[test]
+// fn pass_correct_cfgs_flags_to_rustdoc() {
+//     let p = project("foo")
+//         .file(
+//             "Cargo.toml",
+//             r#"
+//             [package]
+//             name = "foo"
+//             version = "0.1.0"
+//             authors = []
 
-            [features]
-            default = ["feature_a/default"]
-            nightly = ["feature_a/nightly"]
+//             [features]
+//             default = ["feature_a/default"]
+//             nightly = ["feature_a/nightly"]
 
-            [dependencies.feature_a]
-            path = "libs/feature_a"
-            default-features = false
-        "#,
-        )
-        .file(
-            "src/lib.rs",
-            r#"
-            #[cfg(test)]
-            mod tests {
-                #[test]
-                fn it_works() {
-                  assert!(true);
-                }
-            }
-        "#,
-        )
-        .file(
-            "libs/feature_a/Cargo.toml",
-            r#"
-            [package]
-            name = "feature_a"
-            version = "0.1.0"
-            authors = []
+//             [dependencies.feature_a]
+//             path = "libs/feature_a"
+//             default-features = false
+//         "#,
+//         )
+//         .file(
+//             "src/lib.rs",
+//             r#"
+//             #[cfg(test)]
+//             mod tests {
+//                 #[test]
+//                 fn it_works() {
+//                   assert!(true);
+//                 }
+//             }
+//         "#,
+//         )
+//         .file(
+//             "libs/feature_a/Cargo.toml",
+//             r#"
+//             [package]
+//             name = "feature_a"
+//             version = "0.1.0"
+//             authors = []
 
-            [features]
-            default = ["mock_serde_codegen"]
-            nightly = ["mock_serde_derive"]
+//             [features]
+//             default = ["mock_serde_codegen"]
+//             nightly = ["mock_serde_derive"]
 
-            [dependencies]
-            mock_serde_derive = { path = "../mock_serde_derive", optional = true }
+//             [dependencies]
+//             mock_serde_derive = { path = "../mock_serde_derive", optional = true }
 
-            [build-dependencies]
-            mock_serde_codegen = { path = "../mock_serde_codegen", optional = true }
-        "#,
-        )
-        .file(
-            "libs/feature_a/src/lib.rs",
-            r#"
-            #[cfg(feature = "mock_serde_derive")]
-            const MSG: &'static str = "This is safe";
+//             [build-dependencies]
+//             mock_serde_codegen = { path = "../mock_serde_codegen", optional = true }
+//         "#,
+//         )
+//         .file(
+//             "libs/feature_a/src/lib.rs",
+//             r#"
+//             #[cfg(feature = "mock_serde_derive")]
+//             const MSG: &'static str = "This is safe";
 
-            #[cfg(feature = "mock_serde_codegen")]
-            const MSG: &'static str = "This is risky";
+//             #[cfg(feature = "mock_serde_codegen")]
+//             const MSG: &'static str = "This is risky";
 
-            pub fn get() -> &'static str {
-                MSG
-            }
-        "#,
-        )
-        .file(
-            "libs/mock_serde_derive/Cargo.toml",
-            r#"
-            [package]
-            name = "mock_serde_derive"
-            version = "0.1.0"
-            authors = []
-        "#,
-        )
-        .file("libs/mock_serde_derive/src/lib.rs", "")
-        .file(
-            "libs/mock_serde_codegen/Cargo.toml",
-            r#"
-                [package]
-                name = "mock_serde_codegen"
-                version = "0.1.0"
-                authors = []
-            "#,
-        )
-        .file("libs/mock_serde_codegen/src/lib.rs", "");
-    let p = p.build();
+//             pub fn get() -> &'static str {
+//                 MSG
+//             }
+//         "#,
+//         )
+//         .file(
+//             "libs/mock_serde_derive/Cargo.toml",
+//             r#"
+//             [package]
+//             name = "mock_serde_derive"
+//             version = "0.1.0"
+//             authors = []
+//         "#,
+//         )
+//         .file("libs/mock_serde_derive/src/lib.rs", "")
+//         .file(
+//             "libs/mock_serde_codegen/Cargo.toml",
+//             r#"
+//                 [package]
+//                 name = "mock_serde_codegen"
+//                 version = "0.1.0"
+//                 authors = []
+//             "#,
+//         )
+//         .file("libs/mock_serde_codegen/src/lib.rs", "");
+//     let p = p.build();
 
-    assert_that(
-        p.cargo("test")
-            .arg("--package")
-            .arg("feature_a")
-            .arg("--verbose"),
-        execs().with_status(0).with_stderr_contains(
-            "\
-[DOCTEST] feature_a
-[RUNNING] `rustdoc --test [..]mock_serde_codegen[..]`",
-        ),
-    );
+//     assert_that(
+//         p.cargo("test")
+//             .arg("--package")
+//             .arg("feature_a")
+//             .arg("--verbose"),
+//         execs().with_status(0).with_stderr_contains(
+//             "\
+// [DOCTEST] feature_a
+// [RUNNING] `rustdoc --test [..]mock_serde_codegen[..]`",
+//         ),
+//     );
 
-    assert_that(
-        p.cargo("test").arg("--verbose"),
-        execs().with_status(0).with_stderr_contains(
-            "\
-[DOCTEST] foo
-[RUNNING] `rustdoc --test [..]feature_a[..]`",
-        ),
-    );
-}
+//     assert_that(
+//         p.cargo("test").arg("--verbose"),
+//         execs().with_status(0).with_stderr_contains(
+//             "\
+// [DOCTEST] foo
+// [RUNNING] `rustdoc --test [..]feature_a[..]`",
+//         ),
+//     );
+// }
 
 #[test]
 fn test_release_ignore_panic() {
