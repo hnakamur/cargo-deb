@@ -36,11 +36,14 @@ Files: vendor/bitflags-*
        vendor/num-traits-*
        vendor/rand-0*
        vendor/regex-0*
+       vendor/regex-1*
        vendor/regex-syntax-*
        vendor/rustc-serialize-*
        vendor/semver-*
        vendor/shell-escape-*
        vendor/tempdir-0*
+       vendor/vec_map-*
+       vendor/unicode-width-*
 Copyright: 2014-2016 The Rust Project Developers
 License: MIT or Apache-2.0
 Comment:
@@ -350,6 +353,12 @@ Files: vendor/redox_syscall-*
 Copyright: 2017, Redox OS Developers
 License: MIT
 
+Files: vendor/ansi_term-*
+Copyright: 2014, Benjamin Sago <ogham@bsago.me>
+           Ryan Scheel (Havvy) <ryan.havvy@gmail.com>
+           Josh Triplett <josh@joshtriplett.org>
+License: MIT
+
 Files: vendor/quick-error-*
 Copyright: 2015, The quick-error developers
 License: MIT or Apache-2.0
@@ -395,6 +404,18 @@ Comment:
  libc with copyright 2005-2013 Rich Felker.
  .
  See https://github.com/tailhook/humantime
+
+Files: vendor/textwrap-*
+Copyright: 2016, Martin Geisler <martin@geisler.net>
+License: MIT
+
+Files: vendor/clap-*
+Copyright: 2015-2016, Kevin B. Knapp <kbknapp@gmail.com>
+License: MIT
+
+Files: vendor/tempfile-*
+Copyright: 2015, Steven Allen
+License: MIT or Apache-2.0
 
 Files: debian/*
 Copyright: 2017 Ximin Luo <infinity0@debian.org>
