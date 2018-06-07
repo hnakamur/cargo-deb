@@ -8,6 +8,7 @@ include /usr/share/rustc/architecture.mk
 # For cross-compiling; perhaps we should add this to dh-cargo or debcargo
 export PKG_CONFIG = $(DEB_HOST_GNU_TYPE)-pkg-config
 export PKG_CONFIG_ALLOW_CROSS = 1
+# Needed because of https://github.com/rust-lang/cargo/issues/4133
 RUSTFLAGS += -C linker=$(DEB_HOST_GNU_TYPE)-gcc
 # TODO: we cannot enable this until dh_shlibdeps works correctly; atm we get:
 # dpkg-shlibdeps: warning: can't extract name and version from library name 'libstd-XXXXXXXX.so'
