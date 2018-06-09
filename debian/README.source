@@ -41,4 +41,13 @@ As such, the original source is composed by two tarballs:
  * dependencies crates (under vendor/), stripped of unused embedded
    C libraries
 
- -- Luca Bruno <lucab@debian.org>  Sat, 13 Feb 2016 17:50:59 +0100
+Uploading Package
+=================
+
+Please use dgit push-source command to upload new version of the package to
+archive. Command by itself creates a source only upload uploads the package to
+ftpmaster and creates version history on dgit.
+
+    dgit push-source --gbp
+
+ -- Vasudev Kamath <vasudev@copyninja.info>, Sat,  9 Jun 2018 14:41:17 +0530
