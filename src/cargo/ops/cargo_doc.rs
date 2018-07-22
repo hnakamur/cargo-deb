@@ -7,11 +7,16 @@ use core::Workspace;
 use ops;
 use util::CargoResult;
 
+/// Strongly typed options for the `cargo doc` command.
+#[derive(Debug)]
 pub struct DocOptions<'a> {
+    /// Whether to attempt to open the browser after compiling the docs
     pub open_result: bool,
+    /// Options to pass through to the compiler
     pub compile_opts: ops::CompileOptions<'a>,
 }
 
+/// Main method for `cargo doc`.
 pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
     let specs = options.compile_opts.spec.into_package_id_specs(ws)?;
     let resolve = ops::resolve_ws_precisely(
@@ -69,7 +74,7 @@ pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
                  Please re-run this command with `-p <spec>` where `<spec>` \
                  is one of the following:\n  {}",
                 pkgs.iter()
-                    .map(|p| p.name().to_inner())
+                    .map(|p| p.name().as_str())
                     .collect::<Vec<_>>()
                     .join("\n  ")
             );
@@ -86,7 +91,7 @@ pub fn doc(ws: &Workspace, options: &DocOptions) -> CargoResult<()> {
         // nothing we can do about it and otherwise if it's getting overwritten
         // then that's also ok!
         let mut target_dir = ws.target_dir();
-        if let Some(ref triple) = options.compile_opts.target {
+        if let Some(ref triple) = options.compile_opts.build_config.requested_target {
             target_dir.push(Path::new(triple).file_stem().unwrap());
         }
         let path = target_dir.join("doc").join(&name).join("index.html");

@@ -1,12 +1,13 @@
-use std::default::Default;
 use std::fs;
 use std::path::Path;
 
-use core::{Profiles, Workspace};
-use util::Config;
+use core::compiler::{BuildConfig, BuildContext, CompileMode, Context, Kind, Unit};
+use core::profiles::ProfileFor;
+use core::Workspace;
+use ops;
 use util::errors::{CargoResult, CargoResultExt};
 use util::paths;
-use ops::{self, BuildConfig, Context, Kind, Unit};
+use util::Config;
 
 pub struct CleanOptions<'a> {
     pub config: &'a Config,
@@ -16,12 +17,21 @@ pub struct CleanOptions<'a> {
     pub target: Option<String>,
     /// Whether to clean the release directory
     pub release: bool,
+    /// Whether to just clean the doc directory
+    pub doc: bool,
 }
 
 /// Cleans the project from build artifacts.
 pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
     let target_dir = ws.target_dir();
     let config = ws.config();
+
+    // If the doc option is set, we just want to delete the doc directory.
+    if opts.doc {
+        let target_dir = target_dir.join("doc");
+        let target_dir = target_dir.into_path_unlocked();
+        return rm_rf(&target_dir, config);
+    }
 
     // If we have a spec, then we need to delete some packages, otherwise, just
     // remove the whole target directory and be done with it!
@@ -36,7 +46,6 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
     let (packages, resolve) = ops::resolve_ws(ws)?;
 
     let profiles = ws.profiles();
-    let host_triple = opts.config.rustc()?.host.clone();
     let mut units = Vec::new();
 
     for spec in opts.spec.iter() {
@@ -47,74 +56,66 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
         // Generate all relevant `Unit` targets for this package
         for target in pkg.targets() {
             for kind in [Kind::Host, Kind::Target].iter() {
-                let Profiles {
-                    ref release,
-                    ref dev,
-                    ref test,
-                    ref bench,
-                    ref doc,
-                    ref custom_build,
-                    ref test_deps,
-                    ref bench_deps,
-                    ref check,
-                    ref check_test,
-                    ref doctest,
-                } = *profiles;
-                let profiles = [
-                    release,
-                    dev,
-                    test,
-                    bench,
-                    doc,
-                    custom_build,
-                    test_deps,
-                    bench_deps,
-                    check,
-                    check_test,
-                    doctest,
-                ];
-                for profile in profiles.iter() {
-                    units.push(Unit {
-                        pkg,
-                        target,
-                        profile,
-                        kind: *kind,
-                    });
+                for mode in CompileMode::all_modes() {
+                    for profile_for in ProfileFor::all_values() {
+                        let profile = if mode.is_run_custom_build() {
+                            profiles.get_profile_run_custom_build(&profiles.get_profile(
+                                pkg.package_id(),
+                                ws.is_member(pkg),
+                                *profile_for,
+                                CompileMode::Build,
+                                opts.release,
+                            ))
+                        } else {
+                            profiles.get_profile(
+                                pkg.package_id(),
+                                ws.is_member(pkg),
+                                *profile_for,
+                                *mode,
+                                opts.release,
+                            )
+                        };
+                        units.push(Unit {
+                            pkg,
+                            target,
+                            profile,
+                            kind: *kind,
+                            mode: *mode,
+                        });
+                    }
                 }
             }
         }
     }
 
-    let mut cx = Context::new(
+    let mut build_config = BuildConfig::new(config, Some(1), &opts.target, CompileMode::Build)?;
+    build_config.release = opts.release;
+    let bcx = BuildContext::new(
         ws,
         &resolve,
         &packages,
         opts.config,
-        BuildConfig {
-            host_triple,
-            requested_target: opts.target.clone(),
-            release: opts.release,
-            jobs: 1,
-            ..BuildConfig::default()
-        },
+        &build_config,
         profiles,
-        &units,
+        None,
     )?;
+    let mut cx = Context::new(config, &bcx)?;
+    cx.prepare_units(None, &units)?;
 
     for unit in units.iter() {
-        rm_rf(&cx.fingerprint_dir(unit), config)?;
+        rm_rf(&cx.files().fingerprint_dir(unit), config)?;
         if unit.target.is_custom_build() {
-            if unit.profile.run_custom_build {
-                rm_rf(&cx.build_script_out_dir(unit), config)?;
+            if unit.mode.is_run_custom_build() {
+                rm_rf(&cx.files().build_script_out_dir(unit), config)?;
             } else {
-                rm_rf(&cx.build_script_dir(unit), config)?;
+                rm_rf(&cx.files().build_script_dir(unit), config)?;
             }
             continue;
         }
 
-        for &(ref src, ref link_dst, _) in cx.target_filenames(unit)?.iter() {
-            rm_rf(src, config)?;
-            if let Some(ref dst) = *link_dst {
+        for output in cx.outputs(unit)?.iter() {
+            rm_rf(&output.path, config)?;
+            if let Some(ref dst) = output.hardlink {
                 rm_rf(dst, config)?;
             }
         }

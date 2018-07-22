@@ -3,6 +3,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::prelude::*;
 
 use cargo::util::ProcessBuilder;
+use cargotest::ChannelChanger;
 use cargotest::install::{cargo_home, has_installed_exe};
 use cargotest::support::git;
 use cargotest::support::paths;
@@ -112,17 +113,20 @@ error: some crates failed to install
 
 #[test]
 fn pick_max_version() {
-    pkg("foo", "0.0.1");
-    pkg("foo", "0.0.2");
+    pkg("foo", "0.1.0");
+    pkg("foo", "0.2.0");
+    pkg("foo", "0.2.1");
+    pkg("foo", "0.2.1-pre.1");
+    pkg("foo", "0.3.0-pre.2");
 
     assert_that(
         cargo_process("install").arg("foo"),
         execs().with_status(0).with_stderr(&format!(
             "\
 [UPDATING] registry `[..]`
-[DOWNLOADING] foo v0.0.2 (registry [..])
-[INSTALLING] foo v0.0.2
-[COMPILING] foo v0.0.2
+[DOWNLOADING] foo v0.2.1 (registry [..])
+[INSTALLING] foo v0.2.1
+[COMPILING] foo v0.2.1
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] {home}[..]bin[..]foo[..]
 warning: be sure to add `[..]` to your PATH to be able to run the installed binaries
@@ -1008,9 +1012,51 @@ fn installs_from_cwd_by_default() {
 
     assert_that(
         cargo_process("install").cwd(p.root()),
-        execs().with_status(0),
+        execs().with_status(0).with_stderr_contains(
+                "\
+warning: To build the current package use `cargo build`, to install the current package run `cargo install --path .`
+",
+        ),
     );
     assert_that(cargo_home(), has_installed_exe("foo"));
+}
+
+#[test]
+fn installs_from_cwd_with_2018_warnings() {
+    if !cargotest::is_nightly() {
+        // Stable rust won't have the edition option.  Remove this once it
+        // is stabilized.
+        return;
+    }
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["edition"]
+
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            authors = []
+            edition = "2018"
+        "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        cargo_process("install")
+            .cwd(p.root())
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr_contains(
+            "error: To build the current package use `cargo build`, \
+             to install the current package run `cargo install --path .`, \
+             otherwise specify a crate to install from crates.io, \
+             or use --path or --git to specify alternate source\
+             ",
+        ),
+    );
+    assert_that(cargo_home(), is_not(has_installed_exe("foo")));
 }
 
 #[test]

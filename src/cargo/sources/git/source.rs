@@ -4,15 +4,13 @@ use url::Url;
 
 use core::source::{Source, SourceId};
 use core::GitReference;
-use core::{Dependency, Package, PackageId, Registry, Summary};
+use core::{Dependency, Package, PackageId, Summary};
 use util::Config;
 use util::errors::CargoResult;
 use util::hex::short_hash;
 use sources::PathSource;
 use sources::git::utils::{GitRemote, GitRevision};
 
-/* TODO: Refactor GitSource to delegate to a PathSource
- */
 pub struct GitSource<'cfg> {
     remote: GitRemote,
     reference: GitReference,
@@ -89,7 +87,7 @@ pub fn canonicalize_url(url: &Url) -> CargoResult<Url> {
         url.path_segments_mut().unwrap().pop_if_empty();
     }
 
-    // HACKHACK: For github URL's specifically just lowercase
+    // HACKHACK: For GitHub URL's specifically just lowercase
     // everything.  GitHub treats both the same, but they hash
     // differently, and we're gonna be hashing them. This wants a more
     // general solution, and also we're almost certainly not using the
@@ -124,7 +122,7 @@ impl<'cfg> Debug for GitSource<'cfg> {
     }
 }
 
-impl<'cfg> Registry for GitSource<'cfg> {
+impl<'cfg> Source for GitSource<'cfg> {
     fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
         let src = self.path_source
             .as_mut()
@@ -139,9 +137,7 @@ impl<'cfg> Registry for GitSource<'cfg> {
     fn requires_precise(&self) -> bool {
         true
     }
-}
 
-impl<'cfg> Source for GitSource<'cfg> {
     fn source_id(&self) -> &SourceId {
         &self.source_id
     }

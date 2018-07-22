@@ -8,9 +8,10 @@ use glob::Pattern;
 use ignore::Match;
 use ignore::gitignore::GitignoreBuilder;
 
-use core::{Dependency, Package, PackageId, Registry, Source, SourceId, Summary};
+use core::{Dependency, Package, PackageId, Source, SourceId, Summary};
 use ops;
 use util::{self, internal, CargoResult};
+use util::paths;
 use util::Config;
 
 pub struct PathSource<'cfg> {
@@ -443,7 +444,7 @@ impl<'cfg> PathSource<'cfg> {
         // For package integration tests, we need to sort the paths in a deterministic order to
         // be able to match stdout warnings in the same order.
         //
-        // TODO: Drop collect and sort after transition period and dropping wraning tests.
+        // TODO: Drop collect and sort after transition period and dropping warning tests.
         // See <https://github.com/rust-lang/cargo/issues/4268>
         // and <https://github.com/rust-lang/cargo/pull/4270>
         let mut entries: Vec<fs::DirEntry> = fs::read_dir(path)?.map(|e| e.unwrap()).collect();
@@ -474,7 +475,7 @@ impl<'cfg> Debug for PathSource<'cfg> {
     }
 }
 
-impl<'cfg> Registry for PathSource<'cfg> {
+impl<'cfg> Source for PathSource<'cfg> {
     fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
         for s in self.packages.iter().map(|p| p.summary()) {
             if dep.matches(s) {
@@ -491,9 +492,7 @@ impl<'cfg> Registry for PathSource<'cfg> {
     fn requires_precise(&self) -> bool {
         false
     }
-}
 
-impl<'cfg> Source for PathSource<'cfg> {
     fn source_id(&self) -> &SourceId {
         &self.source_id
     }
@@ -529,9 +528,7 @@ impl<'cfg> Source for PathSource<'cfg> {
             // condition where this path was rm'ed - either way,
             // we can ignore the error and treat the path's mtime
             // as 0.
-            let mtime = fs::metadata(&file)
-                .map(|meta| FileTime::from_last_modification_time(&meta))
-                .unwrap_or(FileTime::zero());
+            let mtime = paths::mtime(&file).unwrap_or(FileTime::zero());
             warn!("{} {}", mtime, file.display());
             if mtime > max {
                 max = mtime;

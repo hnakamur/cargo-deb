@@ -22,10 +22,9 @@ and unexpected behavior.
 its users' security, please do not open a public issue on GitHub. Instead,
 we ask you to refer to Rust's [security policy].**
 
-Opening an issue is as easy as following [this
-link][new-issues] and filling out the fields.
-Here's a template that you can use to file an issue, though it's not necessary to
-use it exactly:
+Opening an issue is as easy as following [this link][new-issues] and filling out 
+the fields. Here's a template that you can use to file an issue, though it's not 
+necessary to use it exactly:
 
     <short summary of the problem>
 
@@ -42,7 +41,8 @@ happened instead. Please use https://gist.github.com/ if your examples run long.
 
 ## Working on issues
 
-If you're looking for somewhere to start, check out the [E-easy][E-Easy] tag.
+If you're looking for somewhere to start, check out the [E-easy][E-Easy] and 
+[E-mentor][E-mentor] tags.
 
 Feel free to ask for guidelines on how to tackle a problem on [IRC] or open a
 [new issue][new-issues]. This is especially important if you want to add new
@@ -78,13 +78,15 @@ in `test/` provide templates on how to test Cargo's behavior in a
 sandbox-environment. The internal crate `cargotest` provides a vast amount
 of helpers to minimize boilerplate.
 * Make sure `cargo test` passes. If you do not have the cross-compilers
-installed locally, ignore the cross-compile test failures or disable them by
+installed locally, install them using the instructions returned by
+`cargo test cross_compile::cross_tests` (twice, with `--toolchain nightly`
+added to get the nightly cross target too); alternatively just
+ignore the cross-compile test failures or disable them by
 using `CFG_DISABLE_CROSS_TESTS=1 cargo test`. Note that some tests are enabled
 only on `nightly` toolchain. If you can, test both toolchains.
-* All code is expected to comply with the formatting suggested by `rustfmt`;
-discrepancy is considered an error by CI, so a pull request with unsound
-formatting will not be accepted. You can use `rustup component add rustfmt-preview`
-to install `rustfmt` and use `cargo fmt` to automatically format your code.
+* All code changes are expected to comply with the formatting suggested by `rustfmt`.
+You can use `rustup +stable component add rustfmt-preview` to install `rustfmt` and use
+`rustfmt +stable --skip-children $FILE` on the changed files to automatically format your code.
 * Push your commits to GitHub and create a pull request against Cargo's
 `master` branch.
 
@@ -153,14 +155,14 @@ adding labels to triage issues:
   have some instructions on how to get started.
 
 * Red, **I**-prefixed labels indicate the **importance** of the issue. The
-  [I-nominated][inom] label indicates that an issue has been nominated for
+  **[I-nominated][]** label indicates that an issue has been nominated for
   prioritizing at the next triage meeting.
 
 * Purple gray, **O**-prefixed labels are the **operating system** or platform
   that this issue is specific to.
 
 * Orange, **P**-prefixed labels indicate a bug's **priority**. These labels
-  are only assigned during triage meetings and replace the [I-nominated][inom]
+  are only assigned during triage meetings and replace the **[I-nominated][]**
   label.
 
 * The light orange **relnotes** label marks issues that should be documented in
@@ -176,5 +178,6 @@ adding labels to triage issues:
 [lru]: https://github.com/rust-lang/cargo/issues?q=is%3Aissue+is%3Aopen+sort%3Aupdated-asc
 [E-easy]: https://github.com/rust-lang/cargo/labels/E-easy
 [E-mentor]: https://github.com/rust-lang/cargo/labels/E-mentor
+[I-nominated]: https://github.com/rust-lang/cargo/labels/I-nominated
 [Code of Conduct]: https://www.rust-lang.org/conduct.html
 [IRC]: https://kiwiirc.com/client/irc.mozilla.org/cargo

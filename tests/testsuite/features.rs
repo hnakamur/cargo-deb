@@ -3,7 +3,9 @@ use std::io::prelude::*;
 
 use cargotest::support::paths::CargoPathExt;
 use cargotest::support::{execs, project};
+use cargotest::ChannelChanger;
 use hamcrest::assert_that;
+use cargotest::support::registry::Package;
 
 #[test]
 fn invalid1() {
@@ -333,7 +335,7 @@ warning: Package `foo v0.0.1 ([..])` does not have feature `bar`. It has a requi
 that name, but only optional dependencies can be used as features. [..]
    Compiling bar v0.0.1 ([..])
    Compiling foo v0.0.1 ([..])
-    Finished dev [unoptimized + debuginfo] target(s) in [..] secs
+    Finished dev [unoptimized + debuginfo] target(s) in [..]s
 "));
 }
 
@@ -386,7 +388,7 @@ that name, but only optional dependencies can be used as features. [..]
    Compiling baz v0.0.1 ([..])
    Compiling bar v0.0.1 ([..])
    Compiling foo v0.0.1 ([..])
-    Finished dev [unoptimized + debuginfo] target(s) in [..] secs
+    Finished dev [unoptimized + debuginfo] target(s) in [..]s
 "));
 }
 
@@ -1627,5 +1629,444 @@ fn many_cli_features_comma_and_space_delimited() {
 ",
             dir = p.url()
         )),
+    );
+}
+
+#[test]
+fn combining_features_and_package() {
+    Package::new("dep", "1.0.0").publish();
+
+    let p = project("ws")
+        .file(
+            "Cargo.toml",
+            r#"
+            [project]
+            name = "ws"
+            version = "0.0.1"
+            authors = []
+
+            [workspace]
+            members = ["foo"]
+
+            [dependencies]
+            dep = "1"
+        "#,
+        )
+        .file("src/lib.rs", "")
+        .file(
+            "foo/Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            [features]
+            main = []
+        "#,
+        )
+        .file(
+            "foo/src/main.rs",
+            r#"
+            #[cfg(feature = "main")]
+            fn main() {}
+        "#,
+        )
+        .build();
+
+    assert_that(
+        p.cargo("build -Z package-features --all --features main")
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr_contains(
+            "\
+             [ERROR] cannot specify features for more than one package",
+        ),
+    );
+
+    assert_that(
+        p.cargo("build -Z package-features --package dep --features main")
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr_contains(
+            "\
+             [ERROR] cannot specify features for packages outside of workspace",
+        ),
+    );
+    assert_that(
+        p.cargo("build -Z package-features --package dep --all-features")
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr_contains(
+            "\
+             [ERROR] cannot specify features for packages outside of workspace",
+        ),
+    );
+    assert_that(
+        p.cargo("build -Z package-features --package dep --no-default-features")
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr_contains(
+            "\
+             [ERROR] cannot specify features for packages outside of workspace",
+        ),
+    );
+
+    assert_that(
+        p.cargo("build -Z package-features --all --all-features")
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(0),
+    );
+    assert_that(
+        p.cargo("run -Z package-features --package foo --features main")
+            .masquerade_as_nightly_cargo(),
+        execs().with_status(0),
+    );
+}
+
+#[test]
+fn namespaced_invalid_feature() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            bar = ["baz"]
+        "#,
+        )
+        .file("src/main.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Feature `bar` includes `baz` which is not defined as a feature
+",
+        ),
+    );
+}
+
+#[test]
+fn namespaced_invalid_dependency() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            bar = ["crate:baz"]
+        "#,
+        )
+        .file("src/main.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Feature `bar` includes `crate:baz` which is not a known dependency
+",
+        ),
+    );
+}
+
+#[test]
+fn namespaced_non_optional_dependency() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            bar = ["crate:baz"]
+
+            [dependencies]
+            baz = "0.1"
+        "#,
+        )
+        .file("src/main.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Feature `bar` includes `crate:baz` which is not an optional dependency.
+Consider adding `optional = true` to the dependency
+",
+        ),
+    );
+}
+
+#[test]
+fn namespaced_implicit_feature() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            bar = ["baz"]
+
+            [dependencies]
+            baz = { version = "0.1", optional = true }
+        "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(0),
+    );
+}
+
+#[test]
+fn namespaced_shadowed_dep() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            baz = []
+
+            [dependencies]
+            baz = { version = "0.1", optional = true }
+        "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Feature `baz` includes the optional dependency of the same name, but this is left implicit in the features included by this feature.
+Consider adding `crate:baz` to this feature's requirements.
+",
+        ),
+    );
+}
+
+#[test]
+fn namespaced_shadowed_non_optional() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            baz = []
+
+            [dependencies]
+            baz = "0.1"
+        "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Feature `baz` includes the dependency of the same name, but this is left implicit in the features included by this feature.
+Additionally, the dependency must be marked as optional to be included in the feature definition.
+Consider adding `crate:baz` to this feature's requirements and marking the dependency as `optional = true`
+",
+        ),
+    );
+}
+
+#[test]
+fn namespaced_implicit_non_optional() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            bar = ["baz"]
+
+            [dependencies]
+            baz = "0.1"
+        "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(101).with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[..]`
+
+Caused by:
+  Feature `bar` includes `baz` which is not defined as a feature.
+A non-optional dependency of the same name is defined; consider adding `optional = true` to its definition
+",
+        ),
+    );
+}
+
+#[test]
+fn namespaced_same_name() {
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["namespaced-features"]
+
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            namespaced-features = true
+
+            [features]
+            baz = ["crate:baz"]
+
+            [dependencies]
+            baz = { version = "0.1", optional = true }
+        "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build").masquerade_as_nightly_cargo(),
+        execs().with_status(0),
+    );
+}
+
+#[test]
+fn only_dep_is_optional() {
+    Package::new("bar", "0.1.0").publish();
+
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+                [project]
+                name = "foo"
+                version = "0.0.1"
+                authors = []
+
+                [features]
+                foo = ['bar']
+
+                [dependencies]
+                bar = { version = "0.1", optional = true }
+
+                [dev-dependencies]
+                bar = "0.1"
+            "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build"),
+        execs().with_status(0),
+    );
+}
+
+#[test]
+fn all_features_all_crates() {
+    Package::new("bar", "0.1.0").publish();
+
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+                [project]
+                name = "foo"
+                version = "0.0.1"
+                authors = []
+
+                [workspace]
+                members = ['bar']
+            "#,
+        )
+        .file("src/main.rs", "fn main() {}")
+        .file(
+            "bar/Cargo.toml",
+            r#"
+                [project]
+                name = "bar"
+                version = "0.0.1"
+                authors = []
+
+                [features]
+                foo = []
+            "#,
+        )
+        .file("bar/src/main.rs", "#[cfg(feature = \"foo\")] fn main() {}")
+        .build();
+
+    assert_that(
+        p.cargo("build --all-features --all"),
+        execs().with_status(0),
     );
 }

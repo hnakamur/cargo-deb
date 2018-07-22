@@ -3,9 +3,16 @@ use hamcrest::assert_that;
 
 static MANIFEST_OUTPUT: &'static str = r#"
 {
+    "authors": [
+        "wycats@example.com"
+    ],
+    "categories": [],
     "name":"foo",
+    "readme": null,
+    "repository": null,
     "version":"0.5.0",
     "id":"foo[..]0.5.0[..](path+file://[..]/foo)",
+    "keywords": [],
     "license": null,
     "license_file": null,
     "description": null,
@@ -18,7 +25,8 @@ static MANIFEST_OUTPUT: &'static str = r#"
         "src_path":"[..][/]foo[/]src[/]foo.rs"
     }],
     "features":{},
-    "manifest_path":"[..]Cargo.toml"
+    "manifest_path":"[..]Cargo.toml",
+    "metadata": null
 }"#;
 
 #[test]

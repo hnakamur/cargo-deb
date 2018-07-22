@@ -1,4 +1,5 @@
 use std::{cmp, env};
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::iter::repeat;
 use std::time::Duration;
@@ -170,7 +171,7 @@ fn transmit(
                 optional: dep.is_optional(),
                 default_features: dep.uses_default_features(),
                 name: dep.name().to_string(),
-                features: dep.features().to_vec(),
+                features: dep.features().iter().map(|s| s.to_string()).collect(),
                 version_req: dep.version_req().to_string(),
                 target: dep.platform().map(|s| s.to_string()),
                 kind: match dep.kind() {
@@ -213,12 +214,24 @@ fn transmit(
         return Ok(());
     }
 
+    let summary = pkg.summary();
+    let string_features = summary
+        .features()
+        .iter()
+        .map(|(feat, values)| {
+            (
+                feat.clone(),
+                values.iter().map(|fv| fv.to_string(&summary)).collect(),
+            )
+        })
+        .collect::<BTreeMap<String, Vec<String>>>();
+
     let publish = registry.publish(
         &NewCrate {
             name: pkg.name().to_string(),
             vers: pkg.version().to_string(),
             deps,
-            features: pkg.summary().features().clone(),
+            features: string_features,
             authors: authors.clone(),
             description: description.clone(),
             homepage: homepage.clone(),
@@ -592,15 +605,15 @@ pub fn search(
     }
 
     let search_max_limit = 100;
-    if total_crates > u32::from(limit) && limit < search_max_limit {
+    if total_crates > limit && limit < search_max_limit {
         println!(
             "... and {} crates more (use --limit N to see more)",
-            total_crates - u32::from(limit)
+            total_crates - limit
         );
-    } else if total_crates > u32::from(limit) && limit >= search_max_limit {
+    } else if total_crates > limit && limit >= search_max_limit {
         println!(
             "... and {} crates more (go to http://crates.io/search?q={} to see more)",
-            total_crates - u32::from(limit),
+            total_crates - limit,
             percent_encode(query.as_bytes(), QUERY_ENCODE_SET)
         );
     }

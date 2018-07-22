@@ -1,4 +1,4 @@
-use core::{Dependency, Package, PackageId, Registry, Source, SourceId, Summary};
+use core::{Dependency, Package, PackageId, Source, SourceId, Summary};
 use util::errors::{CargoResult, CargoResultExt};
 
 pub struct ReplacedSource<'cfg> {
@@ -21,15 +21,16 @@ impl<'cfg> ReplacedSource<'cfg> {
     }
 }
 
-impl<'cfg> Registry for ReplacedSource<'cfg> {
+impl<'cfg> Source for ReplacedSource<'cfg> {
     fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
         let (replace_with, to_replace) = (&self.replace_with, &self.to_replace);
         let dep = dep.clone().map_source(to_replace, replace_with);
 
         self.inner
-            .query(&dep, &mut |summary| {
-                f(summary.map_source(replace_with, to_replace))
-            })
+            .query(
+                &dep,
+                &mut |summary| f(summary.map_source(replace_with, to_replace)),
+            )
             .chain_err(|| format!("failed to query replaced source {}", self.to_replace))?;
         Ok(())
     }
@@ -41,9 +42,7 @@ impl<'cfg> Registry for ReplacedSource<'cfg> {
     fn requires_precise(&self) -> bool {
         self.inner.requires_precise()
     }
-}
 
-impl<'cfg> Source for ReplacedSource<'cfg> {
     fn source_id(&self) -> &SourceId {
         &self.to_replace
     }

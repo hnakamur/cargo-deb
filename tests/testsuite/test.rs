@@ -3,12 +3,12 @@ use std::io::prelude::*;
 use std::str;
 
 use cargo;
-use cargotest::{is_nightly, rustc_host, sleep_ms};
-use cargotest::support::{basic_bin_manifest, basic_lib_manifest, cargo_exe, execs, project};
+use cargo::util::process;
 use cargotest::support::paths::CargoPathExt;
 use cargotest::support::registry::Package;
+use cargotest::support::{basic_bin_manifest, basic_lib_manifest, cargo_exe, execs, project};
+use cargotest::{is_nightly, rustc_host, sleep_ms};
 use hamcrest::{assert_that, existing_file, is_not};
-use cargo::util::process;
 
 #[test]
 fn cargo_test_simple() {
@@ -301,7 +301,7 @@ test test_hello ... FAILED
 failures:
 
 ---- test_hello stdout ----
-<tab>thread 'test_hello' panicked at 'assertion failed:[..]",
+[..]thread 'test_hello' panicked at 'assertion failed:[..]",
             )
             .with_stdout_contains("[..]`(left == right)`[..]")
             .with_stdout_contains("[..]left: `\"hello\"`,[..]")
@@ -367,7 +367,7 @@ test test_hello ... FAILED
 failures:
 
 ---- test_hello stdout ----
-<tab>thread 'test_hello' panicked at 'assertion failed: false', \
+[..]thread 'test_hello' panicked at 'assertion failed: false', \
       tests[/]footest.rs:4[..]
 ",
             )
@@ -413,7 +413,7 @@ test test_hello ... FAILED
 failures:
 
 ---- test_hello stdout ----
-<tab>thread 'test_hello' panicked at 'assertion failed: false', \
+[..]thread 'test_hello' panicked at 'assertion failed: false', \
       src[/]lib.rs:4[..]
 ",
             )
@@ -1644,8 +1644,7 @@ fn test_run_implicit_test_target() {
         .file("benches/mybench.rs", "#[test] fn test_in_bench() { }")
         .file(
             "examples/myexm.rs",
-            "#[test] fn test_in_exm() { }
-               fn main() { panic!(\"Don't execute me!\"); }",
+            "fn main() { compile_error!(\"Don't build me!\"); }",
         )
         .build();
 
@@ -1658,8 +1657,7 @@ fn test_run_implicit_test_target() {
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] target[/]debug[/]deps[/]mybin-[..][EXE]
-[RUNNING] target[/]debug[/]deps[/]mytest-[..][EXE]
-[RUNNING] target[/]debug[/]examples[/]myexm-[..][EXE]",
+[RUNNING] target[/]debug[/]deps[/]mytest-[..][EXE]",
                 dir = prj.url()
             ))
             .with_stdout_contains("test test_in_test ... ok"),
@@ -1691,8 +1689,7 @@ fn test_run_implicit_bench_target() {
         .file("benches/mybench.rs", "#[test] fn test_in_bench() { }")
         .file(
             "examples/myexm.rs",
-            "#[test] fn test_in_exm() { }
-               fn main() { panic!(\"Don't execute me!\"); }",
+            "fn main() { compile_error!(\"Don't build me!\"); }",
         )
         .build();
 
@@ -1724,8 +1721,15 @@ fn test_run_implicit_example_target() {
             authors = []
 
             [[bin]]
-            name="mybin"
-            path="src/mybin.rs"
+            name = "mybin"
+            path = "src/mybin.rs"
+
+            [[example]]
+            name = "myexm1"
+
+            [[example]]
+            name = "myexm2"
+            test = true
         "#,
         )
         .file(
@@ -1736,21 +1740,61 @@ fn test_run_implicit_example_target() {
         .file("tests/mytest.rs", "#[test] fn test_in_test() { }")
         .file("benches/mybench.rs", "#[test] fn test_in_bench() { }")
         .file(
-            "examples/myexm.rs",
+            "examples/myexm1.rs",
+            "#[test] fn test_in_exm() { }
+               fn main() { panic!(\"Don't execute me!\"); }",
+        )
+        .file(
+            "examples/myexm2.rs",
             "#[test] fn test_in_exm() { }
                fn main() { panic!(\"Don't execute me!\"); }",
         )
         .build();
 
+    // Compiles myexm1 as normal, but does not run it.
     assert_that(
-        prj.cargo("test").arg("--examples"),
-        execs().with_status(0).with_stderr(format!(
-            "\
-[COMPILING] foo v0.0.1 ({dir})
-[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]examples[/]myexm-[..][EXE]",
-            dir = prj.url()
-        )),
+        prj.cargo("test -v"),
+        execs()
+            .with_status(0)
+            .with_stderr_contains("[RUNNING] `rustc [..]myexm1.rs --crate-type bin[..]")
+            .with_stderr_contains("[RUNNING] `rustc [..]myexm2.rs [..]--test[..]")
+            .with_stderr_does_not_contain("[RUNNING] [..]myexm1-[..]")
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm2-[..]"),
+    );
+
+    // Only tests myexm2.
+    assert_that(
+        prj.cargo("test --tests"),
+        execs()
+            .with_status(0)
+            .with_stderr_does_not_contain("[RUNNING] [..]myexm1-[..]")
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm2-[..]"),
+    );
+
+    // Tests all examples.
+    assert_that(
+        prj.cargo("test --examples"),
+        execs()
+            .with_status(0)
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm1-[..]")
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm2-[..]"),
+    );
+
+    // Test an example, even without `test` set.
+    assert_that(
+        prj.cargo("test --example myexm1"),
+        execs()
+            .with_status(0)
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm1-[..]"),
+    );
+
+    // Tests all examples.
+    assert_that(
+        prj.cargo("test --all-targets"),
+        execs()
+            .with_status(0)
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm1-[..]")
+            .with_stderr_contains("[RUNNING] [..]target[/]debug[/]examples[/]myexm2-[..]"),
     );
 }
 
@@ -4023,5 +4067,74 @@ fn test_hint_workspace() {
         execs()
             .with_stderr_contains("[ERROR] test failed, to rerun pass '-p b --lib'")
             .with_status(101),
+    );
+}
+
+#[test]
+fn json_artifact_includes_test_flag() {
+    // Verify that the JSON artifact output includes `test` flag.
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [profile.test]
+            opt-level = 1
+        "#,
+        )
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("test -v --message-format=json"),
+        execs().with_status(0).with_json(
+            r#"
+    {
+        "reason":"compiler-artifact",
+        "profile": {
+            "debug_assertions": true,
+            "debuginfo": 2,
+            "opt_level": "0",
+            "overflow_checks": true,
+            "test": false
+        },
+        "features": [],
+        "package_id":"foo 0.0.1 ([..])",
+        "target":{
+            "kind":["lib"],
+            "crate_types":["lib"],
+            "name":"foo",
+            "src_path":"[..]lib.rs"
+        },
+        "filenames":["[..].rlib"],
+        "fresh": false
+    }
+
+    {
+        "reason":"compiler-artifact",
+        "profile": {
+            "debug_assertions": true,
+            "debuginfo": 2,
+            "opt_level": "1",
+            "overflow_checks": true,
+            "test": true
+        },
+        "features": [],
+        "package_id":"foo 0.0.1 ([..])",
+        "target":{
+            "kind":["lib"],
+            "crate_types":["lib"],
+            "name":"foo",
+            "src_path":"[..]lib.rs"
+        },
+        "filenames":["[..][/]foo-[..]"],
+        "fresh": false
+    }
+"#,
+        ),
     );
 }

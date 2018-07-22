@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 use git2::Config as GitConfig;
 use git2::Repository as GitRepository;
 
-use core::Workspace;
-use ops::is_bad_artifact_name;
+use core::{compiler, Workspace};
 use util::{internal, FossilRepo, GitRepo, HgRepo, PijulRepo};
 use util::{paths, Config};
 use util::errors::{CargoResult, CargoResultExt};
@@ -136,7 +135,7 @@ fn check_name(name: &str, opts: &NewOptions) -> CargoResult<()> {
         "pure", "ref", "return", "self", "sizeof", "static", "struct", "super", "test", "trait",
         "true", "type", "typeof", "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
     ];
-    if blacklist.contains(&name) || (opts.kind.is_bin() && is_bad_artifact_name(name)) {
+    if blacklist.contains(&name) || (opts.kind.is_bin() && compiler::is_bad_artifact_name(name)) {
         bail!(
             "The name `{}` cannot be used as a crate name{}",
             name,
@@ -318,7 +317,7 @@ pub fn new(opts: &NewOptions, config: &Config) -> CargoResult<()> {
 
     let mkopts = MkOptions {
         version_control: opts.version_control,
-        path: &path,
+        path,
         name,
         source_files: vec![plan_new_source_file(opts.kind.is_bin(), name.to_string())],
         bin: opts.kind.is_bin(),
@@ -341,12 +340,12 @@ pub fn init(opts: &NewOptions, config: &Config) -> CargoResult<()> {
         bail!("`cargo init` cannot be run on existing Cargo projects")
     }
 
-    let name = get_name(&path, opts)?;
+    let name = get_name(path, opts)?;
     check_name(name, opts)?;
 
     let mut src_paths_types = vec![];
 
-    detect_source_paths_and_types(&path, name, &mut src_paths_types)?;
+    detect_source_paths_and_types(path, name, &mut src_paths_types)?;
 
     if src_paths_types.is_empty() {
         src_paths_types.push(plan_new_source_file(opts.kind.is_bin(), name.to_string()));
@@ -420,7 +419,6 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
     let cfg = global_config(config)?;
     // Please ensure that ignore and hgignore are in sync.
     let ignore = [
-        "\n",
         "/target\n",
         "**/*.rs.bk\n",
         if !opts.bin { "Cargo.lock\n" } else { "" },
@@ -429,7 +427,6 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
     // file will exclude too much. Instead, use regexp-based ignores. See 'hg help ignore' for
     // more.
     let hgignore = [
-        "\n",
         "^target/\n",
         "glob:*.rs.bk\n",
         if !opts.bin { "glob:Cargo.lock\n" } else { "" },
@@ -446,25 +443,40 @@ fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {
 
     match vcs {
         VersionControl::Git => {
-            if !fs::metadata(&path.join(".git")).is_ok() {
+            if !path.join(".git").exists() {
                 GitRepo::init(path, config.cwd())?;
             }
+            let ignore = if path.join(".gitignore").exists() {
+                format!("\n{}", ignore)
+            } else {
+                ignore
+            };
             paths::append(&path.join(".gitignore"), ignore.as_bytes())?;
         }
         VersionControl::Hg => {
-            if !fs::metadata(&path.join(".hg")).is_ok() {
+            if !path.join(".hg").exists() {
                 HgRepo::init(path, config.cwd())?;
             }
+            let hgignore = if path.join(".hgignore").exists() {
+                format!("\n{}", hgignore)
+            } else {
+                hgignore
+            };
             paths::append(&path.join(".hgignore"), hgignore.as_bytes())?;
         }
         VersionControl::Pijul => {
-            if !fs::metadata(&path.join(".pijul")).is_ok() {
+            if !path.join(".pijul").exists() {
                 PijulRepo::init(path, config.cwd())?;
             }
+            let ignore = if path.join(".ignore").exists() {
+                format!("\n{}", ignore)
+            } else {
+                ignore
+            };
             paths::append(&path.join(".ignore"), ignore.as_bytes())?;
         }
         VersionControl::Fossil => {
-            if !fs::metadata(&path.join(".fossil")).is_ok() {
+            if path.join(".fossil").exists() {
                 FossilRepo::init(path, config.cwd())?;
             }
         }

@@ -10,9 +10,10 @@ use semver::{Version, VersionReq};
 use tempfile::Builder as TempFileBuilder;
 use toml;
 
-use core::{Dependency, Package, PackageIdSpec, Source, SourceId};
+use core::{Dependency, Edition, Package, PackageIdSpec, Source, SourceId};
 use core::{PackageId, Workspace};
-use ops::{self, CompileFilter, DefaultExecutor};
+use core::compiler::DefaultExecutor;
+use ops::{self, CompileFilter};
 use sources::{GitSource, PathSource, SourceConfigMap};
 use util::{internal, Config};
 use util::{FileLock, Filesystem};
@@ -57,6 +58,7 @@ pub fn install(
     root: Option<&str>,
     krates: Vec<&str>,
     source_id: &SourceId,
+    from_cwd: bool,
     vers: Option<&str>,
     opts: &ops::CompileOptions,
     force: bool,
@@ -70,6 +72,7 @@ pub fn install(
             &map,
             krates.into_iter().next(),
             source_id,
+            from_cwd,
             vers,
             opts,
             force,
@@ -88,6 +91,7 @@ pub fn install(
                 &map,
                 Some(krate),
                 source_id,
+                from_cwd,
                 vers,
                 opts,
                 force,
@@ -149,6 +153,7 @@ fn install_one(
     map: &SourceConfigMap,
     krate: Option<&str>,
     source_id: &SourceId,
+    from_cwd: bool,
     vers: Option<&str>,
     opts: &ops::CompileOptions,
     force: bool,
@@ -219,15 +224,24 @@ fn install_one(
         Some(Filesystem::new(config.cwd().join("target-install")))
     };
 
-    let ws = match overidden_target_dir {
-        Some(dir) => Workspace::ephemeral(pkg, config, Some(dir), false)?,
-        None => {
-            let mut ws = Workspace::new(pkg.manifest_path(), config)?;
-            ws.set_require_optional_deps(false);
-            ws
+    let ws = Workspace::ephemeral(pkg, config, overidden_target_dir, false)?;
+    let pkg = ws.current()?;
+
+    if from_cwd {
+        match pkg.manifest().edition() {
+            Edition::Edition2015 => config.shell().warn(
+                "To build the current package use `cargo build`, \
+                 to install the current package run `cargo install --path .`",
+            )?,
+            Edition::Edition2018 => bail!(
+                "To build the current package use `cargo build`, \
+                 to install the current package run `cargo install --path .`, \
+                 otherwise specify a crate to install from \
+                 crates.io, or use --path or --git to \
+                 specify alternate source"
+            ),
         }
     };
-    let pkg = ws.current()?;
 
     config.shell().status("Installing", pkg)?;
 
@@ -461,7 +475,11 @@ where
                 None => None,
             };
             let vers = vers.as_ref().map(|s| &**s);
-            let dep = Dependency::parse_no_deprecated(name, vers, source.source_id())?;
+            let dep = Dependency::parse_no_deprecated(
+                name,
+                Some(vers.unwrap_or("*")),
+                source.source_id(),
+            )?;
             let deps = source.query_vec(&dep)?;
             match deps.iter().map(|p| p.package_id()).max() {
                 Some(pkgid) => {
@@ -506,7 +524,7 @@ where
                     "multiple packages with {} found: {}",
                     kind,
                     pkgs.iter()
-                        .map(|p| p.name().to_inner())
+                        .map(|p| p.name().as_str())
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
