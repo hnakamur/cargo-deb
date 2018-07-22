@@ -1,6 +1,7 @@
 use std::ffi::{OsStr, OsString};
 
-use ops::{self, Compilation};
+use ops;
+use core::compiler::Compilation;
 use util::{self, CargoTestError, ProcessError, Test};
 use util::errors::CargoResult;
 use core::Workspace;
@@ -149,7 +150,7 @@ fn run_doc_tests(
     let config = options.compile_opts.config;
 
     // We don't build/rust doctests if target != host
-    if config.rustc()?.host != compilation.target {
+    if compilation.host != compilation.target {
         return Ok((Test::Doc, errors));
     }
 

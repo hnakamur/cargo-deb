@@ -11,6 +11,7 @@ use std::mem;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Once, ONCE_INIT};
+use std::time::Instant;
 
 use curl::easy::Easy;
 use jobserver;
@@ -19,7 +20,7 @@ use toml;
 use lazycell::LazyCell;
 
 use core::shell::Verbosity;
-use core::{CliUnstable, Shell, SourceId};
+use core::{CliUnstable, Shell, SourceId, Workspace};
 use ops;
 use url::Url;
 use util::ToUrl;
@@ -65,6 +66,12 @@ pub struct Config {
     easy: LazyCell<RefCell<Easy>>,
     /// Cache of the `SourceId` for crates.io
     crates_io_source_id: LazyCell<SourceId>,
+    /// If false, don't cache `rustc --version --verbose` invocations
+    cache_rustc_info: bool,
+    /// Creation time of this config, used to output the total build time
+    creation_time: Instant,
+    /// Target Directory via resolved Cli parameter
+    target_dir: Option<Filesystem>,
 }
 
 impl Config {
@@ -79,6 +86,11 @@ impl Config {
                 GLOBAL_JOBSERVER = Box::into_raw(Box::new(client));
             }
         });
+
+        let cache_rustc_info = match env::var("CARGO_CACHE_RUSTC_INFO") {
+            Ok(cache) => cache != "0",
+            _ => true,
+        };
 
         Config {
             home_path: Filesystem::new(homedir),
@@ -101,6 +113,9 @@ impl Config {
             cli_flags: CliUnstable::default(),
             easy: LazyCell::new(),
             crates_io_source_id: LazyCell::new(),
+            cache_rustc_info,
+            creation_time: Instant::now(),
+            target_dir: None,
         }
     }
 
@@ -155,13 +170,26 @@ impl Config {
     }
 
     /// Get the path to the `rustc` executable
-    pub fn rustc(&self) -> CargoResult<&Rustc> {
-        self.rustc.try_borrow_with(|| {
-            Rustc::new(
-                self.get_tool("rustc")?,
-                self.maybe_get_tool("rustc_wrapper")?,
-            )
-        })
+    pub fn rustc(&self, ws: Option<&Workspace>) -> CargoResult<Rustc> {
+        let cache_location = ws.map(|ws| {
+            ws.target_dir()
+                .join(".rustc_info.json")
+                .into_path_unlocked()
+        });
+        Rustc::new(
+            self.get_tool("rustc")?,
+            self.maybe_get_tool("rustc_wrapper")?,
+            &self.home()
+                .join("bin")
+                .join("rustc")
+                .into_path_unlocked()
+                .with_extension(env::consts::EXE_EXTENSION),
+            if self.cache_rustc_info {
+                cache_location
+            } else {
+                None
+            },
+        )
     }
 
     /// Get the path to the `cargo` executable
@@ -190,25 +218,7 @@ impl Config {
                         .map(PathBuf::from)
                         .next()
                         .ok_or(format_err!("no argv[0]"))?;
-                    if argv0.components().count() == 1 {
-                        probe_path(argv0)
-                    } else {
-                        Ok(argv0.canonicalize()?)
-                    }
-                }
-
-                fn probe_path(argv0: PathBuf) -> CargoResult<PathBuf> {
-                    let paths = env::var_os("PATH").ok_or(format_err!("no PATH"))?;
-                    for path in env::split_paths(&paths) {
-                        let candidate = PathBuf::from(path).join(&argv0);
-                        if candidate.is_file() {
-                            // PATH may have a component like "." in it, so we still need to
-                            // canonicalize.
-                            return Ok(candidate.canonicalize()?);
-                        }
-                    }
-
-                    bail!("no cargo executable candidate found in PATH")
+                    paths::resolve_executable(&argv0)
                 }
 
                 let exe = from_current_exe()
@@ -238,7 +248,9 @@ impl Config {
     }
 
     pub fn target_dir(&self) -> CargoResult<Option<Filesystem>> {
-        if let Some(dir) = env::var_os("CARGO_TARGET_DIR") {
+        if let Some(ref dir) = self.target_dir {
+            Ok(Some(dir.clone()))
+        } else if let Some(dir) = env::var_os("CARGO_TARGET_DIR") {
             Ok(Some(Filesystem::new(self.cwd.join(dir))))
         } else if let Some(val) = self.get_path("build.target-dir")? {
             let val = self.cwd.join(val.val);
@@ -459,6 +471,7 @@ impl Config {
         color: &Option<String>,
         frozen: bool,
         locked: bool,
+        target_dir: &Option<PathBuf>,
         unstable_flags: &[String],
     ) -> CargoResult<()> {
         let extra_verbose = verbose >= 2;
@@ -492,11 +505,17 @@ impl Config {
             | (None, None, None) => Verbosity::Normal,
         };
 
+        let cli_target_dir = match target_dir.as_ref() {
+            Some(dir) => Some(Filesystem::new(dir.clone())),
+            None => None,
+        };
+
         self.shell().set_verbosity(verbosity);
         self.shell().set_color_choice(color.map(|s| &s[..]))?;
         self.extra_verbose = extra_verbose;
         self.frozen = frozen;
         self.locked = locked;
+        self.target_dir = cli_target_dir;
         self.cli_flags.parse(unstable_flags)?;
 
         Ok(())
@@ -543,7 +562,7 @@ impl Config {
             cfg.merge(value)
                 .chain_err(|| format!("failed to merge configuration at `{}`", path.display()))?;
             Ok(())
-        }).chain_err(|| "Couldn't load Cargo configuration")?;
+        }).chain_err(|| "could not load Cargo configuration")?;
 
         self.load_credentials(&mut cfg)?;
         match cfg {
@@ -677,6 +696,10 @@ impl Config {
         F: FnMut() -> CargoResult<SourceId>,
     {
         Ok(self.crates_io_source_id.try_borrow_with(f)?.clone())
+    }
+
+    pub fn creation_time(&self) -> Instant {
+        self.creation_time
     }
 }
 

@@ -59,13 +59,13 @@ Cargo releases coincide with Rust releases.
 
 Found a bug? We'd love to know about it!
 
-Please report all issues on the github [issue tracker][issues].
+Please report all issues on the GitHub [issue tracker][issues].
 
 [issues]: https://github.com/rust-lang/cargo/issues
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). You may also find the arhitecture
+See [CONTRIBUTING.md](CONTRIBUTING.md). You may also find the architecture
 documentation useful ([ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## License

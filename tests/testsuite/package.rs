@@ -1100,17 +1100,17 @@ fn package_two_kinds_of_deps() {
 }
 
 #[test]
-fn test_epoch() {
+fn test_edition() {
     let p = project("foo")
         .file(
             "Cargo.toml",
             r#"
-            cargo-features = ["epoch"]
+            cargo-features = ["edition"]
             [package]
             name = "foo"
             version = "0.0.1"
             authors = []
-            rust = "2018"
+            edition = "2018"
         "#,
         )
         .file("src/lib.rs", r#" "#)
@@ -1119,13 +1119,13 @@ fn test_epoch() {
     assert_that(
         p.cargo("build").arg("-v").masquerade_as_nightly_cargo(),
         execs()
-                // -Zepoch is still in flux and we're not passing -Zunstable-options
+                // --edition is still in flux and we're not passing -Zunstable-options
                 // from Cargo so it will probably error. Only partially match the output
                 // until stuff stabilizes
                 .with_stderr_contains(format!("\
 [COMPILING] foo v0.0.1 ({url})
 [RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
-        --emit=dep-info,link -Zepoch=2018 -C debuginfo=2 \
+        --emit=dep-info,link --edition=2018 -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir [..] \
         -L dependency={dir}[/]target[/]debug[/]deps`
@@ -1134,13 +1134,13 @@ fn test_epoch() {
 }
 
 #[test]
-fn test_epoch_missing() {
-    // no epoch = 2015
+fn test_edition_missing() {
+    // no edition = 2015
     let p = project("foo")
         .file(
             "Cargo.toml",
             r#"
-            cargo-features = ["epoch"]
+            cargo-features = ["edition"]
             [package]
             name = "foo"
             version = "0.0.1"
@@ -1153,13 +1153,13 @@ fn test_epoch_missing() {
     assert_that(
         p.cargo("build").arg("-v").masquerade_as_nightly_cargo(),
         execs()
-                // -Zepoch is still in flux and we're not passing -Zunstable-options
+                // --edition is still in flux and we're not passing -Zunstable-options
                 // from Cargo so it will probably error. Only partially match the output
                 // until stuff stabilizes
                 .with_stderr_contains(format!("\
 [COMPILING] foo v0.0.1 ({url})
 [RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
-        --emit=dep-info,link -Zepoch=2015 -C debuginfo=2 \
+        --emit=dep-info,link --edition=2015 -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir [..] \
         -L dependency={dir}[/]target[/]debug[/]deps`
@@ -1168,17 +1168,17 @@ fn test_epoch_missing() {
 }
 
 #[test]
-fn test_epoch_malformed() {
+fn test_edition_malformed() {
     let p = project("foo")
         .file(
             "Cargo.toml",
             r#"
-            cargo-features = ["epoch"]
+            cargo-features = ["edition"]
             [package]
             name = "foo"
             version = "0.0.1"
             authors = []
-            rust = "chicken"
+            edition = "chicken"
         "#,
         )
         .file("src/lib.rs", r#" "#)
@@ -1191,14 +1191,17 @@ fn test_epoch_malformed() {
 error: failed to parse manifest at `[..]`
 
 Caused by:
-  the `rust` key must be one of: `2015`, `2018`
+  failed to parse the `edition` key
+
+Caused by:
+  supported edition values are `2015` or `2018`, but `chicken` is unknown
 "
         )),
     );
 }
 
 #[test]
-fn test_epoch_nightly() {
+fn test_edition_nightly() {
     let p = project("foo")
         .file(
             "Cargo.toml",
@@ -1207,7 +1210,7 @@ fn test_epoch_nightly() {
             name = "foo"
             version = "0.0.1"
             authors = []
-            rust = "2015"
+            edition = "2015"
         "#,
         )
         .file("src/lib.rs", r#" "#)
@@ -1220,12 +1223,12 @@ fn test_epoch_nightly() {
 error: failed to parse manifest at `[..]`
 
 Caused by:
-  epoches are unstable
+  editions are unstable
 
 Caused by:
-  feature `epoch` is required
+  feature `edition` is required
 
-consider adding `cargo-features = [\"epoch\"]` to the manifest
+consider adding `cargo-features = [\"edition\"]` to the manifest
 "
         )),
     );

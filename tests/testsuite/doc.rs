@@ -3,11 +3,12 @@ use std::str;
 use std::fs::{self, File};
 use std::io::Read;
 
-use cargotest::rustc_host;
+use cargotest::{rustc_host, ChannelChanger};
 use cargotest::support::{execs, project, path2url};
 use cargotest::support::registry::Package;
 use hamcrest::{assert_that, existing_dir, existing_file, is_not};
 use cargo::util::ProcessError;
+use glob::glob;
 
 #[test]
 fn simple() {
@@ -163,6 +164,20 @@ fn doc_deps() {
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
     assert_that(&p.root().join("target/doc/bar/index.html"), existing_file());
 
+    // Verify that it only emits rmeta for the dependency.
+    assert_eq!(
+        glob(&p.root().join("target/debug/**/*.rlib").to_str().unwrap())
+            .unwrap()
+            .count(),
+        0
+    );
+    assert_eq!(
+        glob(&p.root().join("target/debug/deps/libbar-*.rmeta").to_str().unwrap())
+            .unwrap()
+            .count(),
+        1
+    );
+
     assert_that(
         p.cargo("doc")
             .env("RUST_LOG", "cargo::ops::cargo_rustc::fingerprint"),
@@ -217,7 +232,7 @@ fn doc_no_deps() {
         p.cargo("doc").arg("--no-deps"),
         execs().with_status(0).with_stderr(&format!(
             "\
-[COMPILING] bar v0.0.1 ({dir}/bar)
+[CHECKING] bar v0.0.1 ({dir}/bar)
 [DOCUMENTING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
@@ -596,7 +611,7 @@ fn doc_lib_bin_same_name_documents_named_bin_when_requested() {
         p.cargo("doc").arg("--bin").arg("foo"),
         execs().with_status(0).with_stderr(&format!(
             "\
-[COMPILING] foo v0.0.1 ({dir})
+[CHECKING] foo v0.0.1 ({dir})
 [DOCUMENTING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
@@ -650,7 +665,7 @@ fn doc_lib_bin_same_name_documents_bins_when_requested() {
         p.cargo("doc").arg("--bins"),
         execs().with_status(0).with_stderr(&format!(
             "\
-[COMPILING] foo v0.0.1 ({dir})
+[CHECKING] foo v0.0.1 ({dir})
 [DOCUMENTING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
@@ -1270,7 +1285,7 @@ fn doc_all_workspace() {
         execs()
             .with_status(0)
             .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])")
-            .with_stderr_contains("[..] Compiling bar v0.1.0 ([..])")
+            .with_stderr_contains("[..] Checking bar v0.1.0 ([..])")
             .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])"),
     );
 }
@@ -1463,4 +1478,63 @@ fn doc_workspace_open_help_message() {
             .with_stderr_contains("  foo")
             .with_stderr_contains("  bar"),
     );
+}
+
+#[test]
+fn doc_edition() {
+    if !cargotest::is_nightly() {
+        // Stable rustdoc won't have the edition option.  Remove this once it
+        // is stabilized.
+        return;
+    }
+    let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["edition"]
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+            edition = "2018"
+        "#,
+        )
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("doc -v").masquerade_as_nightly_cargo(),
+        execs()
+            .with_status(0)
+            .with_stderr_contains("[RUNNING] `rustdoc [..]-Zunstable-options --edition=2018[..]"),
+    );
+}
+
+// Tests an issue where depending on different versions of the same crate depending on `cfg`s
+// caused `cargo doc` to fail.
+#[test]
+fn issue_5345() {
+    let foo = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [target.'cfg(all(windows, target_arch = "x86"))'.dependencies]
+            bar = "0.1"
+
+            [target.'cfg(not(all(windows, target_arch = "x86")))'.dependencies]
+            bar = "0.2"
+        "#,
+        )
+        .file("src/lib.rs", "extern crate bar;")
+        .build();
+    Package::new("bar", "0.1.0").publish();
+    Package::new("bar", "0.2.0").publish();
+
+    assert_that(foo.cargo("build"), execs().with_status(0));
+    assert_that(foo.cargo("doc"), execs().with_status(0));
 }

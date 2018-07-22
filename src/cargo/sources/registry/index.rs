@@ -113,13 +113,19 @@ impl<'cfg> RegistryIndex<'cfg> {
             // interpretation of each line here and older cargo will simply
             // ignore the new lines.
             ret.extend(lines.filter_map(|line| {
-                self.parse_registry_package(line).ok().and_then(|v| {
-                    if online || load.is_crate_downloaded(v.0.package_id()) {
-                        Some(v)
-                    } else {
-                        None
+                let (summary, locked) = match self.parse_registry_package(line) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        info!("failed to parse `{}` registry package: {}", name, e);
+                        trace!("line: {}", line);
+                        return None
                     }
-                })
+                };
+                if online || load.is_crate_downloaded(summary.package_id()) {
+                    Some((summary, locked))
+                } else {
+                    None
+                }
             }));
 
             Ok(())
@@ -148,14 +154,12 @@ impl<'cfg> RegistryIndex<'cfg> {
             features,
             yanked,
             links,
-        } = super::DEFAULT_ID.with(|slot| {
-            *slot.borrow_mut() = Some(self.source_id.clone());
-            let res = serde_json::from_str::<RegistryPackage>(line);
-            drop(slot.borrow_mut().take());
-            res
-        })?;
+        } = serde_json::from_str(line)?;
         let pkgid = PackageId::new(&name, &vers, &self.source_id)?;
-        let summary = Summary::new(pkgid, deps.inner, features, links)?;
+        let deps = deps.into_iter()
+            .map(|dep| dep.into_dep(&self.source_id))
+            .collect::<CargoResult<Vec<_>>>()?;
+        let summary = Summary::new(pkgid, deps, features, links, false)?;
         let summary = summary.set_checksum(cksum.clone());
         if self.hashes.contains_key(&name[..]) {
             self.hashes.get_mut(&name[..]).unwrap().insert(vers, cksum);

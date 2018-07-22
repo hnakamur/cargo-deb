@@ -45,6 +45,21 @@ building native code. More information can be found in the build script
 build = "build.rs"
 ```
 
+#### The `links` field (optional)
+
+This fields specifies the name of a native library that is being linked to.
+More information can be found in the [`links`][links] section of the build
+script guide.
+
+[links]: reference/build-scripts.html#the-links-manifest-key
+
+```toml
+[package]
+# ...
+links = "foo"
+build = "build.rs"
+```
+
 #### The `documentation` field (optional)
 
 This field specifies a URL to a website hosting the crate's documentation.
@@ -279,7 +294,7 @@ project’s profiles are actually read. All dependencies’ profiles will be
 overridden. This is done so the top-level project has control over how its
 dependencies are compiled.
 
-There are five currently supported profile names, all of which have the same
+There are four currently supported profile names, all of which have the same
 configuration available to them. Listed below is the configuration available,
 along with the defaults for each profile.
 
@@ -342,18 +357,6 @@ codegen-units = 16
 panic = 'unwind'
 incremental = false
 overflow-checks = false
-
-# The documentation profile, used for `cargo doc`.
-[profile.doc]
-opt-level = 0
-debug = 2
-rpath = false
-lto = false
-debug-assertions = true
-codegen-units = 16
-panic = 'unwind'
-incremental = true
-overflow-checks = true
 ```
 
 ### The `[features]` section
@@ -563,7 +566,6 @@ When `default-members` is not specified, the default is the root manifest
 if it is a package, or every member manifest (as if `--all` were specified
 on the command-line) for virtual workspaces.
 
-#TODO: move this to a more appropriate place
 ### The project layout
 
 If your project is an executable, name the main source file `src/main.rs`. If it
@@ -712,6 +714,10 @@ proc-macro = false
 # built manages the test runner itself.
 harness = true
 ```
+
+The `[package]` also includes the optional `autobins`, `autoexamples`,
+`autotests`, and `autobenches` keys to explicitly opt-in or opt-out of
+auto-discovering specific target kinds.
 
 #### The `required-features` field (optional)
 

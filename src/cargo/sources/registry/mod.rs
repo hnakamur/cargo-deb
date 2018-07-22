@@ -159,18 +159,15 @@
 //! ```
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::fmt;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 use semver::Version;
-use serde::de;
 use tar::Archive;
 
-use core::{Package, PackageId, Registry, Source, SourceId, Summary};
+use core::{Package, PackageId, Source, SourceId, Summary};
 use core::dependency::{Dependency, Kind};
 use sources::PathSource;
 use util::{internal, CargoResult, Config, FileLock, Filesystem};
@@ -214,18 +211,26 @@ pub struct RegistryConfig {
 }
 
 #[derive(Deserialize)]
-struct RegistryPackage<'a> {
+pub struct RegistryPackage<'a> {
     name: Cow<'a, str>,
     vers: Version,
-    deps: DependencyList,
+    deps: Vec<RegistryDependency<'a>>,
     features: BTreeMap<String, Vec<String>>,
     cksum: String,
     yanked: Option<bool>,
-    #[serde(default)] links: Option<String>,
+    links: Option<String>,
 }
 
-struct DependencyList {
-    inner: Vec<Dependency>,
+#[derive(Deserialize)]
+#[serde(field_identifier, rename_all = "lowercase")]
+enum Field {
+    Name,
+    Vers,
+    Deps,
+    Features,
+    Cksum,
+    Yanked,
+    Links,
 }
 
 #[derive(Deserialize)]
@@ -238,6 +243,55 @@ struct RegistryDependency<'a> {
     target: Option<Cow<'a, str>>,
     kind: Option<Cow<'a, str>>,
     registry: Option<String>,
+}
+
+impl<'a> RegistryDependency<'a> {
+    /// Converts an encoded dependency in the registry to a cargo dependency
+    pub fn into_dep(self, default: &SourceId) -> CargoResult<Dependency> {
+        let RegistryDependency {
+            name,
+            req,
+            mut features,
+            optional,
+            default_features,
+            target,
+            kind,
+            registry,
+        } = self;
+
+        let id = if let Some(registry) = registry {
+            SourceId::for_registry(&registry.to_url()?)?
+        } else {
+            default.clone()
+        };
+
+        let mut dep = Dependency::parse_no_deprecated(&name, Some(&req), &id)?;
+        let kind = match kind.as_ref().map(|s| &s[..]).unwrap_or("") {
+            "dev" => Kind::Development,
+            "build" => Kind::Build,
+            _ => Kind::Normal,
+        };
+
+        let platform = match target {
+            Some(target) => Some(target.parse()?),
+            None => None,
+        };
+
+        // Unfortunately older versions of cargo and/or the registry ended up
+        // publishing lots of entries where the features array contained the
+        // empty feature, "", inside. This confuses the resolution process much
+        // later on and these features aren't actually valid, so filter them all
+        // out here.
+        features.retain(|s| !s.is_empty());
+
+        dep.set_optional(optional)
+            .set_default_features(default_features)
+            .set_features(features)
+            .set_platform(platform)
+            .set_kind(kind);
+
+        Ok(dep)
+    }
 }
 
 pub trait RegistryData {
@@ -366,7 +420,7 @@ impl<'cfg> RegistrySource<'cfg> {
     }
 }
 
-impl<'cfg> Registry for RegistrySource<'cfg> {
+impl<'cfg> Source for RegistrySource<'cfg> {
     fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
         // If this is a precise dependency, then it came from a lockfile and in
         // theory the registry is known to contain this version. If, however, we
@@ -395,9 +449,7 @@ impl<'cfg> Registry for RegistrySource<'cfg> {
     fn requires_precise(&self) -> bool {
         false
     }
-}
 
-impl<'cfg> Source for RegistrySource<'cfg> {
     fn source_id(&self) -> &SourceId {
         &self.source_id
     }
@@ -443,97 +495,4 @@ impl<'cfg> Source for RegistrySource<'cfg> {
     fn fingerprint(&self, pkg: &Package) -> CargoResult<String> {
         Ok(pkg.package_id().version().to_string())
     }
-}
-
-// TODO: this is pretty unfortunate, ideally we'd use `DeserializeSeed` which
-//       is intended for "deserializing with context" but that means we couldn't
-//       use `#[derive(Deserialize)]` on `RegistryPackage` unfortunately.
-//
-// I'm told, however, that https://github.com/serde-rs/serde/pull/909 will solve
-// all our problems here. Until that lands this thread local is just a
-// workaround in the meantime.
-//
-// If you're reading this and find this thread local funny, check to see if that
-// PR is merged. If it is then let's ditch this thread local!
-thread_local!(static DEFAULT_ID: RefCell<Option<SourceId>> = Default::default());
-
-impl<'de> de::Deserialize<'de> for DependencyList {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        return deserializer.deserialize_seq(Visitor);
-
-        struct Visitor;
-
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = DependencyList;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a list of dependencies")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<DependencyList, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                let mut ret = Vec::new();
-                if let Some(size) = seq.size_hint() {
-                    ret.reserve(size);
-                }
-                while let Some(element) = seq.next_element::<RegistryDependency>()? {
-                    ret.push(parse_registry_dependency(element).map_err(|e| de::Error::custom(e))?);
-                }
-
-                Ok(DependencyList { inner: ret })
-            }
-        }
-    }
-}
-
-/// Converts an encoded dependency in the registry to a cargo dependency
-fn parse_registry_dependency(dep: RegistryDependency) -> CargoResult<Dependency> {
-    let RegistryDependency {
-        name,
-        req,
-        mut features,
-        optional,
-        default_features,
-        target,
-        kind,
-        registry,
-    } = dep;
-
-    let id = if let Some(registry) = registry {
-        SourceId::for_registry(&registry.to_url()?)?
-    } else {
-        DEFAULT_ID.with(|id| id.borrow().as_ref().unwrap().clone())
-    };
-
-    let mut dep = Dependency::parse_no_deprecated(&name, Some(&req), &id)?;
-    let kind = match kind.as_ref().map(|s| &s[..]).unwrap_or("") {
-        "dev" => Kind::Development,
-        "build" => Kind::Build,
-        _ => Kind::Normal,
-    };
-
-    let platform = match target {
-        Some(target) => Some(target.parse()?),
-        None => None,
-    };
-
-    // Unfortunately older versions of cargo and/or the registry ended up
-    // publishing lots of entries where the features array contained the
-    // empty feature, "", inside. This confuses the resolution process much
-    // later on and these features aren't actually valid, so filter them all
-    // out here.
-    features.retain(|s| !s.is_empty());
-
-    dep.set_optional(optional)
-        .set_default_features(default_features)
-        .set_features(features)
-        .set_platform(platform)
-        .set_kind(kind);
-
-    Ok(dep)
 }

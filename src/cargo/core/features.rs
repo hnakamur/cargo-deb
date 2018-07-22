@@ -35,6 +35,12 @@
 //! then you use `chain_err` to tack on more context for why the feature was
 //! required when the feature isn't activated.
 //!
+//! 4. Update the unstable documentation at
+//!    `src/doc/src/reference/unstable.md` to include a short description of
+//!    how to use your new feature.  When the feature is stabilized, be sure
+//!    that the Cargo Guide or Reference is updated to fully document the
+//!    feature and remove the entry from the Unstable section.
+//!
 //! And hopefully that's it! Bear with us though that this is, at the time of
 //! this writing, a very new feature in Cargo. If the process differs from this
 //! we'll be sure to update this documentation!
@@ -43,32 +49,37 @@ use std::env;
 use std::fmt;
 use std::str::FromStr;
 
+use failure::Error;
+
 use util::errors::CargoResult;
 
-/// The epoch of the compiler (RFC 2052)
+/// The edition of the compiler (RFC 2052)
 #[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, Eq, PartialEq, Serialize, Deserialize)]
-pub enum Epoch {
-    /// The 2015 epoch
-    Epoch2015,
-    /// The 2018 epoch
-    Epoch2018,
+pub enum Edition {
+    /// The 2015 edition
+    Edition2015,
+    /// The 2018 edition
+    Edition2018,
 }
 
-impl fmt::Display for Epoch {
+impl fmt::Display for Edition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Epoch::Epoch2015 => f.write_str("2015"),
-            Epoch::Epoch2018 => f.write_str("2018"),
+            Edition::Edition2015 => f.write_str("2015"),
+            Edition::Edition2018 => f.write_str("2018"),
         }
     }
 }
-impl FromStr for Epoch {
-    type Err = ();
-    fn from_str(s: &str) -> Result<Self, ()> {
+impl FromStr for Edition {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self, Error> {
         match s {
-            "2015" => Ok(Epoch::Epoch2015),
-            "2018" => Ok(Epoch::Epoch2018),
-            _ => Err(()),
+            "2015" => Ok(Edition::Edition2015),
+            "2018" => Ok(Edition::Edition2018),
+            s => {
+                bail!("supported edition values are `2015` or `2018`, but `{}` \
+                       is unknown", s)
+            }
         }
     }
 }
@@ -127,8 +138,12 @@ macro_rules! features {
 }
 
 macro_rules! stab {
-    (stable) => (Status::Stable);
-    (unstable) => (Status::Unstable);
+    (stable) => {
+        Status::Stable
+    };
+    (unstable) => {
+        Status::Unstable
+    };
 }
 
 /// A listing of all features in Cargo
@@ -156,14 +171,20 @@ features! {
         // Downloading packages from alternative registry indexes.
         [unstable] alternative_registries: bool,
 
-        // Using epochs
-        [unstable] epoch: bool,
+        // Using editions
+        [unstable] edition: bool,
 
         // Renaming a package in the manifest via the `package` key
         [unstable] rename_dependency: bool,
 
         // Whether a lock file is published with this crate
         [unstable] publish_lockfile: bool,
+
+        // Overriding profiles for dependencies.
+        [unstable] profile_overrides: bool,
+
+        // Separating the namespaces for features and dependencies
+        [unstable] namespaced_features: bool,
     }
 }
 
@@ -286,6 +307,7 @@ pub struct CliUnstable {
     pub no_index_update: bool,
     pub avoid_dev_deps: bool,
     pub minimal_versions: bool,
+    pub package_features: bool,
 }
 
 impl CliUnstable {
@@ -319,6 +341,7 @@ impl CliUnstable {
             "no-index-update" => self.no_index_update = true,
             "avoid-dev-deps" => self.avoid_dev_deps = true,
             "minimal-versions" => self.minimal_versions = true,
+            "package-features" => self.package_features = true,
             _ => bail!("unknown `-Z` flag specified: {}", k),
         }
 
