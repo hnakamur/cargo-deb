@@ -1,3 +1,27 @@
+cargo (0.28.0-1) UNRELEASED; urgency=medium
+
+  [upstream]
+  * cargo-metadata now includes authors, categories, keywords, readme, and
+    repository fields.
+  * cargo-metadata now includes a package's metadata table.
+  * Added the --target-dir optional argument. This allows you to specify a
+    different directory than target for placing compilation artifacts.
+  * Cargo will be adding automatic target inference for binaries,
+    benchmarks, examples, and tests in the Rust 2018 edition. If your
+    project specifies specific targets e.g. using [[bin]] and have other
+    binaries in locations where cargo would infer a binary, Cargo will
+    produce a warning. You can disable this feature ahead of time by
+    setting any of the following autobins, autobenches, autoexamples,
+    autotests to false.
+  * Cargo will now cache compiler information. This can be disabled by
+    setting CARGO_CACHE_RUSTC_INFO=0 in your environment.
+
+  [Vasudev Kamath]
+  * Update README.source to mention preferred way of upload.
+  * Update unsuspicious files for new release.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 22 Jul 2018 22:14:46 +0530
+
 cargo (0.27.0-2) unstable; urgency=medium
 
   * Support cross-compile install (upstream PR #5614).
