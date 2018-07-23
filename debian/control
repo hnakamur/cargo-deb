@@ -1,6 +1,6 @@
 Source: cargo
 Section: devel
-Maintainer: Rust Maintainers <pkg-rust-maintainers@lists.alioth.debian.org>
+Maintainer: Rust Maintainers <pkg-rust-maintainers@alioth-lists.debian.net>
 Uploaders: Luca Bruno <lucab@debian.org>,
  Angus Lees <gus@debian.org>,
  Ximin Luo <infinity0@debian.org>,

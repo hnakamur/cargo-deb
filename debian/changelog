@@ -1,3 +1,9 @@
+cargo (0.27.0-3) UNRELEASED; urgency=medium
+
+  * Update of the alioth ML address.
+
+ -- Sylvestre Ledru <sylvestre@debian.org>  Mon, 23 Jul 2018 13:19:29 +0200
+
 cargo (0.27.0-2) unstable; urgency=medium
 
   * Support cross-compile install (upstream PR #5614).
