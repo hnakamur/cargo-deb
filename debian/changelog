@@ -16,6 +16,9 @@ cargo (0.28.0-1) UNRELEASED; urgency=medium
   * Cargo will now cache compiler information. This can be disabled by
     setting CARGO_CACHE_RUSTC_INFO=0 in your environment.
 
+  [ Sylvestre Ledru ]
+  * Update of the alioth ML address.
+
   [Vasudev Kamath]
   * Update README.source to mention preferred way of upload.
   * Update unsuspicious files for new release.
