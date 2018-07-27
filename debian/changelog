@@ -1,6 +1,6 @@
 cargo (0.28.0-1) UNRELEASED; urgency=medium
 
-  [upstream]
+  [ upstream ]
   * cargo-metadata now includes authors, categories, keywords, readme, and
     repository fields.
   * cargo-metadata now includes a package's metadata table.
@@ -19,7 +19,7 @@ cargo (0.28.0-1) UNRELEASED; urgency=medium
   [ Sylvestre Ledru ]
   * Update of the alioth ML address.
 
-  [Vasudev Kamath]
+  [ Vasudev Kamath ]
   * Update README.source to mention preferred way of upload.
   * Update unsuspicious files for new release.
 
