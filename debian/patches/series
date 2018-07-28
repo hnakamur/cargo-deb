@@ -2,3 +2,4 @@
 2004_clean-cargo-deps.patch
 2001_use-system-libgit2.patch
 2002_disable-net-tests.patch
+2003_force-use-system-libssh2.patch
