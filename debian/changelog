@@ -22,8 +22,16 @@ cargo (0.28.0-1) UNRELEASED; urgency=medium
   [ Vasudev Kamath ]
   * Update README.source to mention preferred way of upload.
   * Update unsuspicious files for new release.
+  * debian/patches:
+    + Refresh patch 2007 for new release.
+    + Refresh patch 2001 for new version of libgit2-sys
+    + Drop patch 2008 as its merged upstream.
+    + Add patch 2003 for forcing use of libssh2 from system, which was now
+      controlled by environment variable.
+  * debian/copyright:
+    + Update copyright information for new release.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 22 Jul 2018 22:14:46 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sat, 28 Jul 2018 23:07:13 +0530
 
 cargo (0.27.0-2) unstable; urgency=medium
 
