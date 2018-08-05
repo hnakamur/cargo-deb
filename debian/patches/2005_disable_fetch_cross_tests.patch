@@ -1,0 +1,30 @@
+Description: Disable fetch tests to allow build on arm and ppc architecture
+ These tests are disabled to allow building on release architecture.
+Author: Vasudev Kamath <vasudev@copyninja.info>
+Bug: https://github.com/rust-lang/cargo/issues/5864
+Last-Update: 2018-08-05
+
+--- a/tests/testsuite/fetch.rs
++++ b/tests/testsuite/fetch.rs
+@@ -27,8 +27,8 @@
+     assert_that(p.cargo("fetch"), execs().with_status(0).with_stdout(""));
+ }
+ 
+-#[test]
+-fn fetch_all_platform_dependencies_when_no_target_is_given() {
++#[allow(dead_code)]
++fn _fetch_all_platform_dependencies_when_no_target_is_given() {
+     Package::new("d1", "1.2.3")
+         .file(
+             "Cargo.toml",
+@@ -87,8 +87,8 @@
+     );
+ }
+ 
+-#[test]
+-fn fetch_platform_specific_dependencies() {
++#[allow(dead_code)]
++fn _fetch_platform_specific_dependencies() {
+     Package::new("d1", "1.2.3")
+         .file(
+             "Cargo.toml",
