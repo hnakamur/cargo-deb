@@ -1,3 +1,10 @@
+cargo (0.28.0-1~exp2) experimental; urgency=medium
+
+  * Add patch 2005 to disable fetch_platform_specific_dependencies unit
+    tests. Upstream issue #5864.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 05 Aug 2018 17:17:00 +0530
+
 cargo (0.28.0-1~exp1) experimental; urgency=medium
 
   [ upstream ]
