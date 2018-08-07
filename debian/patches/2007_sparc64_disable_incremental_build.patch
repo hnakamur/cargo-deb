@@ -1,7 +1,7 @@
 Description: Disable incremental builds on sparc64
  Incremental builds are currently unreliable on sparc64,
  disable them by default for the time being.
-Last-Update: 2018-04-09
+Last-Update: 2018-08-07
 
 --- a/src/cargo/core/profiles.rs
 +++ b/src/cargo/core/profiles.rs
@@ -15,3 +15,29 @@ Last-Update: 2018-04-09
              incremental: true,
              ..Profile::default()
          }
+--- a/tests/testsuite/build.rs
++++ b/tests/testsuite/build.rs
+@@ -45,6 +45,7 @@
+ 
+ /// Check that the `CARGO_INCREMENTAL` environment variable results in
+ /// `rustc` getting `-Zincremental` passed to it.
++#[cfg(not(target_arch = "sparc64"))]
+ #[test]
+ fn cargo_compile_incremental() {
+     let p = project("foo")
+@@ -71,6 +72,7 @@
+     );
+ }
+ 
++#[cfg(not(target_arch = "sparc64"))]
+ #[test]
+ fn incremental_profile() {
+     let p = project("foo")
+@@ -127,6 +129,7 @@
+     );
+ }
+ 
++#[cfg(not(target_arch = "sparc64"))]
+ #[test]
+ fn incremental_config() {
+     let p = project("foo")
