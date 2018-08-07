@@ -1,3 +1,10 @@
+cargo (0.28.0-1~exp3) experimental; urgency=medium
+
+  * Disable incremental compilation tests on sparc64 architecture.
+    Closes: bug#905623, Thanks to John Paul Adrian Glaubitz.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Tue, 07 Aug 2018 22:01:31 +0530
+
 cargo (0.28.0-1~exp2) experimental; urgency=medium
 
   * Add patch 2005 to disable fetch_platform_specific_dependencies unit
