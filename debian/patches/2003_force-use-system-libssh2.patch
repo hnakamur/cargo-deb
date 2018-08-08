@@ -4,8 +4,8 @@ Bug: https://github.com/alexcrichton/ssh2-rs/issues/88
 Forwarded: not-needed
 Last-Update: 2018-07-28
 
---- a/vendor/libssh2-sys-0.2.8/build.rs
-+++ b/vendor/libssh2-sys-0.2.8/build.rs
+--- a/vendor/libssh2-sys-0.2.10/build.rs
++++ b/vendor/libssh2-sys-0.2.10/build.rs
 @@ -21,19 +21,20 @@
      // The system copy of libssh2 is not used by default because it
      // can lead to having two copies of libssl loaded at once.
