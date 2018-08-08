@@ -693,7 +693,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 +// }
 --- a/tests/testsuite/test.rs
 +++ b/tests/testsuite/test.rs
-@@ -3049,114 +3049,114 @@
+@@ -3093,114 +3093,114 @@
      );
  }
  
@@ -918,13 +918,14 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  fn test_release_ignore_panic() {
 --- a/tests/testsuite/generate_lockfile.rs
 +++ b/tests/testsuite/generate_lockfile.rs
-@@ -2,8 +2,8 @@
+@@ -1,9 +1,9 @@
+ use std::fs::{self, File};
  use std::io::prelude::*;
  
- use cargotest::support::{execs, project};
 -use cargotest::support::registry::Package;
--use cargotest::ChannelChanger;
 +// use cargotest::support::registry::Package;
+ use cargotest::support::{execs, paths, project, ProjectBuilder};
+-use cargotest::ChannelChanger;
 +// use cargotest::ChannelChanger;
  use hamcrest::{assert_that, existing_file, is_not};
  
