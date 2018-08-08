@@ -3,7 +3,7 @@
 curl-sys-*/curl/
 libgit2-sys-*/libgit2*/
 libssh2-sys-*/libssh2*/
-libz-sys-*/src/zlib-*/
+libz-sys-*/src/zlib*/
 strsim-*/docs/
 # pre-built archive for WinAPI
 # <WindowsBunny> infinity0: So the libfoo.a in my hundreds of -sys crates are from MinGW-w64
