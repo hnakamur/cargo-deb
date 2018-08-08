@@ -51,6 +51,8 @@ clap-*/CHANGELOG.md
 vec_map-*/Cargo.toml
 rustc-demangle-*/src/lib.rs
 cloudabi-*/cloudabi.rs
+failure-*/book/src/bail-and-ensure.md
+synstructure-*/LICENSE
 
 # test data for schanel
 schannel-*/test/*
