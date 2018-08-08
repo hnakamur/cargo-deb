@@ -10,12 +10,13 @@ use serde_json;
 
 use core::profiles::{Lto, Profile};
 use core::shell::ColorChoice;
-use core::{Feature, PackageId, Target};
+use core::{PackageId, Target};
 use util::errors::{CargoResult, CargoResultExt, Internal};
 use util::paths;
 use util::{self, machine_message, Freshness, ProcessBuilder};
 use util::{internal, join_paths, profile};
 
+use self::build_plan::BuildPlan;
 use self::job::{Job, Work};
 use self::job_queue::JobQueue;
 
@@ -23,13 +24,14 @@ use self::output_depinfo::output_depinfo;
 
 pub use self::build_context::{BuildContext, FileFlavor, TargetConfig, TargetInfo};
 pub use self::build_config::{BuildConfig, CompileMode, MessageFormat};
-pub use self::compilation::Compilation;
+pub use self::compilation::{Compilation, Doctest};
 pub use self::context::{Context, Unit};
 pub use self::custom_build::{BuildMap, BuildOutput, BuildScripts};
 pub use self::layout::is_bad_artifact_name;
 
 mod build_config;
 mod build_context;
+mod build_plan;
 mod compilation;
 mod context;
 mod custom_build;
@@ -42,7 +44,7 @@ mod output_depinfo;
 /// Whether an object is for the host arch, or the target arch.
 ///
 /// These will be the same unless cross-compiling.
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, PartialOrd, Ord, Serialize)]
 pub enum Kind {
     Host,
     Target,
@@ -93,10 +95,12 @@ impl Executor for DefaultExecutor {}
 fn compile<'a, 'cfg: 'a>(
     cx: &mut Context<'a, 'cfg>,
     jobs: &mut JobQueue<'a>,
+    plan: &mut BuildPlan,
     unit: &Unit<'a>,
     exec: &Arc<Executor>,
 ) -> CargoResult<()> {
     let bcx = cx.bcx;
+    let build_plan = bcx.build_config.build_plan;
     if !cx.compiled.insert(*unit) {
         return Ok(());
     }
@@ -112,6 +116,12 @@ fn compile<'a, 'cfg: 'a>(
     } else if unit.mode == CompileMode::Doctest {
         // we run these targets later, so this is just a noop for now
         (Work::noop(), Work::noop(), Freshness::Fresh)
+    } else if build_plan {
+        (
+            rustc(cx, unit, &exec.clone())?,
+            Work::noop(),
+            Freshness::Dirty,
+        )
     } else {
         let (mut freshness, dirty, fresh) = fingerprint::prepare_target(cx, unit)?;
         let work = if unit.mode.is_doc() {
@@ -134,7 +144,10 @@ fn compile<'a, 'cfg: 'a>(
 
     // Be sure to compile all dependencies of this target as well.
     for unit in cx.dep_targets(unit).iter() {
-        compile(cx, jobs, unit, exec)?;
+        compile(cx, jobs, plan, unit, exec)?;
+    }
+    if build_plan {
+        plan.add(cx, unit)?;
     }
 
     Ok(())
@@ -146,8 +159,10 @@ fn rustc<'a, 'cfg>(
     exec: &Arc<Executor>,
 ) -> CargoResult<Work> {
     let mut rustc = prepare_rustc(cx, &unit.target.rustc_crate_types(), unit)?;
+    let build_plan = cx.bcx.build_config.build_plan;
 
     let name = unit.pkg.name().to_string();
+    let buildkey = unit.buildkey();
 
     // If this is an upstream dep we don't want warnings from, turn off all
     // lints.
@@ -209,14 +224,16 @@ fn rustc<'a, 'cfg>(
         // previous build scripts, we include them in the rustc invocation.
         if let Some(build_deps) = build_deps {
             let build_state = build_state.outputs.lock().unwrap();
-            add_native_deps(
-                &mut rustc,
-                &build_state,
-                &build_deps,
-                pass_l_flag,
-                &current_id,
-            )?;
-            add_plugin_deps(&mut rustc, &build_state, &build_deps, &root_output)?;
+            if !build_plan {
+                add_native_deps(
+                    &mut rustc,
+                    &build_state,
+                    &build_deps,
+                    pass_l_flag,
+                    &current_id,
+                )?;
+                add_plugin_deps(&mut rustc, &build_state, &build_deps, &root_output)?;
+            }
             add_custom_env(&mut rustc, &build_state, &current_id, kind)?;
         }
 
@@ -268,6 +285,8 @@ fn rustc<'a, 'cfg>(
                     Ok(())
                 },
             ).chain_err(|| format!("Could not compile `{}`.", name))?;
+        } else if build_plan {
+            state.build_plan(buildkey, rustc.clone(), outputs.clone());
         } else {
             exec.exec(rustc, &package_id, &target)
                 .map_err(Internal::new)
@@ -362,7 +381,7 @@ fn link_targets<'a, 'cfg>(
 ) -> CargoResult<Work> {
     let bcx = cx.bcx;
     let outputs = cx.outputs(unit)?;
-    let export_dir = cx.files().export_dir(unit);
+    let export_dir = cx.files().export_dir();
     let package_id = unit.pkg.package_id().clone();
     let target = unit.target.clone();
     let profile = unit.profile;
@@ -577,13 +596,6 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
         rustdoc.arg("--cfg").arg(&format!("feature=\"{}\"", feat));
     }
 
-    let manifest = unit.pkg.manifest();
-
-    if manifest.features().is_enabled(Feature::edition()) {
-        rustdoc.arg("-Zunstable-options");
-        rustdoc.arg(format!("--edition={}", &manifest.edition()));
-    }
-
     if let Some(ref args) = bcx.extra_args_for(unit) {
         rustdoc.args(args);
     }
@@ -623,7 +635,7 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
 // if you literally move the whole project wholesale to a new directory. As a
 // result we mostly don't factor in `cwd` to this calculation. Instead we try to
 // track the workspace as much as possible and we update the current directory
-// of rustc/rustdoc where approrpriate.
+// of rustc/rustdoc where appropriate.
 //
 // The first returned value here is the argument to pass to rustc, and the
 // second is the cwd that rustc should operate in.
@@ -719,11 +731,6 @@ fn build_base_args<'a, 'cfg>(
         if !cx.used_in_plugin.contains(unit) {
             cmd.arg("-C").arg(format!("panic={}", panic));
         }
-    }
-    let manifest = unit.pkg.manifest();
-
-    if manifest.features().is_enabled(Feature::edition()) {
-        cmd.arg(format!("--edition={}", manifest.edition()));
     }
 
     // Disable LTO for host builds as prefer_dynamic and it are mutually

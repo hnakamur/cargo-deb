@@ -3761,32 +3761,6 @@ fn custom_target_dir_line_parameter() {
 }
 
 #[test]
-#[ignore]
-fn rustc_no_trans() {
-    if !is_nightly() {
-        return;
-    }
-
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file("src/main.rs", "fn main() {}")
-        .build();
-
-    assert_that(
-        p.cargo("rustc").arg("-v").arg("--").arg("-Zno-trans"),
-        execs().with_status(0),
-    );
-}
-
-#[test]
 fn build_multiple_packages() {
     let p = project("foo")
         .file(
@@ -4007,6 +3981,7 @@ fn compiler_json_error_format() {
             path = "bar"
         "#,
         )
+        .file("build.rs", "fn main() { println!(\"cargo:rustc-cfg=xyz\") }")
         .file("src/main.rs", "fn main() { let unused = 92; }")
         .file(
             "bar/Cargo.toml",
@@ -4062,6 +4037,36 @@ fn compiler_json_error_format() {
     }
 
     {
+        "reason":"compiler-artifact",
+        "package_id":"foo 0.5.0 ([..])",
+        "target":{
+            "kind":["custom-build"],
+            "crate_types":["bin"],
+            "name":"build-script-build",
+            "src_path":"[..]build.rs"
+        },
+        "profile": {
+            "debug_assertions": true,
+            "debuginfo": 2,
+            "opt_level": "0",
+            "overflow_checks": true,
+            "test": false
+        },
+        "features": [],
+        "filenames": "{...}",
+        "fresh": false
+    }
+
+    {
+        "reason":"build-script-executed",
+        "package_id":"foo 0.5.0 ([..])",
+        "linked_libs":[],
+        "linked_paths":[],
+        "env":[],
+        "cfgs":["xyz"]
+    }
+
+    {
         "reason":"compiler-message",
         "package_id":"foo 0.5.0 ([..])",
         "target":{
@@ -4108,6 +4113,27 @@ fn compiler_json_error_format() {
             r#"
     {
         "reason":"compiler-artifact",
+        "package_id":"foo 0.5.0 ([..])",
+        "target":{
+            "kind":["custom-build"],
+            "crate_types":["bin"],
+            "name":"build-script-build",
+            "src_path":"[..]build.rs"
+        },
+        "profile": {
+            "debug_assertions": true,
+            "debuginfo": 2,
+            "opt_level": "0",
+            "overflow_checks": true,
+            "test": false
+        },
+        "features": [],
+        "filenames": "{...}",
+        "fresh": true
+    }
+
+    {
+        "reason":"compiler-artifact",
         "profile": {
             "debug_assertions": true,
             "debuginfo": 2,
@@ -4125,6 +4151,15 @@ fn compiler_json_error_format() {
         },
         "filenames":["[..].rlib"],
         "fresh": true
+    }
+
+    {
+        "reason":"build-script-executed",
+        "package_id":"foo 0.5.0 ([..])",
+        "linked_libs":[],
+        "linked_paths":[],
+        "env":[],
+        "cfgs":["xyz"]
     }
 
     {

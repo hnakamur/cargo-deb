@@ -522,7 +522,7 @@ fn changing_bin_features_caches_targets() {
     let foo_proc = |name: &str| {
         let src = p.bin("foo");
         let dst = p.bin(name);
-        fs::copy(&src, &dst).expect("Failed to copy foo");
+        fs::hard_link(&src, &dst).expect("Failed to link foo");
         p.process(dst)
     };
 
@@ -1242,4 +1242,42 @@ fn dont_rebuild_based_on_plugins() {
         p.cargo("build -p bar"),
         execs().with_status(0).with_stderr("[FINISHED] [..]\n"),
     );
+}
+
+#[test]
+fn reuse_workspace_lib() {
+    let p = project("p")
+        .file(
+            "Cargo.toml",
+            r#"
+                [package]
+                name = "foo"
+                version = "0.1.1"
+
+                [workspace]
+
+                [dependencies]
+                bar = { path = 'bar' }
+            "#,
+        )
+        .file("src/lib.rs", "")
+        .file(
+            "bar/Cargo.toml",
+            r#"
+                [package]
+                name = "bar"
+                version = "0.1.1"
+            "#,
+        )
+        .file("bar/src/lib.rs", "")
+        .build();
+
+    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(
+        p.cargo("test -p bar -v --no-run"),
+        execs().with_status(0).with_stderr("\
+[COMPILING] bar v0.1.1 ([..])
+[RUNNING] `rustc[..] --test [..]`
+[FINISHED] [..]
+"));
 }

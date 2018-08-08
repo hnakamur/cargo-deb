@@ -8,9 +8,9 @@ interested in the inner workings of Cargo.
 ## Subcommands
 
 Cargo is organized as a set of `clap` subcommands. All subcommands live in
-`src/bin/commands` directory. `src/bin/cargo.rs` is the entry point.
+`src/bin/cargo/commands` directory. `src/bin/cargo/main.rs` is the entry point.
 
-A typical subcommand, such as `src/bin/commands/build.rs`, parses command line
+A typical subcommand, such as `src/bin/cargo/commands/build.rs`, parses command line
 options, reads the configuration files, discovers the Cargo project in
 the current directory and delegates the actual implementation to one
 of the functions in `src/cargo/ops/mod.rs`. This short file is a good
@@ -104,7 +104,12 @@ assert_that(
 ```
 
 Alternatively to build and run a custom version of cargo simply run `cargo build`
-and execute `target/debug/cargo`.
+and execute `target/debug/cargo`. Note that `+nightly`/`+stable` (and variants),
+being [rustup](https://rustup.rs/) features, won't work when executing the locally
+built cargo binary directly, you have to instead build with `cargo +nightly build`
+and run with `rustup run` (e.g `rustup run nightly
+<path-to-cargo>/target/debug/cargo <args>..`) (or set the `RUSTC` env var to point
+to nightly rustc).
 
 Because the test suite has `#![deny(warnings)]` at times you might find it
 convenient to override this with `RUSTFLAGS`, for example
