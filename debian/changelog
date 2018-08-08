@@ -1,3 +1,18 @@
+cargo (0.29.0-1~exp1) UNRELEASED; urgency=medium
+  [ upstream ]
+  * Cargo will now no longer allow you to publish crates with build
+    scripts that modify the src directory. The src directory in a crate
+    should be considered to be immutable.
+
+  [ Vasudev Kamath ]
+  * Update unsuspicious text for new release 0.29.0
+  * Change pattern for embedded zlib
+  * debian/patches:
+    + Refresh patches 2001, 2002, 2003, 2004 to work with new release and
+      new vendor files.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Wed, 08 Aug 2018 22:01:56 +0530
+
 cargo (0.28.0-1) unstable; urgency=medium
 
   * Upload to unstable
