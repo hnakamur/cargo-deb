@@ -22,8 +22,8 @@ and unexpected behavior.
 its users' security, please do not open a public issue on GitHub. Instead,
 we ask you to refer to Rust's [security policy].**
 
-Opening an issue is as easy as following [this link][new-issues] and filling out 
-the fields. Here's a template that you can use to file an issue, though it's not 
+Opening an issue is as easy as following [this link][new-issues] and filling out
+the fields. Here's a template that you can use to file an issue, though it's not
 necessary to use it exactly:
 
     <short summary of the problem>
@@ -39,9 +39,19 @@ necessary to use it exactly:
 All three components are important: what you did, what you expected, what
 happened instead. Please use https://gist.github.com/ if your examples run long.
 
+
+## Feature requests
+
+Cargo follows the general Rust model of evolution. All major features go through
+an RFC process. Therefore, before opening a feature request issue create a
+Pre-RFC thread on the [internals][irlo] forum to get preliminary feedback.
+Implementing a feature as a [custom subcommand][subcommands] is encouraged as it
+helps demonstrate the demand for the functionality and is a great way to deliver
+a working solution faster as it can iterate outside of cargo's release cadence.
+
 ## Working on issues
 
-If you're looking for somewhere to start, check out the [E-easy][E-Easy] and 
+If you're looking for somewhere to start, check out the [E-easy][E-Easy] and
 [E-mentor][E-mentor] tags.
 
 Feel free to ask for guidelines on how to tackle a problem on [IRC] or open a
@@ -76,7 +86,8 @@ working on.
 * Include tests that cover all non-trivial code. The existing tests
 in `test/` provide templates on how to test Cargo's behavior in a
 sandbox-environment. The internal crate `cargotest` provides a vast amount
-of helpers to minimize boilerplate.
+of helpers to minimize boilerplate.  See [`cargotest/mod.rs`] for an
+introduction to writing tests.
 * Make sure `cargo test` passes. If you do not have the cross-compilers
 installed locally, install them using the instructions returned by
 `cargo test cross_compile::cross_tests` (twice, with `--toolchain nightly`
@@ -146,6 +157,11 @@ adding labels to triage issues:
 * Magenta, **B**-prefixed labels identify bugs which are **blockers**.
 
 * Light purple, **C**-prefixed labels represent the **category** of an issue.
+  In particular, **C-feature-request** marks *proposals* for new features. If
+  an issue is **C-feature-request**, but is not **Feature accepted** or **I-nominated**,
+  then it was not thoroughly discussed, and might need some additional design
+  or perhaps should be implemented as an external subcommand first. Ping
+  @rust-lang/cargo if you want to send a PR for such issue.
 
 * Dark purple, **Command**-prefixed labels mean the issue has to do with a
   specific cargo command.
@@ -181,3 +197,6 @@ adding labels to triage issues:
 [I-nominated]: https://github.com/rust-lang/cargo/labels/I-nominated
 [Code of Conduct]: https://www.rust-lang.org/conduct.html
 [IRC]: https://kiwiirc.com/client/irc.mozilla.org/cargo
+[`cargotest/mod.rs`]: https://github.com/rust-lang/cargo/blob/master/tests/testsuite/cargotest/mod.rs
+[irlo]: https://internals.rust-lang.org/
+[subcommands]: https://doc.rust-lang.org/cargo/reference/external-tools.html#custom-subcommands

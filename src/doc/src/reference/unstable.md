@@ -229,6 +229,26 @@ opt-level = 3
 Overrides can only be specified for dev and release profiles.
 
 
+### Config Profiles
+* Tracking Issue: [rust-lang/rust#48683](https://github.com/rust-lang/rust/issues/48683)
+* RFC: [#2282](https://github.com/rust-lang/rfcs/blob/master/text/2282-profile-dependencies.md)
+
+Profiles can be specified in `.cargo/config` files.  The `-Z config-profile`
+command-line flag is required to use this feature.  The format is the same as
+in a `Cargo.toml` manifest.  If found in multiple config files, settings will
+be merged using the regular [config hierarchy](reference/config.html#hierarchical-structure).
+Config settings take precedence over manifest settings.
+
+```toml
+[profile.dev]
+opt-level = 3
+```
+
+```
+cargo +nightly build -Z config-profile
+```
+
+
 ### Namespaced features
 * Original issue: [#1286](https://github.com/rust-lang/cargo/issues/1286)
 
@@ -254,3 +274,16 @@ for each optional dependency, implicit features get created for any optional
 dependencies where a feature of the same name is not defined. However, if
 a feature of the same name as a dependency is defined, that feature must
 include the dependency as a requirement, as `foo = ["crate:foo"]`.
+
+
+### Build-plan
+* Tracking Issue: [rust-lang/cargo#5579](https://github.com/rust-lang/cargo/issues/5579)
+
+The `--build-plan` argument for the `build` command will output JSON with
+information about which commands would be run without actually executing
+anything. This can be useful when integrating with another build tool.
+Example:
+
+```
+cargo +nightly build --build-plan -Z unstable-options
+```

@@ -237,15 +237,15 @@ pub struct TomlManifest {
 
 #[derive(Deserialize, Serialize, Clone, Debug, Default)]
 pub struct TomlProfiles {
-    test: Option<TomlProfile>,
-    doc: Option<TomlProfile>,
-    bench: Option<TomlProfile>,
-    dev: Option<TomlProfile>,
-    release: Option<TomlProfile>,
+    pub test: Option<TomlProfile>,
+    pub doc: Option<TomlProfile>,
+    pub bench: Option<TomlProfile>,
+    pub dev: Option<TomlProfile>,
+    pub release: Option<TomlProfile>,
 }
 
 impl TomlProfiles {
-    fn validate(&self, features: &Features, warnings: &mut Vec<String>) -> CargoResult<()> {
+    pub fn validate(&self, features: &Features, warnings: &mut Vec<String>) -> CargoResult<()> {
         if let Some(ref test) = self.test {
             test.validate("test", features, warnings)?;
         }
@@ -265,7 +265,7 @@ impl TomlProfiles {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TomlOptLevel(pub String);
 
 impl<'de> de::Deserialize<'de> for TomlOptLevel {
@@ -305,7 +305,7 @@ impl<'de> de::Deserialize<'de> for TomlOptLevel {
             }
         }
 
-        d.deserialize_u32(Visitor)
+        d.deserialize_any(Visitor)
     }
 }
 
@@ -321,7 +321,7 @@ impl ser::Serialize for TomlOptLevel {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum U32OrBool {
     U32(u32),
@@ -368,7 +368,7 @@ impl<'de> de::Deserialize<'de> for U32OrBool {
     }
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+#[derive(Deserialize, Serialize, Clone, Debug, Default, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub struct TomlProfile {
     pub opt_level: Option<TomlOptLevel>,
@@ -419,7 +419,7 @@ impl<'de> de::Deserialize<'de> for ProfilePackageSpec {
 }
 
 impl TomlProfile {
-    fn validate(
+    pub fn validate(
         &self,
         name: &str,
         features: &Features,
@@ -480,7 +480,7 @@ impl TomlProfile {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum StringOrBool {
     String(String),
@@ -760,7 +760,8 @@ impl TomlManifest {
             features
                 .require(Feature::edition())
                 .chain_err(|| "editions are unstable")?;
-            edition.parse()
+            edition
+                .parse()
                 .chain_err(|| "failed to parse the `edition` key")?
         } else {
             Edition::Edition2015
@@ -914,10 +915,7 @@ impl TomlManifest {
                  `[workspace]`, only one can be specified"
             ),
         };
-        if let Some(ref profiles) = me.profile {
-            profiles.validate(&features, &mut warnings)?;
-        }
-        let profiles = build_profiles(&me.profile);
+        let profiles = Profiles::new(me.profile.as_ref(), config, &features, &mut warnings)?;
         let publish = match project.publish {
             Some(VecStringOrBool::VecString(ref vecstring)) => {
                 features
@@ -1027,7 +1025,7 @@ impl TomlManifest {
             };
             (me.replace(&mut cx)?, me.patch(&mut cx)?)
         };
-        let profiles = build_profiles(&me.profile);
+        let profiles = Profiles::new(me.profile.as_ref(), config, &features, &mut warnings)?;
         let workspace_config = match me.workspace {
             Some(ref config) => WorkspaceConfig::Root(WorkspaceRootConfig::new(
                 &root,
@@ -1402,15 +1400,4 @@ impl fmt::Debug for PathValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
-}
-
-fn build_profiles(profiles: &Option<TomlProfiles>) -> Profiles {
-    let profiles = profiles.as_ref();
-    Profiles::new(
-        profiles.and_then(|p| p.dev.clone()),
-        profiles.and_then(|p| p.release.clone()),
-        profiles.and_then(|p| p.test.clone()),
-        profiles.and_then(|p| p.bench.clone()),
-        profiles.and_then(|p| p.doc.clone()),
-    )
 }

@@ -1122,14 +1122,10 @@ fn test_edition() {
                 // --edition is still in flux and we're not passing -Zunstable-options
                 // from Cargo so it will probably error. Only partially match the output
                 // until stuff stabilizes
-                .with_stderr_contains(format!("\
-[COMPILING] foo v0.0.1 ({url})
-[RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
-        --emit=dep-info,link --edition=2018 -C debuginfo=2 \
-        -C metadata=[..] \
-        --out-dir [..] \
-        -L dependency={dir}[/]target[/]debug[/]deps`
-", dir = p.root().display(), url = p.url())),
+                .with_stderr_contains("\
+[COMPILING] foo v0.0.1 ([..])
+[RUNNING] `rustc [..]--edition=2018 [..]
+"),
     );
 }
 
@@ -1156,14 +1152,10 @@ fn test_edition_missing() {
                 // --edition is still in flux and we're not passing -Zunstable-options
                 // from Cargo so it will probably error. Only partially match the output
                 // until stuff stabilizes
-                .with_stderr_contains(format!("\
-[COMPILING] foo v0.0.1 ({url})
-[RUNNING] `rustc --crate-name foo src[/]lib.rs --crate-type lib \
-        --emit=dep-info,link --edition=2015 -C debuginfo=2 \
-        -C metadata=[..] \
-        --out-dir [..] \
-        -L dependency={dir}[/]target[/]debug[/]deps`
-", dir = p.root().display(), url = p.url())),
+                .with_stderr_contains("\
+[COMPILING] foo v0.0.1 ([..])
+[RUNNING] `rustc [..]--edition=2015 [..]
+"),
     );
 }
 
@@ -1423,4 +1415,48 @@ fn lock_file_and_workspace() {
         let fname = f.header().path().unwrap();
         fname.ends_with("Cargo.lock")
     }));
+}
+
+#[test]
+fn do_not_package_if_src_was_modified() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+        "#)
+        .file("src/main.rs", r#"
+            fn main() { println!("hello"); }
+        "#)
+        .file("build.rs", r#"
+            use std::fs::File;
+            use std::io::Write;
+
+            fn main() {
+                let mut file = File::create("src/generated.txt").expect("failed to create file");
+                file.write_all(b"Hello, world of generated files.").expect("failed to write");
+            }
+        "#)
+        .build();
+
+    assert_that(
+        p.cargo("package"),
+        execs().with_status(101)
+               .with_stderr_contains(
+                   "\
+error: failed to verify package tarball
+
+Caused by:
+  Source directory was modified by build.rs during cargo publish. \
+Build scripts should not modify anything outside of OUT_DIR. Modified file: [..]src[/]generated.txt
+
+To proceed despite this, pass the `--no-verify` flag.",
+               ),
+    );
+
+    assert_that(
+        p.cargo("package --no-verify"),
+        execs().with_status(0),
+    );
 }

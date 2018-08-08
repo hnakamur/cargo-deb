@@ -109,8 +109,7 @@ fn bad3() {
 error: failed to update registry [..]
 
 Caused by:
-  invalid configuration for key `http.proxy`
-expected a string, but found a boolean for `http.proxy` in [..]config
+  error in [..]config: `http.proxy` expected a string, but found a boolean
 ",
         ),
     );
@@ -134,48 +133,43 @@ fn bad4() {
 [ERROR] Failed to create project `foo` at `[..]`
 
 Caused by:
-  invalid configuration for key `cargo-new.name`
-expected a string, but found a boolean for `cargo-new.name` in [..]config
+  error in [..]config: `cargo-new.name` expected a string, but found a boolean
 ",
         ),
     );
 }
 
 #[test]
-fn bad5() {
+fn bad6() {
     let p = project("foo")
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.0.0"
+            authors = []
+        "#,
+        )
+        .file("src/lib.rs", "")
         .file(
             ".cargo/config",
             r#"
-            foo = ""
-        "#,
-        )
-        .file(
-            "foo/.cargo/config",
-            r#"
-            foo = 2
+            [http]
+              user-agent = true
         "#,
         )
         .build();
+    Package::new("foo", "1.0.0").publish();
+
     assert_that(
-        p.cargo("new")
-            .arg("-v")
-            .arg("foo")
-            .cwd(&p.root().join("foo")),
+        p.cargo("publish").arg("-v"),
         execs().with_status(101).with_stderr(
             "\
-[ERROR] could not load Cargo configuration
+error: failed to update registry [..]
 
 Caused by:
-  failed to merge configuration at `[..]`
-
-Caused by:
-  failed to merge key `foo` between files:
-  file 1: [..]foo[..]foo[..]config
-  file 2: [..]foo[..]config
-
-Caused by:
-  expected integer, but found string
+  error in [..]config: `http.user-agent` expected a string, but found a boolean
 ",
         ),
     );
@@ -206,7 +200,11 @@ fn bad_cargo_config_jobs() {
         p.cargo("build").arg("-v"),
         execs()
             .with_status(101)
-            .with_stderr("[ERROR] build.jobs must be positive, but found -1 in [..]"),
+            .with_stderr("\
+[ERROR] error in [..].cargo[/]config: \
+could not load config key `build.jobs`: \
+invalid value: integer `-1`, expected u32
+"),
     );
 }
 
