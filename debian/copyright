@@ -185,7 +185,6 @@ License: MIT
 Comment: see https://github.com/dguo/strsim-rs
 
 Files: vendor/syn-0*
-       vendor/synom-0*
 Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/dtolnay/syn
