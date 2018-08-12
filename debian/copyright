@@ -348,11 +348,6 @@ Copyright: Michael Layzell <michael@thelayzells.com>
 License: MIT
 Comment: see https://github.com/mystor/synstructure
 
-Files: src/doc/javascripts/prism.js
-       debian/missing-sources/prism.js
-Copyright: 2015 Lea Verou
-License: MIT
-
 Files: vendor/schannel-*
 Copyright: 2015, Steffen Butzer <steffen.butzer@outlook.com>
 License: MIT
@@ -383,6 +378,10 @@ Files: vendor/cloudabi-*
 Copyright: Nuxi and contributors
 License: BSD-2-clause
 Comment: See https://github.com/nuxinl/cloudabi
+
+Files: vendor/version_check-*
+Copyright: 2017-2018, Sergio Benitez
+License: MIT or Apache-2.0
 
 Files: debian/*
 Copyright: 2017 Ximin Luo <infinity0@debian.org>
