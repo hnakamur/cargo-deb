@@ -1,3 +1,11 @@
+cargo (0.29.0-1) unstable; urgency=medium
+
+  * Merge changes of 0.28.0-2, which was missed in first release of 0.29.0
+  * Upload to unstable.
+  * Refresh patch for `install --target` feature for release 0.29.0
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Mon, 13 Aug 2018 20:37:13 +0530
+
 cargo (0.29.0-1~exp1) experimental; urgency=medium
   [ upstream ]
   * Cargo will now no longer allow you to publish crates with build
