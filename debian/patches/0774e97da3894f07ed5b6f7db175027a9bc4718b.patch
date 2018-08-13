@@ -20,15 +20,15 @@ Subject: [PATCH] Support cross-compile install
              "\
 --- a/tests/testsuite/install.rs
 +++ b/tests/testsuite/install.rs
-@@ -5,6 +5,7 @@
+@@ -4,6 +4,7 @@
+ 
  use cargo::util::ProcessBuilder;
- use cargotest::ChannelChanger;
  use cargotest::install::{cargo_home, has_installed_exe};
 +use cargotest::support::cross_compile;
  use cargotest::support::git;
  use cargotest::support::paths;
  use cargotest::support::registry::Package;
-@@ -1309,6 +1310,40 @@
+@@ -1310,6 +1311,40 @@
  }
  
  #[test]
