@@ -1,0 +1,71 @@
+From 0774e97da3894f07ed5b6f7db175027a9bc4718b Mon Sep 17 00:00:00 2001
+From: Ximin Luo <infinity0@pwned.gg>
+Date: Thu, 28 Jun 2018 18:57:24 -0700
+Subject: [PATCH] Support cross-compile install
+
+---
+ src/bin/cargo/commands/install.rs |  1 +
+ tests/testsuite/install.rs        | 35 +++++++++++++++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+
+--- a/src/bin/cargo/commands/install.rs
++++ b/src/bin/cargo/commands/install.rs
+@@ -32,6 +32,7 @@
+             "Install only the specified example",
+             "Install all examples",
+         )
++        .arg_target_triple("Build for the target triple")
+         .arg(opt("root", "Directory to install packages into").value_name("DIR"))
+         .after_help(
+             "\
+--- a/tests/testsuite/install.rs
++++ b/tests/testsuite/install.rs
+@@ -5,6 +5,7 @@
+ use cargo::util::ProcessBuilder;
+ use cargotest::ChannelChanger;
+ use cargotest::install::{cargo_home, has_installed_exe};
++use cargotest::support::cross_compile;
+ use cargotest::support::git;
+ use cargotest::support::paths;
+ use cargotest::support::registry::Package;
+@@ -1309,6 +1310,40 @@
+ }
+ 
+ #[test]
++fn install_target_native() {
++    pkg("foo", "0.1.0");
++
++    assert_that(
++        cargo_process("install")
++            .arg("foo")
++            .arg("--target")
++            .arg(cargotest::rustc_host()),
++        execs()
++            .with_status(0),
++    );
++    assert_that(cargo_home(), has_installed_exe("foo"));
++}
++
++#[test]
++fn install_target_foreign() {
++    if cross_compile::disabled() {
++        return;
++    }
++
++    pkg("foo", "0.1.0");
++
++    assert_that(
++        cargo_process("install")
++            .arg("foo")
++            .arg("--target")
++            .arg(cross_compile::alternate()),
++        execs()
++            .with_status(0),
++    );
++    assert_that(cargo_home(), has_installed_exe("foo"));
++}
++
++#[test]
+ fn vers_precise() {
+     pkg("foo", "0.1.1");
+     pkg("foo", "0.1.2");
