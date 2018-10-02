@@ -244,9 +244,9 @@ is-it-maintained-issue-resolution = { repository = "..." }
 # Is it maintained percentage of open issues: `repository` is required.
 is-it-maintained-open-issues = { repository = "..." }
 
-# Maintenance: `status` is required Available options are `actively-developed`,
-# `passively-maintained`, `as-is`, `none`, `experimental`, `looking-for-maintainer`
-# and `deprecated`.
+# Maintenance: `status` is required. Available options are `actively-developed`,
+# `passively-maintained`, `as-is`, `experimental`, `looking-for-maintainer`,
+# `deprecated`, and the default `none`, which displays no badge on crates.io.
 maintenance = { status = "..." }
 ```
 
@@ -303,8 +303,9 @@ along with the defaults for each profile.
 [profile.dev]
 opt-level = 0      # controls the `--opt-level` the compiler builds with.
                    # 0-1 is good for debugging. 2 is well-optimized. Max is 3.
-debug = true       # include debug information (debug symbols). Equivalent to
-                   # `-C debuginfo=2` compiler flag.
+                   # 's' attempts to reduce size, 'z' reduces size even more.
+debug = true       # (u32 or bool) Include debug information (debug symbols).
+                   # Equivalent to `-C debuginfo=2` compiler flag.
 rpath = false      # controls whether compiler should set loader paths.
                    # If true, passes `-C rpath` flag to the compiler.
 lto = false        # Link Time Optimization usually reduces size of binaries
@@ -595,16 +596,16 @@ may be composed of single files or directories with a `main.rs` file.
     main.rs
 ▾ examples/      # (optional) examples
   *.rs
-▾ */             # (optional) directories containing multi-file examples
-  main.rs
+  ▾ */           # (optional) directories containing multi-file examples
+    main.rs
 ▾ tests/         # (optional) integration tests
   *.rs
-▾ */             # (optional) directories containing multi-file tests
-  main.rs
+  ▾ */           # (optional) directories containing multi-file tests
+    main.rs
 ▾ benches/       # (optional) benchmarks
   *.rs
-▾ */             # (optional) directories containing multi-file benchmarks
-  main.rs
+  ▾ */           # (optional) directories containing multi-file benchmarks
+    main.rs
 ```
 
 To structure your code after you've created the files and folders for your
@@ -625,7 +626,7 @@ You can run individual executable examples with the command `cargo run --example
 
 Specify `crate-type` to make an example be compiled as a library (additional
 information about crate types is available in
-[the Cargo reference](https://doc.rust-lang.org/reference/linkage.html)):
+[The Rust Reference](https://doc.rust-lang.org/reference/linkage.html)):
 
 ```toml
 [[example]]

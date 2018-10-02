@@ -96,6 +96,7 @@ pub struct Context<'a, 'cfg: 'a> {
     pub links: Links<'a>,
     pub used_in_plugin: HashSet<Unit<'a>>,
     pub jobserver: Client,
+    primary_packages: HashSet<&'a PackageId>,
     unit_dependencies: HashMap<Unit<'a>, Vec<Unit<'a>>>,
     files: Option<CompilationFiles<'a, 'cfg>>,
 }
@@ -118,7 +119,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
         Ok(Self {
             bcx,
-            compilation: Compilation::new(bcx),
+            compilation: Compilation::new(bcx)?,
             build_state: Arc::new(BuildState::new(&bcx.host_config, &bcx.target_config)),
             fingerprints: HashMap::new(),
             compiled: HashSet::new(),
@@ -129,6 +130,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             jobserver,
             build_script_overridden: HashSet::new(),
 
+            primary_packages: HashSet::new(),
             unit_dependencies: HashMap::new(),
             files: None,
         })
@@ -244,15 +246,16 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                 for dep in self.dep_targets(unit) {
                     if dep.target.is_lib() && dep.mode == CompileMode::Build {
                         let outputs = self.outputs(&dep)?;
-                        doctest_deps.extend(
-                            outputs
-                                .iter()
-                                .filter(|output| {
-                                    output.path.extension() == Some(OsStr::new("rlib"))
-                                        || dep.target.for_host()
-                                })
-                                .map(|output| (dep.target.clone(), output.path.clone())),
-                        );
+                        let outputs = outputs.iter().filter(|output| {
+                            output.path.extension() == Some(OsStr::new("rlib"))
+                                || dep.target.for_host()
+                        });
+                        for output in outputs {
+                            doctest_deps.push((
+                                self.bcx.extern_crate_name(unit, &dep)?,
+                                output.path.clone(),
+                            ));
+                        }
                     }
                 }
                 self.compilation.to_doc_test.push(compilation::Doctest {
@@ -320,6 +323,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             Some(target) => Some(Layout::new(self.bcx.ws, Some(target), dest)?),
             None => None,
         };
+        self.primary_packages.extend(units.iter().map(|u| u.pkg.package_id()));
 
         build_unit_dependencies(units, self.bcx, &mut self.unit_dependencies)?;
         self.build_used_in_plugin_map(units)?;
@@ -485,6 +489,10 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
         let dir = self.files().layout(unit.kind).incremental().display();
         Ok(vec!["-C".to_string(), format!("incremental={}", dir)])
+    }
+
+    pub fn is_primary_package(&self, unit: &Unit<'a>) -> bool {
+        self.primary_packages.contains(unit.pkg.package_id())
     }
 }
 

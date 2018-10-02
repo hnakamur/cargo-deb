@@ -7,7 +7,7 @@ use std::process::Command;
 
 use curl::easy::{Easy, List};
 use git2::{self, ObjectType};
-use serde::ser::{self, Serialize};
+use serde::ser;
 use url::Url;
 
 use core::GitReference;
@@ -29,7 +29,7 @@ where
     T: fmt::Display,
     S: ser::Serializer,
 {
-    t.to_string().serialize(s)
+    s.collect_str(t)
 }
 
 impl fmt::Display for GitRevision {
@@ -189,7 +189,7 @@ impl GitDatabase {
         Ok(checkout)
     }
 
-    pub fn to_short_id(&self, revision: GitRevision) -> CargoResult<GitShortID> {
+    pub fn to_short_id(&self, revision: &GitRevision) -> CargoResult<GitShortID> {
         let obj = self.repo.find_object(revision.0, None)?;
         Ok(GitShortID(obj.short_id()?))
     }

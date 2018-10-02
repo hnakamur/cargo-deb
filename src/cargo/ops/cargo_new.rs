@@ -8,7 +8,7 @@ use git2::Config as GitConfig;
 use git2::Repository as GitRepository;
 
 use core::{compiler, Workspace};
-use util::{internal, FossilRepo, GitRepo, HgRepo, PijulRepo};
+use util::{internal, FossilRepo, GitRepo, HgRepo, PijulRepo, existing_vcs_repo};
 use util::{paths, Config};
 use util::errors::{CargoResult, CargoResultExt};
 
@@ -39,8 +39,8 @@ pub enum NewProjectKind {
 }
 
 impl NewProjectKind {
-    fn is_bin(&self) -> bool {
-        *self == NewProjectKind::Bin
+    fn is_bin(self) -> bool {
+        self == NewProjectKind::Bin
     }
 }
 
@@ -190,11 +190,11 @@ fn detect_source_paths_and_types(
 
     let tests = vec![
         Test {
-            proposed_path: format!("src/main.rs"),
+            proposed_path: "src/main.rs".to_string(),
             handling: H::Bin,
         },
         Test {
-            proposed_path: format!("main.rs"),
+            proposed_path: "main.rs".to_string(),
             handling: H::Bin,
         },
         Test {
@@ -206,11 +206,11 @@ fn detect_source_paths_and_types(
             handling: H::Detect,
         },
         Test {
-            proposed_path: format!("src/lib.rs"),
+            proposed_path: "src/lib.rs".to_string(),
             handling: H::Lib,
         },
         Test {
-            proposed_path: format!("lib.rs"),
+            proposed_path: "lib.rs".to_string(),
             handling: H::Lib,
         },
     ];
@@ -407,10 +407,6 @@ pub fn init(opts: &NewOptions, config: &Config) -> CargoResult<()> {
         )
     })?;
     Ok(())
-}
-
-fn existing_vcs_repo(path: &Path, cwd: &Path) -> bool {
-    GitRepo::discover(path, cwd).is_ok() || HgRepo::discover(path, cwd).is_ok()
 }
 
 fn mk(config: &Config, opts: &MkOptions) -> CargoResult<()> {

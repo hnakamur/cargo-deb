@@ -28,7 +28,7 @@ pub struct Manifest {
     summary: Summary,
     targets: Vec<Target>,
     links: Option<String>,
-    warnings: Vec<DelayedWarning>,
+    warnings: Warnings,
     exclude: Vec<String>,
     include: Vec<String>,
     metadata: ManifestMetadata,
@@ -43,6 +43,7 @@ pub struct Manifest {
     features: Features,
     edition: Edition,
     im_a_teapot: Option<bool>,
+    default_run: Option<String>,
 }
 
 /// When parsing `Cargo.toml`, some warnings should silenced
@@ -55,11 +56,15 @@ pub struct DelayedWarning {
 }
 
 #[derive(Clone, Debug)]
+pub struct Warnings(Vec<DelayedWarning>);
+
+#[derive(Clone, Debug)]
 pub struct VirtualManifest {
     replace: Vec<(PackageIdSpec, Dependency)>,
     patch: HashMap<Url, Vec<Dependency>>,
     workspace: WorkspaceConfig,
     profiles: Profiles,
+    warnings: Warnings,
 }
 
 /// General metadata about a package which is just blindly uploaded to the
@@ -86,7 +91,7 @@ pub struct ManifestMetadata {
     pub links: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum LibKind {
     Lib,
     Rlib,
@@ -96,16 +101,6 @@ pub enum LibKind {
 }
 
 impl LibKind {
-    pub fn from_str(string: &str) -> LibKind {
-        match string {
-            "lib" => LibKind::Lib,
-            "rlib" => LibKind::Rlib,
-            "dylib" => LibKind::Dylib,
-            "proc-macro" => LibKind::ProcMacro,
-            s => LibKind::Other(s.to_string()),
-        }
-    }
-
     /// Returns the argument suitable for `--crate-type` to pass to rustc.
     pub fn crate_type(&self) -> &str {
         match *self {
@@ -125,7 +120,25 @@ impl LibKind {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+impl fmt::Debug for LibKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.crate_type().fmt(f)
+    }
+}
+
+impl<'a> From<&'a String> for LibKind {
+    fn from(string: &'a String) -> Self {
+        match string.as_ref() {
+            "lib" => LibKind::Lib,
+            "rlib" => LibKind::Rlib,
+            "dylib" => LibKind::Dylib,
+            "proc-macro" => LibKind::ProcMacro,
+            s => LibKind::Other(s.to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TargetKind {
     Lib(Vec<LibKind>),
     Bin,
@@ -143,19 +156,33 @@ impl ser::Serialize for TargetKind {
     {
         use self::TargetKind::*;
         match *self {
-            Lib(ref kinds) => kinds.iter().map(LibKind::crate_type).collect(),
-            Bin => vec!["bin"],
-            ExampleBin | ExampleLib(_) => vec!["example"],
-            Test => vec!["test"],
-            CustomBuild => vec!["custom-build"],
-            Bench => vec!["bench"],
-        }.serialize(s)
+            Lib(ref kinds) => s.collect_seq(kinds.iter().map(LibKind::crate_type)),
+            Bin => ["bin"].serialize(s),
+            ExampleBin | ExampleLib(_) => ["example"].serialize(s),
+            Test => ["test"].serialize(s),
+            CustomBuild => ["custom-build"].serialize(s),
+            Bench => ["bench"].serialize(s),
+        }
+    }
+}
+
+impl fmt::Debug for TargetKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::TargetKind::*;
+        match *self {
+            Lib(ref kinds) => kinds.fmt(f),
+            Bin => "bin".fmt(f),
+            ExampleBin | ExampleLib(_) => "example".fmt(f),
+            Test => "test".fmt(f),
+            CustomBuild => "custom-build".fmt(f),
+            Bench => "bench".fmt(f),
+        }
     }
 }
 
 /// Information about a binary, a library, an example, etc. that is part of the
 /// package.
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Target {
     kind: TargetKind,
     name: String,
@@ -171,9 +198,10 @@ pub struct Target {
     doctest: bool,
     harness: bool, // whether to use the test harness (--test)
     for_host: bool,
+    edition: Edition,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq)]
 struct NonHashedPathBuf {
     path: PathBuf,
 }
@@ -181,6 +209,12 @@ struct NonHashedPathBuf {
 impl Hash for NonHashedPathBuf {
     fn hash<H: Hasher>(&self, _: &mut H) {
         // ...
+    }
+}
+
+impl fmt::Debug for NonHashedPathBuf {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.path.fmt(f)
     }
 }
 
@@ -194,6 +228,7 @@ struct SerializedTarget<'a> {
     crate_types: Vec<&'a str>,
     name: &'a str,
     src_path: &'a PathBuf,
+    edition: &'a str,
 }
 
 impl ser::Serialize for Target {
@@ -203,7 +238,60 @@ impl ser::Serialize for Target {
             crate_types: self.rustc_crate_types(),
             name: &self.name,
             src_path: &self.src_path.path,
+            edition: &self.edition.to_string()
         }.serialize(s)
+    }
+}
+
+compact_debug! {
+    impl fmt::Debug for Target {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let (default, default_name) = {
+                let src = self.src_path().to_path_buf();
+                match &self.kind {
+                    TargetKind::Lib(kinds) => {
+                        (
+                            Target::lib_target(
+                                &self.name,
+                                kinds.clone(),
+                                src.clone(),
+                                Edition::Edition2015,
+                            ),
+                            format!("lib_target({:?}, {:?}, {:?})",
+                                    self.name, kinds, src),
+                        )
+                    }
+                    TargetKind::CustomBuild => {
+                        (
+                            Target::custom_build_target(
+                                &self.name,
+                                src.clone(),
+                                Edition::Edition2015,
+                            ),
+                            format!("custom_build_target({:?}, {:?})",
+                                    self.name, src),
+                        )
+                    }
+                    _ => (
+                        Target::with_path(src.clone(), Edition::Edition2015),
+                        format!("with_path({:?})", src),
+                    ),
+                }
+            };
+            [debug_the_fields(
+                kind
+                name
+                src_path
+                required_features
+                tested
+                benched
+                doc
+                doctest
+                harness
+                for_host
+                edition
+            )]
+        }
     }
 }
 
@@ -225,12 +313,13 @@ impl Manifest {
         features: Features,
         edition: Edition,
         im_a_teapot: Option<bool>,
+        default_run: Option<String>,
         original: Rc<TomlManifest>,
     ) -> Manifest {
         Manifest {
             summary,
             targets,
-            warnings: Vec::new(),
+            warnings: Warnings::new(),
             exclude,
             include,
             links,
@@ -245,6 +334,7 @@ impl Manifest {
             edition,
             original,
             im_a_teapot,
+            default_run,
             publish_lockfile,
         }
     }
@@ -276,7 +366,10 @@ impl Manifest {
     pub fn version(&self) -> &Version {
         self.package_id().version()
     }
-    pub fn warnings(&self) -> &[DelayedWarning] {
+    pub fn warnings_mut(&mut self) -> &mut Warnings {
+        &mut self.warnings
+    }
+    pub fn warnings(&self) -> &Warnings {
         &self.warnings
     }
     pub fn profiles(&self) -> &Profiles {
@@ -309,20 +402,6 @@ impl Manifest {
         &self.features
     }
 
-    pub fn add_warning(&mut self, s: String) {
-        self.warnings.push(DelayedWarning {
-            message: s,
-            is_critical: false,
-        })
-    }
-
-    pub fn add_critical_warning(&mut self, s: String) {
-        self.warnings.push(DelayedWarning {
-            message: s,
-            is_critical: true,
-        })
-    }
-
     pub fn set_summary(&mut self, summary: Summary) {
         self.summary = summary;
     }
@@ -346,6 +425,16 @@ impl Manifest {
                 })?;
         }
 
+        if self.default_run.is_some() {
+            self.features
+                .require(Feature::default_run())
+                .chain_err(|| {
+                    format_err!(
+                        "the `default-run` manifest key is unstable"
+                    )
+                })?;
+        }
+
         Ok(())
     }
 
@@ -365,6 +454,10 @@ impl Manifest {
     pub fn custom_metadata(&self) -> Option<&toml::Value> {
         self.custom_metadata.as_ref()
     }
+
+    pub fn default_run(&self) -> Option<&str> {
+        self.default_run.as_ref().map(|s| &s[..])
+    }
 }
 
 impl VirtualManifest {
@@ -379,6 +472,7 @@ impl VirtualManifest {
             patch,
             workspace,
             profiles,
+            warnings: Warnings::new(),
         }
     }
 
@@ -397,10 +491,18 @@ impl VirtualManifest {
     pub fn profiles(&self) -> &Profiles {
         &self.profiles
     }
+
+    pub fn warnings_mut(&mut self) -> &mut Warnings {
+        &mut self.warnings
+    }
+
+    pub fn warnings(&self) -> &Warnings {
+        &self.warnings
+    }
 }
 
 impl Target {
-    fn with_path(src_path: PathBuf) -> Target {
+    fn with_path(src_path: PathBuf, edition: Edition) -> Target {
         assert!(
             src_path.is_absolute(),
             "`{}` is not absolute",
@@ -415,18 +517,24 @@ impl Target {
             doctest: false,
             harness: true,
             for_host: false,
+            edition,
             tested: true,
             benched: true,
         }
     }
 
-    pub fn lib_target(name: &str, crate_targets: Vec<LibKind>, src_path: PathBuf) -> Target {
+    pub fn lib_target(
+        name: &str,
+        crate_targets: Vec<LibKind>,
+        src_path: PathBuf,
+        edition: Edition,
+    ) -> Target {
         Target {
             kind: TargetKind::Lib(crate_targets),
             name: name.to_string(),
             doctest: true,
             doc: true,
-            ..Target::with_path(src_path)
+            ..Target::with_path(src_path, edition)
         }
     }
 
@@ -434,25 +542,30 @@ impl Target {
         name: &str,
         src_path: PathBuf,
         required_features: Option<Vec<String>>,
+        edition: Edition,
     ) -> Target {
         Target {
             kind: TargetKind::Bin,
             name: name.to_string(),
             required_features,
             doc: true,
-            ..Target::with_path(src_path)
+            ..Target::with_path(src_path, edition)
         }
     }
 
     /// Builds a `Target` corresponding to the `build = "build.rs"` entry.
-    pub fn custom_build_target(name: &str, src_path: PathBuf) -> Target {
+    pub fn custom_build_target(
+        name: &str,
+        src_path: PathBuf,
+        edition: Edition,
+    ) -> Target {
         Target {
             kind: TargetKind::CustomBuild,
             name: name.to_string(),
             for_host: true,
             benched: false,
             tested: false,
-            ..Target::with_path(src_path)
+            ..Target::with_path(src_path, edition)
         }
     }
 
@@ -461,6 +574,7 @@ impl Target {
         crate_targets: Vec<LibKind>,
         src_path: PathBuf,
         required_features: Option<Vec<String>>,
+        edition: Edition,
     ) -> Target {
         let kind = if crate_targets.is_empty() {
             TargetKind::ExampleBin
@@ -474,7 +588,7 @@ impl Target {
             required_features,
             tested: false,
             benched: false,
-            ..Target::with_path(src_path)
+            ..Target::with_path(src_path, edition)
         }
     }
 
@@ -482,13 +596,14 @@ impl Target {
         name: &str,
         src_path: PathBuf,
         required_features: Option<Vec<String>>,
+        edition: Edition,
     ) -> Target {
         Target {
             kind: TargetKind::Test,
             name: name.to_string(),
             required_features,
             benched: false,
-            ..Target::with_path(src_path)
+            ..Target::with_path(src_path, edition)
         }
     }
 
@@ -496,13 +611,14 @@ impl Target {
         name: &str,
         src_path: PathBuf,
         required_features: Option<Vec<String>>,
+        edition: Edition,
     ) -> Target {
         Target {
             kind: TargetKind::Bench,
             name: name.to_string(),
             required_features,
             tested: false,
-            ..Target::with_path(src_path)
+            ..Target::with_path(src_path, edition)
         }
     }
 
@@ -533,12 +649,16 @@ impl Target {
     pub fn for_host(&self) -> bool {
         self.for_host
     }
+    pub fn edition(&self) -> Edition { self.edition }
     pub fn benched(&self) -> bool {
         self.benched
     }
-
     pub fn doctested(&self) -> bool {
-        self.doctest && match self.kind {
+        self.doctest
+    }
+
+    pub fn doctestable(&self) -> bool {
+        match self.kind {
             TargetKind::Lib(ref kinds) => kinds
                 .iter()
                 .any(|k| *k == LibKind::Rlib || *k == LibKind::Lib || *k == LibKind::ProcMacro),
@@ -651,6 +771,10 @@ impl Target {
         self.for_host = for_host;
         self
     }
+    pub fn set_edition(&mut self, edition: Edition) -> &mut Target {
+        self.edition = edition;
+        self
+    }
     pub fn set_harness(&mut self, harness: bool) -> &mut Target {
         self.harness = harness;
         self
@@ -673,5 +797,29 @@ impl fmt::Display for Target {
             }
             TargetKind::CustomBuild => write!(f, "Target(script)"),
         }
+    }
+}
+
+impl Warnings {
+    fn new() -> Warnings {
+        Warnings(Vec::new())
+    }
+
+    pub fn add_warning(&mut self, s: String) {
+        self.0.push(DelayedWarning {
+            message: s,
+            is_critical: false,
+        })
+    }
+
+    pub fn add_critical_warning(&mut self, s: String) {
+        self.0.push(DelayedWarning {
+            message: s,
+            is_critical: true,
+        })
+    }
+
+    pub fn warnings(&self) -> &[DelayedWarning] {
+        &self.0
     }
 }

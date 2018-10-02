@@ -1,7 +1,7 @@
 use cargo::util::process;
-use cargotest::{is_nightly, rustc_host};
-use cargotest::support::{basic_bin_manifest, cross_compile, execs, project};
-use hamcrest::{assert_that, existing_file};
+use support::{is_nightly, rustc_host};
+use support::{basic_manifest, basic_bin_manifest, cross_compile, execs, project};
+use support::hamcrest::{assert_that, existing_file};
 
 #[test]
 fn simple_cross() {
@@ -9,7 +9,7 @@ fn simple_cross() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -48,13 +48,13 @@ fn simple_cross() {
     let target = cross_compile::alternate();
     assert_that(
         p.cargo("build").arg("--target").arg(&target).arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.target_bin(&target, "foo"), existing_file());
 
     assert_that(
         process(&p.target_bin(&target, "foo")),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -64,7 +64,7 @@ fn simple_cross_config() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             ".cargo/config",
             &format!(
@@ -111,12 +111,12 @@ fn simple_cross_config() {
         .build();
 
     let target = cross_compile::alternate();
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
     assert_that(&p.target_bin(&target, "foo"), existing_file());
 
     assert_that(
         process(&p.target_bin(&target, "foo")),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -126,7 +126,7 @@ fn simple_deps() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -139,37 +139,23 @@ fn simple_deps() {
             path = "../bar"
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            extern crate bar;
-            fn main() { bar::bar(); }
-        "#,
-        )
+        .file("src/main.rs", "extern crate bar; fn main() { bar::bar(); }")
         .build();
-    let _p2 = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let _p2 = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("src/lib.rs", "pub fn bar() {}")
         .build();
 
     let target = cross_compile::alternate();
     assert_that(
         p.cargo("build").arg("--target").arg(&target),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.target_bin(&target, "foo"), existing_file());
 
     assert_that(
         process(&p.target_bin(&target, "foo")),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -182,7 +168,7 @@ fn plugin_deps() {
         return;
     }
 
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -210,7 +196,7 @@ fn plugin_deps() {
         "#,
         )
         .build();
-    let _bar = project("bar")
+    let _bar = project().at("bar")
         .file(
             "Cargo.toml",
             r#"
@@ -227,7 +213,7 @@ fn plugin_deps() {
         .file(
             "src/lib.rs",
             r#"
-            #![feature(plugin_registrar, quote, rustc_private)]
+            #![feature(plugin_registrar, rustc_private)]
 
             extern crate rustc_plugin;
             extern crate syntax;
@@ -251,29 +237,21 @@ fn plugin_deps() {
         "#,
         )
         .build();
-    let _baz = project("baz")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let _baz = project().at("baz")
+        .file("Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("src/lib.rs", "pub fn baz() -> i32 { 1 }")
         .build();
 
     let target = cross_compile::alternate();
     assert_that(
         foo.cargo("build").arg("--target").arg(&target),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&foo.target_bin(&target, "foo"), existing_file());
 
     assert_that(
         process(&foo.target_bin(&target, "foo")),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -286,7 +264,7 @@ fn plugin_to_the_max() {
         return;
     }
 
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -314,7 +292,7 @@ fn plugin_to_the_max() {
         "#,
         )
         .build();
-    let _bar = project("bar")
+    let _bar = project().at("bar")
         .file(
             "Cargo.toml",
             r#"
@@ -334,7 +312,7 @@ fn plugin_to_the_max() {
         .file(
             "src/lib.rs",
             r#"
-            #![feature(plugin_registrar, quote, rustc_private)]
+            #![feature(plugin_registrar, rustc_private)]
 
             extern crate rustc_plugin;
             extern crate syntax;
@@ -362,34 +340,26 @@ fn plugin_to_the_max() {
         "#,
         )
         .build();
-    let _baz = project("baz")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let _baz = project().at("baz")
+        .file("Cargo.toml",  &basic_manifest("baz", "0.0.1"))
         .file("src/lib.rs", "pub fn baz() -> i32 { 1 }")
         .build();
 
     let target = cross_compile::alternate();
     assert_that(
         foo.cargo("build").arg("--target").arg(&target).arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
     println!("second");
     assert_that(
         foo.cargo("build").arg("-v").arg("--target").arg(&target),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&foo.target_bin(&target, "foo"), existing_file());
 
     assert_that(
         process(&foo.target_bin(&target, "foo")),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -400,7 +370,7 @@ fn linker_and_ar() {
     }
 
     let target = cross_compile::alternate();
-    let p = project("foo")
+    let p = project()
         .file(
             ".cargo/config",
             &format!(
@@ -432,14 +402,14 @@ fn linker_and_ar() {
         execs().with_status(101).with_stderr_contains(&format!(
             "\
 [COMPILING] foo v0.5.0 ({url})
-[RUNNING] `rustc --crate-name foo src[/]foo.rs --crate-type bin \
+[RUNNING] `rustc --crate-name foo src/foo.rs --crate-type bin \
     --emit=dep-info,link -C debuginfo=2 \
     -C metadata=[..] \
-    --out-dir {dir}[/]target[/]{target}[/]debug[/]deps \
+    --out-dir {dir}/target/{target}/debug/deps \
     --target {target} \
     -C ar=my-ar-tool -C linker=my-linker-tool \
-    -L dependency={dir}[/]target[/]{target}[/]debug[/]deps \
-    -L dependency={dir}[/]target[/]debug[/]deps`
+    -L dependency={dir}/target/{target}/debug/deps \
+    -L dependency={dir}/target/debug/deps`
 ",
             dir = p.root().display(),
             url = p.url(),
@@ -457,7 +427,7 @@ fn plugin_with_extra_dylib_dep() {
         return;
     }
 
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -480,7 +450,7 @@ fn plugin_with_extra_dylib_dep() {
         "#,
         )
         .build();
-    let _bar = project("bar")
+    let _bar = project().at("bar")
         .file(
             "Cargo.toml",
             r#"
@@ -514,7 +484,7 @@ fn plugin_with_extra_dylib_dep() {
         "#,
         )
         .build();
-    let _baz = project("baz")
+    let _baz = project().at("baz")
         .file(
             "Cargo.toml",
             r#"
@@ -534,7 +504,7 @@ fn plugin_with_extra_dylib_dep() {
     let target = cross_compile::alternate();
     assert_that(
         foo.cargo("build").arg("--target").arg(&target),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -544,7 +514,7 @@ fn cross_tests() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -589,13 +559,12 @@ fn cross_tests() {
     assert_that(
         p.cargo("test").arg("--target").arg(&target),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] foo v0.0.0 ({foo})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]{triple}[/]debug[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]{triple}[/]debug[/]deps[/]bar-[..][EXE]",
+[RUNNING] target/{triple}/debug/deps/foo-[..][EXE]
+[RUNNING] target/{triple}/debug/deps/bar-[..][EXE]",
                 foo = p.url(),
                 triple = target
             ))
@@ -610,16 +579,7 @@ fn no_cross_doctests() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            authors = []
-            version = "0.0.0"
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             r#"
@@ -633,9 +593,9 @@ fn no_cross_doctests() {
 
     let host_output = format!(
         "\
-[COMPILING] foo v0.0.0 ({foo})
+[COMPILING] foo v0.0.1 ({foo})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]
+[RUNNING] target/debug/deps/foo-[..][EXE]
 [DOCTEST] foo
 ",
         foo = p.url()
@@ -644,18 +604,18 @@ fn no_cross_doctests() {
     println!("a");
     assert_that(
         p.cargo("test"),
-        execs().with_status(0).with_stderr(&host_output),
+        execs().with_stderr(&host_output),
     );
 
     println!("b");
     let target = cross_compile::host();
     assert_that(
         p.cargo("test").arg("--target").arg(&target),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
-[COMPILING] foo v0.0.0 ({foo})
+[COMPILING] foo v0.0.1 ({foo})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]{triple}[/]debug[/]deps[/]foo-[..][EXE]
+[RUNNING] target/{triple}/debug/deps/foo-[..][EXE]
 [DOCTEST] foo
 ",
             foo = p.url(),
@@ -667,11 +627,11 @@ fn no_cross_doctests() {
     let target = cross_compile::alternate();
     assert_that(
         p.cargo("test").arg("--target").arg(&target),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
-[COMPILING] foo v0.0.0 ({foo})
+[COMPILING] foo v0.0.1 ({foo})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]{triple}[/]debug[/]deps[/]foo-[..][EXE]
+[RUNNING] target/{triple}/debug/deps/foo-[..][EXE]
 ",
             foo = p.url(),
             triple = target
@@ -685,16 +645,7 @@ fn simple_cargo_run() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.0"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             &format!(
@@ -712,7 +663,7 @@ fn simple_cargo_run() {
     let target = cross_compile::alternate();
     assert_that(
         p.cargo("run").arg("--target").arg(&target),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -723,7 +674,7 @@ fn cross_with_a_build_script() {
     }
 
     let target = cross_compile::alternate();
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -765,12 +716,12 @@ fn cross_with_a_build_script() {
 
     assert_that(
         p.cargo("build").arg("--target").arg(&target).arg("-v"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] foo v0.0.0 (file://[..])
-[RUNNING] `rustc [..] build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]foo-[..]`
-[RUNNING] `{dir}[/]target[/]debug[/]build[/]foo-[..][/]build-script-build`
-[RUNNING] `rustc [..] src[/]main.rs [..] --target {target} [..]`
+[RUNNING] `rustc [..] build.rs [..] --out-dir {dir}/target/debug/build/foo-[..]`
+[RUNNING] `{dir}/target/debug/build/foo-[..]/build-script-build`
+[RUNNING] `rustc [..] src/main.rs [..] --target {target} [..]`
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
             target = target,
@@ -787,7 +738,7 @@ fn build_script_needed_for_host_and_target() {
 
     let target = cross_compile::alternate();
     let host = rustc_host();
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -829,12 +780,7 @@ fn build_script_needed_for_host_and_target() {
             build = 'build.rs'
         "#,
         )
-        .file(
-            "d1/src/lib.rs",
-            "
-            pub fn d1() {}
-        ",
-        )
+        .file("d1/src/lib.rs", "pub fn d1() {}")
         .file(
             "d1/build.rs",
             r#"
@@ -870,19 +816,18 @@ fn build_script_needed_for_host_and_target() {
     assert_that(
         p.cargo("build").arg("--target").arg(&target).arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr_contains(&format!(
                 "[COMPILING] d1 v0.0.0 ({url}/d1)",
                 url = p.url()
             ))
-            .with_stderr_contains(&format!("[RUNNING] `rustc [..] d1[/]build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]d1-[..]`",
+            .with_stderr_contains(&format!("[RUNNING] `rustc [..] d1/build.rs [..] --out-dir {dir}/target/debug/build/d1-[..]`",
     dir = p.root().display()))
             .with_stderr_contains(&format!(
-                "[RUNNING] `{dir}[/]target[/]debug[/]build[/]d1-[..][/]build-script-build`",
+                "[RUNNING] `{dir}/target/debug/build/d1-[..]/build-script-build`",
                 dir = p.root().display()
             ))
             .with_stderr_contains(
-                "[RUNNING] `rustc [..] d1[/]src[/]lib.rs [..]`",
+                "[RUNNING] `rustc [..] d1/src/lib.rs [..]`",
             )
             .with_stderr_contains(&format!(
                 "[COMPILING] d2 v0.0.0 ({url}/d2)",
@@ -890,7 +835,7 @@ fn build_script_needed_for_host_and_target() {
             ))
             .with_stderr_contains(&format!(
                 "\
-                 [RUNNING] `rustc [..] d2[/]src[/]lib.rs [..] \
+                 [RUNNING] `rustc [..] d2/src/lib.rs [..] \
                  -L /path/to/{host}`",
                 host = host
             ))
@@ -899,11 +844,11 @@ fn build_script_needed_for_host_and_target() {
                 url = p.url()
             ))
             .with_stderr_contains(&format!("\
-[RUNNING] `rustc [..] build.rs [..] --out-dir {dir}[/]target[/]debug[/]build[/]foo-[..] \
+[RUNNING] `rustc [..] build.rs [..] --out-dir {dir}/target/debug/build/foo-[..] \
            -L /path/to/{host}`", dir = p.root().display(), host = host))
             .with_stderr_contains(&format!(
                 "\
-                 [RUNNING] `rustc [..] src[/]main.rs [..] --target {target} [..] \
+                 [RUNNING] `rustc [..] src/main.rs [..] --target {target} [..] \
                  -L /path/to/{target}`",
                 target = target
             )),
@@ -916,7 +861,7 @@ fn build_deps_for_the_right_arch() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -930,21 +875,8 @@ fn build_deps_for_the_right_arch() {
         "#,
         )
         .file("src/main.rs", "extern crate d2; fn main() {}")
-        .file(
-            "d1/Cargo.toml",
-            r#"
-            [package]
-            name = "d1"
-            version = "0.0.0"
-            authors = []
-        "#,
-        )
-        .file(
-            "d1/src/lib.rs",
-            "
-            pub fn d1() {}
-        ",
-        )
+        .file("d1/Cargo.toml",  &basic_manifest("d1", "0.0.0"))
+        .file("d1/src/lib.rs", "pub fn d1() {}")
         .file(
             "d2/Cargo.toml",
             r#"
@@ -965,7 +897,7 @@ fn build_deps_for_the_right_arch() {
     let target = cross_compile::alternate();
     assert_that(
         p.cargo("build").arg("--target").arg(&target).arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -975,7 +907,7 @@ fn build_script_only_host() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1001,12 +933,7 @@ fn build_script_only_host() {
             build = "build.rs"
         "#,
         )
-        .file(
-            "d1/src/lib.rs",
-            "
-            pub fn d1() {}
-        ",
-        )
+        .file("d1/src/lib.rs", "pub fn d1() {}")
         .file(
             "d1/build.rs",
             r#"
@@ -1024,7 +951,7 @@ fn build_script_only_host() {
     let target = cross_compile::alternate();
     assert_that(
         p.cargo("build").arg("--target").arg(&target).arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -1033,7 +960,7 @@ fn plugin_build_script_right_arch() {
     if cross_compile::disabled() {
         return;
     }
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1057,12 +984,12 @@ fn plugin_build_script_right_arch() {
             .arg("-v")
             .arg("--target")
             .arg(cross_compile::alternate()),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] build.rs [..]`
-[RUNNING] `[..][/]build-script-build`
-[RUNNING] `rustc [..] src[/]lib.rs [..]`
+[RUNNING] `[..]/build-script-build`
+[RUNNING] `rustc [..] src/lib.rs [..]`
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
         ),
@@ -1077,7 +1004,7 @@ fn build_script_with_platform_specific_dependencies() {
 
     let target = cross_compile::alternate();
     let host = rustc_host();
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1115,37 +1042,23 @@ fn build_script_with_platform_specific_dependencies() {
                 host
             ),
         )
-        .file(
-            "d1/src/lib.rs",
-            "
-            #[allow(unused_extern_crates)]
-            extern crate d2;
-        ",
-        )
-        .file(
-            "d2/Cargo.toml",
-            r#"
-            [package]
-            name = "d2"
-            version = "0.0.0"
-            authors = []
-        "#,
-        )
+        .file("d1/src/lib.rs", "#[allow(unused_extern_crates)] extern crate d2;")
+        .file("d2/Cargo.toml",  &basic_manifest("d2", "0.0.0"))
         .file("d2/src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build").arg("-v").arg("--target").arg(&target),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] d2 v0.0.0 ([..])
-[RUNNING] `rustc [..] d2[/]src[/]lib.rs [..]`
+[RUNNING] `rustc [..] d2/src/lib.rs [..]`
 [COMPILING] d1 v0.0.0 ([..])
-[RUNNING] `rustc [..] d1[/]src[/]lib.rs [..]`
+[RUNNING] `rustc [..] d1/src/lib.rs [..]`
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] build.rs [..]`
-[RUNNING] `{dir}[/]target[/]debug[/]build[/]foo-[..][/]build-script-build`
-[RUNNING] `rustc [..] src[/]lib.rs [..] --target {target} [..]`
+[RUNNING] `{dir}/target/debug/build/foo-[..]/build-script-build`
+[RUNNING] `rustc [..] src/lib.rs [..] --target {target} [..]`
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
             dir = p.root().display(),
@@ -1162,7 +1075,7 @@ fn platform_specific_dependencies_do_not_leak() {
 
     let target = cross_compile::alternate();
     let host = rustc_host();
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1197,15 +1110,7 @@ fn platform_specific_dependencies_do_not_leak() {
             ),
         )
         .file("d1/src/lib.rs", "extern crate d2;")
-        .file(
-            "d2/Cargo.toml",
-            r#"
-            [package]
-            name = "d2"
-            version = "0.0.0"
-            authors = []
-        "#,
-        )
+        .file("d1/Cargo.toml",  &basic_manifest("d1", "0.0.0"))
         .file("d2/src/lib.rs", "")
         .build();
 
@@ -1225,7 +1130,7 @@ fn platform_specific_variables_reflected_in_build_scripts() {
 
     let target = cross_compile::alternate();
     let host = rustc_host();
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -1282,12 +1187,7 @@ fn platform_specific_variables_reflected_in_build_scripts() {
             build = "build.rs"
         "#,
         )
-        .file(
-            "d1/build.rs",
-            r#"
-            fn main() { println!("cargo:val=1") }
-        "#,
-        )
+        .file("d1/build.rs", r#"fn main() { println!("cargo:val=1") }"#)
         .file("d1/src/lib.rs", "")
         .file(
             "d2/Cargo.toml",
@@ -1300,19 +1200,14 @@ fn platform_specific_variables_reflected_in_build_scripts() {
             build = "build.rs"
         "#,
         )
-        .file(
-            "d2/build.rs",
-            r#"
-            fn main() { println!("cargo:val=1") }
-        "#,
-        )
+        .file("d2/build.rs", r#"fn main() { println!("cargo:val=1") }"#)
         .file("d2/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
     assert_that(
         p.cargo("build").arg("-v").arg("--target").arg(&target),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -1324,7 +1219,7 @@ fn cross_test_dylib() {
 
     let target = cross_compile::alternate();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1391,14 +1286,13 @@ fn cross_test_dylib() {
     assert_that(
         p.cargo("test").arg("--target").arg(&target),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] bar v0.0.1 ({dir}/bar)
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]{arch}[/]debug[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]{arch}[/]debug[/]deps[/]test-[..][EXE]",
+[RUNNING] target/{arch}/debug/deps/foo-[..][EXE]
+[RUNNING] target/{arch}/debug/deps/test-[..][EXE]",
                 dir = p.url(),
                 arch = cross_compile::alternate()
             ))

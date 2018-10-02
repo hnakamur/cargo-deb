@@ -9,7 +9,19 @@ use super::commands;
 use command_prelude::*;
 
 pub fn main(config: &mut Config) -> CliResult {
-    let args = cli().get_matches_safe()?;
+    let args = match cli().get_matches_safe() {
+        Ok(args) => args,
+        Err(e) => {
+            if e.kind == clap::ErrorKind::UnrecognizedSubcommand {
+                // An unrecognized subcommand might be an external subcommand.
+                let cmd = &e.info.as_ref().unwrap()[0].to_owned();
+                return super::execute_external_subcommand(config, cmd, &[cmd, "--help"])
+                    .map_err(|_| e.into());
+            } else {
+                return Err(e)?;
+            }
+        }
+    };
 
     if args.value_of("unstable-features") == Some("help") {
         println!(
@@ -22,6 +34,7 @@ Available unstable (nightly-only) flags:
     -Z offline          -- Offline mode that does not perform network requests
     -Z unstable-options -- Allow the usage of unstable options such as --registry
     -Z config-profile   -- Read profiles from .cargo/config files
+    -Z compile-progress -- Display a progress bar while compiling
 
 Run with 'cargo -Z [FLAG] [SUBCOMMAND]'"
         );
@@ -56,14 +69,19 @@ Run with 'cargo -Z [FLAG] [SUBCOMMAND]'"
     if args.is_present("list") {
         println!("Installed Commands:");
         for command in list_commands(config) {
-            let (command, path) = command;
-            if is_verbose {
-                match path {
-                    Some(p) => println!("    {:<20} {}", command, p),
-                    None => println!("    {:<20}", command),
+            match command {
+                CommandInfo::BuiltIn { name, about } => {
+                    let summary = about.unwrap_or_default();
+                    let summary = summary.lines().next().unwrap_or(&summary); // display only the first line
+                    println!("    {:<20} {}", name, summary)
                 }
-            } else {
-                println!("    {}", command);
+                CommandInfo::External { name, path } => {
+                    if is_verbose {
+                        println!("    {:<20} {}", name, path.display())
+                    } else {
+                        println!("    {}", name)
+                    }
+                }
             }
         }
         return Ok(());
@@ -71,7 +89,7 @@ Run with 'cargo -Z [FLAG] [SUBCOMMAND]'"
 
     let args = expand_aliases(config, args)?;
 
-    execute_subcommand(config, args)
+    execute_subcommand(config, &args)
 }
 
 fn expand_aliases(
@@ -106,7 +124,7 @@ fn expand_aliases(
     Ok(args)
 }
 
-fn execute_subcommand(config: &mut Config, args: ArgMatches) -> CliResult {
+fn execute_subcommand(config: &mut Config, args: &ArgMatches) -> CliResult {
     let (cmd, subcommand_args) = match args.subcommand() {
         (cmd, Some(args)) => (cmd, args),
         _ => {
@@ -142,7 +160,7 @@ fn execute_subcommand(config: &mut Config, args: ArgMatches) -> CliResult {
 }
 
 fn cli() -> App {
-    let app = App::new("cargo")
+    App::new("cargo")
         .settings(&[
             AppSettings::UnifiedHelpMessage,
             AppSettings::DeriveDisplayOrder,
@@ -210,6 +228,5 @@ See 'cargo help <command>' for more information on a specific command.\n",
                 .number_of_values(1)
                 .global(true),
         )
-        .subcommands(commands::builtin());
-    app
+        .subcommands(commands::builtin())
 }

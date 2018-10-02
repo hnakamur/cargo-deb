@@ -1,10 +1,10 @@
-use cargotest::ChannelChanger;
-use cargotest::support::{execs, project, publish};
-use hamcrest::assert_that;
+use support::ChannelChanger;
+use support::{execs, project, publish};
+use support::hamcrest::assert_that;
 
 #[test]
 fn feature_required() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -56,7 +56,7 @@ switch to nightly channel you can add
 
 #[test]
 fn unknown_feature() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -85,7 +85,7 @@ Caused by:
 
 #[test]
 fn stable_feature_warns() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -101,7 +101,7 @@ fn stable_feature_warns() {
         .build();
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 warning: the cargo feature `test-dummy-stable` is now stable and is no longer \
 necessary to be listed in the manifest
@@ -114,7 +114,7 @@ necessary to be listed in the manifest
 
 #[test]
 fn nightly_feature_requires_nightly() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -131,7 +131,7 @@ fn nightly_feature_requires_nightly() {
         .build();
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] a [..]
 [FINISHED] [..]
@@ -155,7 +155,7 @@ Caused by:
 
 #[test]
 fn nightly_feature_requires_nightly_in_dep() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -185,7 +185,7 @@ fn nightly_feature_requires_nightly_in_dep() {
         .build();
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] a [..]
 [COMPILING] b [..]
@@ -216,7 +216,7 @@ Caused by:
 
 #[test]
 fn cant_publish() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -233,7 +233,7 @@ fn cant_publish() {
         .build();
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] a [..]
 [FINISHED] [..]
@@ -257,7 +257,7 @@ Caused by:
 
 #[test]
 fn z_flags_rejected() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -291,7 +291,6 @@ fn z_flags_rejected() {
             .masquerade_as_nightly_cargo()
             .arg("-Zprint-im-a-teapot"),
         execs()
-            .with_status(0)
             .with_stdout("im-a-teapot = true\n")
             .with_stderr(
                 "\
@@ -306,7 +305,7 @@ fn z_flags_rejected() {
 fn publish_allowed() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -325,6 +324,6 @@ fn publish_allowed() {
             .arg("--index")
             .arg(publish::registry().to_string())
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
 }

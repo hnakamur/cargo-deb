@@ -2,17 +2,17 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 
 use cargo::util::process;
-use cargotest::sleep_ms;
-use cargotest::support::paths::{self, CargoPathExt};
-use cargotest::support::registry::Package;
-use cargotest::support::{execs, main_file, project};
-use hamcrest::{assert_that, existing_file, is_not};
+use support::sleep_ms;
+use support::paths::{self, CargoPathExt};
+use support::registry::Package;
+use support::{basic_manifest, basic_lib_manifest, execs, main_file, project};
+use support::hamcrest::{assert_that, existing_file, is_not};
 
 #[test]
 #[cfg(not(windows))] // I have no idea why this is failing spuriously on
                      // Windows, for more info see #3466.
 fn cargo_compile_with_nested_deps_shorthand() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -58,20 +58,7 @@ fn cargo_compile_with_nested_deps_shorthand() {
             }
         "#,
         )
-        .file(
-            "bar/baz/Cargo.toml",
-            r#"
-            [project]
-
-            name = "baz"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-
-            [lib]
-
-            name = "baz"
-        "#,
-        )
+        .file("bar/baz/Cargo.toml", &basic_lib_manifest("baz"))
         .file(
             "bar/baz/src/baz.rs",
             r#"
@@ -84,7 +71,7 @@ fn cargo_compile_with_nested_deps_shorthand() {
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "[COMPILING] baz v0.5.0 ({}/bar/baz)\n\
              [COMPILING] bar v0.5.0 ({}/bar)\n\
              [COMPILING] foo v0.5.0 ({})\n\
@@ -100,18 +87,18 @@ fn cargo_compile_with_nested_deps_shorthand() {
 
     assert_that(
         process(&p.bin("foo")),
-        execs().with_stdout("test passed\n").with_status(0),
+        execs().with_stdout("test passed\n"),
     );
 
     println!("cleaning");
     assert_that(
         p.cargo("clean").arg("-v"),
-        execs().with_stdout("").with_status(0),
+        execs().with_stdout(""),
     );
     println!("building baz");
     assert_that(
         p.cargo("build").arg("-p").arg("baz"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "[COMPILING] baz v0.5.0 ({}/bar/baz)\n\
              [FINISHED] dev [unoptimized + debuginfo] target(s) \
              in [..]\n",
@@ -121,7 +108,7 @@ fn cargo_compile_with_nested_deps_shorthand() {
     println!("building foo");
     assert_that(
         p.cargo("build").arg("-p").arg("foo"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "[COMPILING] bar v0.5.0 ({}/bar)\n\
              [COMPILING] foo v0.5.0 ({})\n\
              [FINISHED] dev [unoptimized + debuginfo] target(s) \
@@ -134,7 +121,7 @@ fn cargo_compile_with_nested_deps_shorthand() {
 
 #[test]
 fn cargo_compile_with_root_dev_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -155,17 +142,8 @@ fn cargo_compile_with_root_dev_deps() {
         )
         .file("src/main.rs", &main_file(r#""{}", bar::gimme()"#, &["bar"]))
         .build();
-    let _p2 = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-        "#,
-        )
+    let _p2 = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.5.0"))
         .file(
             "src/lib.rs",
             r#"
@@ -181,7 +159,7 @@ fn cargo_compile_with_root_dev_deps() {
 
 #[test]
 fn cargo_compile_with_root_dev_deps_with_testing() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -202,17 +180,8 @@ fn cargo_compile_with_root_dev_deps_with_testing() {
         )
         .file("src/main.rs", &main_file(r#""{}", bar::gimme()"#, &["bar"]))
         .build();
-    let _p2 = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-        "#,
-        )
+    let _p2 = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.5.0"))
         .file(
             "src/lib.rs",
             r#"
@@ -231,7 +200,7 @@ fn cargo_compile_with_root_dev_deps_with_testing() {
 [COMPILING] [..] v0.5.0 ([..])
 [COMPILING] [..] v0.5.0 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
             )
             .with_stdout_contains("running 0 tests"),
     );
@@ -239,7 +208,7 @@ fn cargo_compile_with_root_dev_deps_with_testing() {
 
 #[test]
 fn cargo_compile_with_transitive_dev_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -303,7 +272,7 @@ fn cargo_compile_with_transitive_dev_deps() {
 
 #[test]
 fn no_rebuild_dependency() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -317,32 +286,9 @@ fn no_rebuild_dependency() {
             path = "bar"
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            extern crate bar;
-            fn main() { bar::bar() }
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-
-            [lib]
-            name = "bar"
-        "#,
-        )
-        .file(
-            "bar/src/bar.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("src/main.rs", "extern crate bar; fn main() { bar::bar() }")
+        .file("bar/Cargo.toml", &basic_lib_manifest("bar"))
+        .file("bar/src/bar.rs", "pub fn bar() {}")
         .build();
     // First time around we should compile both foo and bar
     assert_that(
@@ -379,7 +325,7 @@ fn no_rebuild_dependency() {
 
 #[test]
 fn deep_dependencies_trigger_rebuild() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -393,13 +339,7 @@ fn deep_dependencies_trigger_rebuild() {
             path = "bar"
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            extern crate bar;
-            fn main() { bar::bar() }
-        "#,
-        )
+        .file("src/main.rs", "extern crate bar; fn main() { bar::bar() }")
         .file(
             "bar/Cargo.toml",
             r#"
@@ -415,32 +355,9 @@ fn deep_dependencies_trigger_rebuild() {
             path = "../baz"
         "#,
         )
-        .file(
-            "bar/src/bar.rs",
-            r#"
-            extern crate baz;
-            pub fn bar() { baz::baz() }
-        "#,
-        )
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [project]
-
-            name = "baz"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-
-            [lib]
-            name = "baz"
-        "#,
-        )
-        .file(
-            "baz/src/baz.rs",
-            r#"
-            pub fn baz() {}
-        "#,
-        )
+        .file("bar/src/bar.rs", "extern crate baz; pub fn bar() { baz::baz() }")
+        .file("baz/Cargo.toml", &basic_lib_manifest("baz"))
+        .file("baz/src/baz.rs", "pub fn baz() {}")
         .build();
     assert_that(
         p.cargo("build"),
@@ -464,11 +381,7 @@ fn deep_dependencies_trigger_rebuild() {
     sleep_ms(1000);
     File::create(&p.root().join("baz/src/baz.rs"))
         .unwrap()
-        .write_all(
-            br#"
-        pub fn baz() { println!("hello!"); }
-    "#,
-        )
+        .write_all(br#"pub fn baz() { println!("hello!"); }"#)
         .unwrap();
     assert_that(
         p.cargo("build"),
@@ -510,7 +423,7 @@ fn deep_dependencies_trigger_rebuild() {
 
 #[test]
 fn no_rebuild_two_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -526,13 +439,7 @@ fn no_rebuild_two_deps() {
             path = "baz"
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            extern crate bar;
-            fn main() { bar::bar() }
-        "#,
-        )
+        .file("src/main.rs", "extern crate bar; fn main() { bar::bar() }")
         .file(
             "bar/Cargo.toml",
             r#"
@@ -548,31 +455,9 @@ fn no_rebuild_two_deps() {
             path = "../baz"
         "#,
         )
-        .file(
-            "bar/src/bar.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [project]
-
-            name = "baz"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-
-            [lib]
-            name = "baz"
-        "#,
-        )
-        .file(
-            "baz/src/baz.rs",
-            r#"
-            pub fn baz() {}
-        "#,
-        )
+        .file("bar/src/bar.rs", "pub fn bar() {}")
+        .file("baz/Cargo.toml", &basic_lib_manifest("baz"))
+        .file("baz/src/baz.rs", "pub fn baz() {}")
         .build();
     assert_that(
         p.cargo("build"),
@@ -594,7 +479,7 @@ fn no_rebuild_two_deps() {
 
 #[test]
 fn nested_deps_recompile() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -611,20 +496,7 @@ fn nested_deps_recompile() {
         "#,
         )
         .file("src/main.rs", &main_file(r#""{}", bar::gimme()"#, &["bar"]))
-        .file(
-            "src/bar/Cargo.toml",
-            r#"
-            [project]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-
-            [lib]
-
-            name = "bar"
-        "#,
-        )
+        .file("src/bar/Cargo.toml", &basic_lib_manifest("bar"))
         .file("src/bar/src/bar.rs", "pub fn gimme() -> i32 { 92 }")
         .build();
     let bar = p.url();
@@ -644,11 +516,7 @@ fn nested_deps_recompile() {
 
     File::create(&p.root().join("src/main.rs"))
         .unwrap()
-        .write_all(
-            br#"
-        fn main() {}
-    "#,
-        )
+        .write_all(br#"fn main() {}"#)
         .unwrap();
 
     // This shouldn't recompile `bar`
@@ -665,7 +533,7 @@ fn nested_deps_recompile() {
 
 #[test]
 fn error_message_for_missing_manifest() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -694,7 +562,7 @@ Caused by:
   Unable to update file://[..]
 
 Caused by:
-  failed to read `[..]bar[/]Cargo.toml`
+  failed to read `[..]bar/Cargo.toml`
 
 Caused by:
   [..] (os error [..])
@@ -705,17 +573,8 @@ Caused by:
 
 #[test]
 fn override_relative() {
-    let bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-        "#,
-        )
+    let bar = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.5.0"))
         .file("src/lib.rs", "")
         .build();
 
@@ -725,7 +584,7 @@ fn override_relative() {
         .write_all(br#"paths = ["bar"]"#)
         .unwrap();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -744,36 +603,21 @@ fn override_relative() {
         )
         .file("src/lib.rs", "")
         .build();
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
 }
 
 #[test]
 fn override_self() {
-    let bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-        "#,
-        )
+    let bar = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.5.0"))
         .file("src/lib.rs", "")
         .build();
 
-    let p = project("foo");
+    let p = project();
     let root = p.root().clone();
-    let p = p.file(
-        ".cargo/config",
-        &format!(
-            r#"
-            paths = ['{}']
-        "#,
-            root.display()
-        ),
-    ).file(
+    let p = p
+        .file(".cargo/config", &format!("paths = ['{}']", root.display()))
+        .file(
             "Cargo.toml",
             &format!(
                 r#"
@@ -794,12 +638,12 @@ fn override_self() {
         .file("src/main.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
 fn override_path_dep() {
-    let bar = project("bar")
+    let bar = project().at("bar")
         .file(
             "p1/Cargo.toml",
             r#"
@@ -813,25 +657,15 @@ fn override_path_dep() {
        "#,
         )
         .file("p1/src/lib.rs", "")
-        .file(
-            "p2/Cargo.toml",
-            r#"
-            [package]
-            name = "p2"
-            version = "0.5.0"
-            authors = []
-       "#,
-        )
+        .file("p2/Cargo.toml", &basic_manifest("p2", "0.5.0"))
         .file("p2/src/lib.rs", "")
         .build();
 
-    let p = project("foo")
+    let p = project()
         .file(
             ".cargo/config",
             &format!(
-                r#"
-            paths = ['{}', '{}']
-        "#,
+                "paths = ['{}', '{}']",
                 bar.root().join("p1").display(),
                 bar.root().join("p2").display()
             ),
@@ -856,12 +690,12 @@ fn override_path_dep() {
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
 }
 
 #[test]
 fn path_dep_build_cmd() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -902,12 +736,7 @@ fn path_dep_build_cmd() {
             }
         "#,
         )
-        .file(
-            "bar/src/bar.rs.in",
-            r#"
-            pub fn gimme() -> i32 { 0 }
-        "#,
-        )
+        .file("bar/src/bar.rs.in", "pub fn gimme() -> i32 { 0 }")
         .build();
     p.root().join("bar").move_into_the_past();
 
@@ -952,7 +781,7 @@ fn path_dep_build_cmd() {
 
 #[test]
 fn dev_deps_no_rebuild_lib() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -976,21 +805,12 @@ fn dev_deps_no_rebuild_lib() {
             #[cfg(not(test))] pub fn foo() { env!("FOO"); }
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-
-            name = "bar"
-            version = "0.5.0"
-            authors = ["wycats@example.com"]
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.5.0"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
     assert_that(
         p.cargo("build").env("FOO", "bar"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "[COMPILING] foo v0.5.0 ({})\n\
              [FINISHED] dev [unoptimized + debuginfo] target(s) \
              in [..]\n",
@@ -1001,13 +821,12 @@ fn dev_deps_no_rebuild_lib() {
     assert_that(
         p.cargo("test"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] [..] v0.5.0 ({url}[..])
 [COMPILING] [..] v0.5.0 ({url}[..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
                 url = p.url()
             ))
             .with_stdout_contains("running 0 tests"),
@@ -1016,7 +835,7 @@ fn dev_deps_no_rebuild_lib() {
 
 #[test]
 fn custom_target_no_rebuild() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1031,15 +850,7 @@ fn custom_target_no_rebuild() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [project]
-            name = "a"
-            version = "0.5.0"
-            authors = []
-        "#,
-        )
+        .file("a/Cargo.toml", &basic_manifest("a", "0.5.0"))
         .file("a/src/lib.rs", "")
         .file(
             "b/Cargo.toml",
@@ -1056,7 +867,7 @@ fn custom_target_no_rebuild() {
         .build();
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] a v0.5.0 ([..])
 [COMPILING] foo v0.5.0 ([..])
@@ -1073,7 +884,7 @@ fn custom_target_no_rebuild() {
         p.cargo("build")
             .arg("--manifest-path=b/Cargo.toml")
             .env("CARGO_TARGET_DIR", "target_moved"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] b v0.5.0 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -1084,7 +895,8 @@ fn custom_target_no_rebuild() {
 
 #[test]
 fn override_and_depend() {
-    let p = project("foo")
+    let p = project()
+        .no_manifest()
         .file(
             "a/a1/Cargo.toml",
             r#"
@@ -1097,15 +909,7 @@ fn override_and_depend() {
         "#,
         )
         .file("a/a1/src/lib.rs", "")
-        .file(
-            "a/a2/Cargo.toml",
-            r#"
-            [project]
-            name = "a2"
-            version = "0.5.0"
-            authors = []
-        "#,
-        )
+        .file("a/a2/Cargo.toml", &basic_manifest("a2", "0.5.0"))
         .file("a/a2/src/lib.rs", "")
         .file(
             "b/Cargo.toml",
@@ -1120,16 +924,11 @@ fn override_and_depend() {
         "#,
         )
         .file("b/src/lib.rs", "")
-        .file(
-            "b/.cargo/config",
-            r#"
-            paths = ["../a"]
-        "#,
-        )
+        .file("b/.cargo/config", r#"paths = ["../a"]"#)
         .build();
     assert_that(
         p.cargo("build").cwd(p.root().join("b")),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] a2 v0.5.0 ([..])
 [COMPILING] a1 v0.5.0 ([..])
@@ -1142,23 +941,10 @@ fn override_and_depend() {
 
 #[test]
 fn missing_path_dependency() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "a"
-            version = "0.5.0"
-            authors = []
-        "#,
-        )
+    let p = project()
+        .file("Cargo.toml", &basic_manifest("a", "0.5.0"))
         .file("src/lib.rs", "")
-        .file(
-            ".cargo/config",
-            r#"
-            paths = ["../whoa-this-does-not-exist"]
-        "#,
-        )
+        .file(".cargo/config", r#"paths = ["../whoa-this-does-not-exist"]"#)
         .build();
     assert_that(
         p.cargo("build"),
@@ -1181,7 +967,7 @@ Caused by:
 fn invalid_path_dep_in_workspace_with_lockfile() {
     Package::new("bar", "1.0.0").publish();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1213,7 +999,7 @@ fn invalid_path_dep_in_workspace_with_lockfile() {
         .build();
 
     // Generate a lock file
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     // Change the dependency on `bar` to an invalid path
     File::create(&p.root().join("foo/Cargo.toml"))
@@ -1239,6 +1025,7 @@ fn invalid_path_dep_in_workspace_with_lockfile() {
             "\
 error: no matching package named `bar` found
 location searched: [..]
+did you mean: foo
 required by package `foo v0.5.0 ([..])`
 ",
         ),
@@ -1247,7 +1034,7 @@ required by package `foo v0.5.0 ([..])`
 
 #[test]
 fn workspace_produces_rlib() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1263,19 +1050,11 @@ fn workspace_produces_rlib() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.5.0"
-            authors = []
-        "#,
-        )
+        .file("foo/Cargo.toml", &basic_manifest("foo", "0.5.0"))
         .file("foo/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     assert_that(&p.root().join("target/debug/libtop.rlib"), existing_file());
     assert_that(
@@ -1286,7 +1065,7 @@ fn workspace_produces_rlib() {
 
 #[test]
 fn thin_lto_works() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"

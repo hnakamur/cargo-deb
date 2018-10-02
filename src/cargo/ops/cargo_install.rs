@@ -12,7 +12,7 @@ use toml;
 
 use core::{Dependency, Edition, Package, PackageIdSpec, Source, SourceId};
 use core::{PackageId, Workspace};
-use core::compiler::DefaultExecutor;
+use core::compiler::{DefaultExecutor, Executor};
 use ops::{self, CompileFilter};
 use sources::{GitSource, PathSource, SourceConfigMap};
 use util::{internal, Config};
@@ -99,7 +99,7 @@ pub fn install(
             ) {
                 Ok(()) => succeeded.push(krate),
                 Err(e) => {
-                    ::handle_error(e, &mut opts.config.shell());
+                    ::handle_error(&e, &mut opts.config.shell());
                     failed.push(krate)
                 }
             }
@@ -262,8 +262,9 @@ fn install_one(
         check_overwrites(&dst, pkg, &opts.filter, &list, force)?;
     }
 
+    let exec: Arc<Executor> = Arc::new(DefaultExecutor);
     let compile =
-        ops::compile_ws(&ws, Some(source), opts, Arc::new(DefaultExecutor)).chain_err(|| {
+        ops::compile_ws(&ws, Some(source), opts, &exec).chain_err(|| {
             if let Some(td) = td_opt.take() {
                 // preserve the temporary directory, so the user can inspect it
                 td.into_path();
@@ -487,9 +488,16 @@ where
                 None => None,
             };
             let vers = vers.as_ref().map(|s| &**s);
+            let vers_spec = if vers.is_none() && source.source_id().is_registry() {
+                // Avoid pre-release versions from crate.io
+                // unless explicitly asked for
+                Some("*")
+            } else {
+                vers
+            };
             let dep = Dependency::parse_no_deprecated(
                 name,
-                Some(vers.unwrap_or("*")),
+                vers_spec,
                 source.source_id(),
             )?;
             let deps = source.query_vec(&dep)?;
@@ -531,7 +539,7 @@ where
             return Ok((pkg.clone(), Box::new(source)));
 
             fn multi_err(kind: &str, mut pkgs: Vec<&Package>) -> String {
-                pkgs.sort_by(|a, b| a.name().cmp(&b.name()));
+                pkgs.sort_unstable_by_key(|a| a.name());
                 format!(
                     "multiple packages with {} found: {}",
                     kind,
@@ -719,7 +727,7 @@ pub fn uninstall(
             match uninstall_one(&root, spec, bins, config) {
                 Ok(()) => succeeded.push(spec),
                 Err(e) => {
-                    ::handle_error(e, &mut config.shell());
+                    ::handle_error(&e, &mut config.shell());
                     failed.push(spec)
                 }
             }

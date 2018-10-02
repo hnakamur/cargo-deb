@@ -6,14 +6,17 @@ use std::mem;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
-use crossbeam::{self, Scope};
+use crossbeam_utils;
+use crossbeam_utils::thread::Scope;
 use jobserver::{Acquired, HelperThread};
 
 use core::profiles::Profile;
-use core::{PackageId, Target};
+use core::{PackageId, Target, TargetKind};
 use handle_error;
 use util::{internal, profile, CargoResult, CargoResultExt, ProcessBuilder};
 use util::{Config, DependencyQueue, Dirty, Fresh, Freshness};
+use util::{Progress, ProgressStyle};
+use util::diagnostic_server::{self, DiagnosticPrinter};
 
 use super::job::Job;
 use super::{BuildContext, BuildPlan, CompileMode, Context, Kind, Unit};
@@ -28,7 +31,7 @@ pub struct JobQueue<'a> {
     queue: DependencyQueue<Key<'a>, Vec<(Job, Freshness)>>,
     tx: Sender<Message<'a>>,
     rx: Receiver<Message<'a>>,
-    active: usize,
+    active: Vec<Key<'a>>,
     pending: HashMap<Key<'a>, PendingBuild>,
     compiled: HashSet<&'a PackageId>,
     documented: HashSet<&'a PackageId>,
@@ -54,6 +57,27 @@ struct Key<'a> {
     mode: CompileMode,
 }
 
+impl<'a> Key<'a> {
+    fn name_for_progress(&self) -> String {
+        let pkg_name = self.pkg.name();
+        match self.mode {
+            CompileMode::Doc { .. } => format!("{}(doc)", pkg_name),
+            CompileMode::RunCustomBuild => format!("{}(build)", pkg_name),
+            _ => {
+                let annotation = match self.target.kind() {
+                    TargetKind::Lib(_) => return pkg_name.to_string(),
+                    TargetKind::CustomBuild => return format!("{}(build.rs)", pkg_name),
+                    TargetKind::Bin => "bin",
+                    TargetKind::Test => "test",
+                    TargetKind::Bench => "bench",
+                    TargetKind::ExampleBin | TargetKind::ExampleLib(_) => "example",
+                };
+                format!("{}({})", self.target.name(), annotation)
+            }
+        }
+    }
+}
+
 pub struct JobState<'a> {
     tx: Sender<Message<'a>>,
 }
@@ -63,6 +87,7 @@ enum Message<'a> {
     BuildPlanMsg(String, ProcessBuilder, Arc<Vec<OutputFile>>),
     Stdout(String),
     Stderr(String),
+    FixDiagnostic(diagnostic_server::Message),
     Token(io::Result<Acquired>),
     Finish(Key<'a>, CargoResult<()>),
 }
@@ -98,7 +123,7 @@ impl<'a> JobQueue<'a> {
             queue: DependencyQueue::new(),
             tx,
             rx,
-            active: 0,
+            active: Vec::new(),
             pending: HashMap::new(),
             compiled: HashSet::new(),
             documented: HashSet::new(),
@@ -117,7 +142,7 @@ impl<'a> JobQueue<'a> {
         let key = Key::new(unit);
         let deps = key.dependencies(cx)?;
         self.queue
-            .queue(Fresh, key, Vec::new(), &deps)
+            .queue(Fresh, &key, Vec::new(), &deps)
             .push((job, fresh));
         *self.counts.entry(key.pkg).or_insert(0) += 1;
         Ok(())
@@ -133,9 +158,9 @@ impl<'a> JobQueue<'a> {
         self.queue.queue_finished();
 
         // We need to give a handle to the send half of our message queue to the
-        // jobserver helper thread. Unfortunately though we need the handle to be
-        // `'static` as that's typically what's required when spawning a
-        // thread!
+        // jobserver and (optionally) diagnostic helper thread. Unfortunately
+        // though we need the handle to be `'static` as that's typically what's
+        // required when spawning a thread!
         //
         // To work around this we transmute the `Sender` to a static lifetime.
         // we're only sending "longer living" messages and we should also
@@ -147,14 +172,22 @@ impl<'a> JobQueue<'a> {
         // practice.
         let tx = self.tx.clone();
         let tx = unsafe { mem::transmute::<Sender<Message<'a>>, Sender<Message<'static>>>(tx) };
+        let tx2 = tx.clone();
         let helper = cx.jobserver
             .clone()
             .into_helper_thread(move |token| {
                 drop(tx.send(Message::Token(token)));
             })
             .chain_err(|| "failed to create helper thread for jobserver management")?;
+        let _diagnostic_server = cx.bcx.build_config
+            .rustfix_diagnostic_server
+            .borrow_mut()
+            .take()
+            .map(move |srv| {
+                srv.start(move |msg| drop(tx2.send(Message::FixDiagnostic(msg))))
+            });
 
-        crossbeam::scope(|scope| self.drain_the_queue(cx, plan, scope, &helper))
+        crossbeam_utils::thread::scope(|scope| self.drain_the_queue(cx, plan, scope, &helper))
     }
 
     fn drain_the_queue(
@@ -167,6 +200,7 @@ impl<'a> JobQueue<'a> {
         let mut tokens = Vec::new();
         let mut queue = Vec::new();
         let build_plan = cx.bcx.build_config.build_plan;
+        let mut print = DiagnosticPrinter::new(cx.bcx.config);
         trace!("queue: {:#?}", self.queue);
 
         // Iteratively execute the entire dependency graph. Each turn of the
@@ -179,7 +213,24 @@ impl<'a> JobQueue<'a> {
         // After a job has finished we update our internal state if it was
         // successful and otherwise wait for pending work to finish if it failed
         // and then immediately return.
+        //
+        // TODO: the progress bar should be re-enabled but unfortunately it's
+        //       difficult to do so right now due to how compiler error messages
+        //       work. Cargo doesn't redirect stdout/stderr of compiler
+        //       processes so errors are not captured, and Cargo doesn't know
+        //       when an error is being printed, meaning that a progress bar
+        //       will get jumbled up in the output! To reenable this progress
+        //       bar we'll need to probably capture the stderr of rustc and
+        //       capture compiler error messages, but that also means
+        //       reproducing rustc's styling of error messages which is
+        //       currently a pretty big task. This is issue #5695.
         let mut error = None;
+        let mut progress = Progress::with_style("Building", ProgressStyle::Ratio, cx.bcx.config);
+        let mut progress_maybe_changed = true; // avoid flickering due to build script
+        if !cx.bcx.config.cli_unstable().compile_progress {
+            progress.disable();
+        }
+        let total = self.queue.len();
         loop {
             // Dequeue as much work as we can, learning about everything
             // possible that can run. Note that this is also the point where we
@@ -196,7 +247,7 @@ impl<'a> JobQueue<'a> {
                 );
                 for (job, f) in jobs {
                     queue.push((key, job, f.combine(fresh)));
-                    if self.active + queue.len() > 0 {
+                    if !self.active.is_empty() || !queue.is_empty() {
                         jobserver_helper.request_token();
                     }
                 }
@@ -205,14 +256,14 @@ impl<'a> JobQueue<'a> {
             // Now that we've learned of all possible work that we can execute
             // try to spawn it so long as we've got a jobserver token which says
             // we're able to perform some parallel work.
-            while error.is_none() && self.active < tokens.len() + 1 && !queue.is_empty() {
+            while error.is_none() && self.active.len() < tokens.len() + 1 && !queue.is_empty() {
                 let (key, job, fresh) = queue.remove(0);
                 self.run(key, fresh, job, cx.bcx.config, scope, build_plan)?;
             }
 
             // If after all that we're not actually running anything then we're
             // done!
-            if self.active == 0 {
+            if self.active.is_empty() {
                 break;
             }
 
@@ -221,9 +272,26 @@ impl<'a> JobQueue<'a> {
             // jobserver interface is architected we may acquire a token that we
             // don't actually use, and if this happens just relinquish it back
             // to the jobserver itself.
-            tokens.truncate(self.active - 1);
+            tokens.truncate(self.active.len() - 1);
 
-            match self.rx.recv().unwrap() {
+            if progress_maybe_changed {
+                let count = total - self.queue.len();
+                let active_names = self.active.iter()
+                    .map(Key::name_for_progress)
+                    .collect::<Vec<_>>();
+                drop(progress.tick_now(count, total, &format!(": {}", active_names.join(", "))));
+            }
+            let event = self.rx.recv().unwrap();
+
+            progress_maybe_changed = match event {
+                Message::Stdout(_) | Message::Stderr(_) => cx.bcx.config.extra_verbose(),
+                _ => true,
+            };
+            if progress_maybe_changed {
+                progress.clear();
+            }
+
+            match event {
                 Message::Run(cmd) => {
                     cx.bcx
                         .config
@@ -231,7 +299,7 @@ impl<'a> JobQueue<'a> {
                         .verbose(|c| c.status("Running", &cmd))?;
                 }
                 Message::BuildPlanMsg(module_name, cmd, filenames) => {
-                    plan.update(module_name, cmd, filenames)?;
+                    plan.update(&module_name, &cmd, &filenames)?;
                 }
                 Message::Stdout(out) => {
                     if cx.bcx.config.extra_verbose() {
@@ -243,10 +311,20 @@ impl<'a> JobQueue<'a> {
                         writeln!(cx.bcx.config.shell().err(), "{}", err)?;
                     }
                 }
+                Message::FixDiagnostic(msg) => {
+                    print.print(&msg)?;
+                }
                 Message::Finish(key, result) => {
                     info!("end: {:?}", key);
-                    self.active -= 1;
-                    if self.active > 0 {
+
+                    // self.active.remove_item(&key); // <- switch to this when stabilized.
+                    let pos = self
+                        .active
+                        .iter()
+                        .position(|k| *k == key)
+                        .expect("an unrecorded package has finished compiling");
+                    self.active.remove(pos);
+                    if !self.active.is_empty() {
                         assert!(!tokens.is_empty());
                         drop(tokens.pop());
                     }
@@ -256,9 +334,9 @@ impl<'a> JobQueue<'a> {
                             let msg = "The following warnings were emitted during compilation:";
                             self.emit_warnings(Some(msg), &key, cx)?;
 
-                            if self.active > 0 {
+                            if !self.active.is_empty() {
                                 error = Some(format_err!("build failed"));
-                                handle_error(e, &mut *cx.bcx.config.shell());
+                                handle_error(&e, &mut *cx.bcx.config.shell());
                                 cx.bcx.config.shell().warn(
                                     "build failed, waiting for other \
                                      jobs to finish...",
@@ -274,6 +352,7 @@ impl<'a> JobQueue<'a> {
                 }
             }
         }
+        drop(progress);
 
         let build_type = if self.is_release { "release" } else { "dev" };
         // NOTE: This may be a bit inaccurate, since this may not display the
@@ -334,7 +413,7 @@ impl<'a> JobQueue<'a> {
     ) -> CargoResult<()> {
         info!("start: {:?}", key);
 
-        self.active += 1;
+        self.active.push(key);
         *self.counts.get_mut(key.pkg).unwrap() -= 1;
 
         let my_tx = self.tx.clone();
@@ -373,7 +452,7 @@ impl<'a> JobQueue<'a> {
 
             if !output.warnings.is_empty() && msg.is_some() {
                 // Output an empty line.
-                writeln!(bcx.config.shell().err(), "")?;
+                writeln!(bcx.config.shell().err())?;
             }
         }
 

@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::env;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
@@ -16,7 +17,7 @@ pub struct Doctest {
     pub target: Target,
     /// Extern dependencies needed by `rustdoc`. The path is the location of
     /// the compiled lib.
-    pub deps: Vec<(Target, PathBuf)>,
+    pub deps: Vec<(String, PathBuf)>,
 }
 
 /// A structure returning the result of a compilation.
@@ -80,8 +81,24 @@ pub struct Compilation<'cfg> {
 }
 
 impl<'cfg> Compilation<'cfg> {
-    pub fn new<'a>(bcx: &BuildContext<'a, 'cfg>) -> Compilation<'cfg> {
-        Compilation {
+    pub fn new<'a>(bcx: &BuildContext<'a, 'cfg>) -> CargoResult<Compilation<'cfg>> {
+        let mut rustc = bcx.rustc.process();
+        for (k, v) in bcx.build_config.extra_rustc_env.iter() {
+            rustc.env(k, v);
+        }
+        for arg in bcx.build_config.extra_rustc_args.iter() {
+            rustc.arg(arg);
+        }
+        if bcx.build_config.cargo_as_rustc_wrapper {
+            let prog = rustc.get_program().to_owned();
+            rustc.env("RUSTC", prog);
+            rustc.program(env::current_exe()?);
+        }
+        let srv = bcx.build_config.rustfix_diagnostic_server.borrow();
+        if let Some(server) = &*srv {
+            server.configure(&mut rustc);
+        }
+        Ok(Compilation {
             libraries: HashMap::new(),
             native_dirs: BTreeSet::new(), // TODO: deprecated, remove
             root_output: PathBuf::from("/"),
@@ -96,30 +113,30 @@ impl<'cfg> Compilation<'cfg> {
             cfgs: HashMap::new(),
             rustdocflags: HashMap::new(),
             config: bcx.config,
-            rustc_process: bcx.rustc.process(),
+            rustc_process: rustc,
             host: bcx.host_triple().to_string(),
             target: bcx.target_triple().to_string(),
             target_runner: LazyCell::new(),
-        }
+        })
     }
 
     /// See `process`.
-    pub fn rustc_process(&self, pkg: &Package) -> CargoResult<ProcessBuilder> {
+    pub fn rustc_process(&self, pkg: &Package, target: &Target) -> CargoResult<ProcessBuilder> {
         let mut p = self.fill_env(self.rustc_process.clone(), pkg, true)?;
         let manifest = pkg.manifest();
         if manifest.features().is_enabled(Feature::edition()) {
-            p.arg(format!("--edition={}", manifest.edition()));
+            p.arg(format!("--edition={}", target.edition()));
         }
         Ok(p)
     }
 
     /// See `process`.
-    pub fn rustdoc_process(&self, pkg: &Package) -> CargoResult<ProcessBuilder> {
+    pub fn rustdoc_process(&self, pkg: &Package, target: &Target) -> CargoResult<ProcessBuilder> {
         let mut p = self.fill_env(process(&*self.config.rustdoc()?), pkg, false)?;
         let manifest = pkg.manifest();
         if manifest.features().is_enabled(Feature::edition()) {
             p.arg("-Zunstable-options");
-            p.arg(format!("--edition={}", &manifest.edition()));
+            p.arg(format!("--edition={}", target.edition()));
         }
         Ok(p)
     }

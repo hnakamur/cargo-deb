@@ -2,21 +2,12 @@ use std::net::TcpListener;
 use std::thread;
 use std::process::Command;
 
-use cargotest::support::{cargo_exe, execs, project};
-use hamcrest::assert_that;
+use support::{cargo_exe, execs, project};
+use support::hamcrest::assert_that;
 
 #[test]
 fn jobserver_exists() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "build.rs",
             r#"
@@ -59,7 +50,7 @@ fn jobserver_exists() {
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
@@ -73,7 +64,7 @@ fn makes_jobserver_used() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -171,7 +162,7 @@ all:
             .env("CARGO", cargo_exe())
             .env("ADDR", addr.to_string())
             .arg("-j2"),
-        execs().with_status(0),
+        execs(),
     );
     child.join().unwrap();
 }
@@ -187,16 +178,7 @@ fn jobserver_and_j() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file(
             "Makefile",
@@ -209,7 +191,7 @@ all:
 
     assert_that(
         p.process(make).env("CARGO", cargo_exe()).arg("-j2"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 warning: a `-j` argument was passed to Cargo but Cargo is also configured \
 with an external jobserver in its environment, ignoring the `-j` parameter

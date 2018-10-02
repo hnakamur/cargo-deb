@@ -2,8 +2,8 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::io::prelude::*;
 
-use cargotest::support::{cross_compile, execs, project, publish};
-use hamcrest::{assert_that, contains};
+use support::{cross_compile, execs, project, publish};
+use support::hamcrest::{assert_that, contains};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
@@ -13,7 +13,7 @@ fn simple_cross_package() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -44,7 +44,7 @@ fn simple_cross_package() {
 
     assert_that(
         p.cargo("package").arg("--target").arg(&target),
-        execs().with_status(0).with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "   Packaging foo v0.0.0 ({dir})
    Verifying foo v0.0.0 ({dir})
    Compiling foo v0.0.0 ({dir}/target/package/foo-0.0.0)
@@ -86,7 +86,7 @@ fn publish_with_target() {
 
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -121,7 +121,7 @@ fn publish_with_target() {
             .arg(publish::registry().to_string())
             .arg("--target")
             .arg(&target),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "    Updating registry `{registry}`
    Packaging foo v0.0.0 ({dir})
    Verifying foo v0.0.0 ({dir})

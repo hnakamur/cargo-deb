@@ -1,10 +1,10 @@
-use cargotest::support::{basic_lib_manifest, execs, project};
-use cargotest::ChannelChanger;
-use hamcrest::assert_that;
+use support::{basic_manifest, basic_lib_manifest, execs, project};
+use support::ChannelChanger;
+use support::hamcrest::assert_that;
 
 #[test]
 fn profile_override_gated() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -34,7 +34,7 @@ consider adding `cargo-features = [\"profile-overrides\"]` to the manifest
         ),
     );
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -67,7 +67,7 @@ consider adding `cargo-features = [\"profile-overrides\"]` to the manifest
 
 #[test]
 fn profile_override_basic() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -95,7 +95,7 @@ fn profile_override_basic() {
 
     assert_that(
         p.cargo("build -v").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "[COMPILING] bar [..]
 [RUNNING] `rustc --crate-name bar [..] -C opt-level=3 [..]`
 [COMPILING] foo [..]
@@ -107,7 +107,7 @@ fn profile_override_basic() {
 
 #[test]
 fn profile_override_warnings() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -137,7 +137,7 @@ fn profile_override_warnings() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr_contains(
+        execs().with_stderr_contains(
             "\
 [WARNING] version or URL in profile override spec `bar:1.2.3` does not match any of the packages: bar v0.5.0 ([..])
 [WARNING] profile override spec `bart` did not match any packages
@@ -152,7 +152,7 @@ Did you mean `bar`?
 
 #[test]
 fn profile_override_dev_release_only() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -203,7 +203,7 @@ fn profile_override_bad_settings() {
         ("overrides = {}", "Profile overrides cannot be nested."),
     ];
     for &(ref snippet, ref expected) in bad_values.iter() {
-        let p = project("foo")
+        let p = project()
             .file(
                 "Cargo.toml",
                 &format!(
@@ -240,7 +240,7 @@ fn profile_override_bad_settings() {
 #[test]
 fn profile_override_hierarchy() {
     // Test that the precedence rules are correct for different types.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -273,13 +273,8 @@ fn profile_override_hierarchy() {
             m2 = { path = "../m2" }
             dep = { path = "../../dep" }
             "#)
-        .file("m1/src/lib.rs",
-            r#"
-            extern crate m2;
-            extern crate dep;
-            "#)
-        .file("m1/build.rs",
-            r#"fn main() {}"#)
+        .file("m1/src/lib.rs", "extern crate m2; extern crate dep;")
+        .file("m1/build.rs", "fn main() {}")
 
         // m2
         .file("m2/Cargo.toml",
@@ -295,16 +290,8 @@ fn profile_override_hierarchy() {
             m3 = { path = "../m3" }
             dep = { path = "../../dep" }
             "#)
-        .file("m2/src/lib.rs",
-            r#"
-            extern crate m3;
-            "#)
-        .file("m2/build.rs",
-            r#"
-            extern crate m3;
-            extern crate dep;
-            fn main() {}
-            "#)
+        .file("m2/src/lib.rs", "extern crate m3;")
+        .file("m2/build.rs", "extern crate m3; extern crate dep; fn main() {}")
 
         // m3
         .file("m3/Cargo.toml", &basic_lib_manifest("m3"))
@@ -312,7 +299,7 @@ fn profile_override_hierarchy() {
         .build();
 
     // dep (outside of workspace)
-    let _dep = project("dep")
+    let _dep = project().at("dep")
         .file("Cargo.toml", &basic_lib_manifest("dep"))
         .file("src/lib.rs", "")
         .build();
@@ -328,20 +315,20 @@ fn profile_override_hierarchy() {
 
     assert_that(
         p.cargo("build -v").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr_unordered("\
+        execs().with_stderr_unordered("\
 [COMPILING] m3 [..]
 [COMPILING] dep [..]
-[RUNNING] `rustc --crate-name m3 m3[/]src[/]lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=4 [..]
-[RUNNING] `rustc --crate-name dep [..]dep[/]src[/]lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=3 [..]
-[RUNNING] `rustc --crate-name m3 m3[/]src[/]lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=1 [..]
-[RUNNING] `rustc --crate-name build_script_build m1[/]build.rs --crate-type bin --emit=dep-info,link -C codegen-units=4 [..]
+[RUNNING] `rustc --crate-name m3 m3/src/lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=4 [..]
+[RUNNING] `rustc --crate-name dep [..]dep/src/lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=3 [..]
+[RUNNING] `rustc --crate-name m3 m3/src/lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=1 [..]
+[RUNNING] `rustc --crate-name build_script_build m1/build.rs --crate-type bin --emit=dep-info,link -C codegen-units=4 [..]
 [COMPILING] m2 [..]
-[RUNNING] `rustc --crate-name build_script_build m2[/]build.rs --crate-type bin --emit=dep-info,link -C codegen-units=2 [..]
-[RUNNING] `[..][/]m1-[..][/]build-script-build`
-[RUNNING] `[..][/]m2-[..][/]build-script-build`
-[RUNNING] `rustc --crate-name m2 m2[/]src[/]lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=2 [..]
+[RUNNING] `rustc --crate-name build_script_build m2/build.rs --crate-type bin --emit=dep-info,link -C codegen-units=2 [..]
+[RUNNING] `[..]/m1-[..]/build-script-build`
+[RUNNING] `[..]/m2-[..]/build-script-build`
+[RUNNING] `rustc --crate-name m2 m2/src/lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=2 [..]
 [COMPILING] m1 [..]
-[RUNNING] `rustc --crate-name m1 m1[/]src[/]lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=1 [..]
+[RUNNING] `rustc --crate-name m1 m1/src/lib.rs --crate-type lib --emit=dep-info,link -C codegen-units=1 [..]
 [FINISHED] dev [unoptimized + debuginfo] [..]
 ",
         ),
@@ -350,7 +337,7 @@ fn profile_override_hierarchy() {
 
 #[test]
 fn profile_override_spec_multiple() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -387,7 +374,7 @@ found profile override specs: bar, bar:0.5.0",
 
 #[test]
 fn profile_override_spec() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -413,10 +400,7 @@ fn profile_override_spec() {
             [dependencies]
             dep = { path = "../../dep1" }
             "#)
-        .file("m1/src/lib.rs",
-            r#"
-            extern crate dep;
-            "#)
+        .file("m1/src/lib.rs", "extern crate dep;")
 
         // m2
         .file("m2/Cargo.toml",
@@ -428,46 +412,28 @@ fn profile_override_spec() {
             [dependencies]
             dep = {path = "../../dep2" }
             "#)
-        .file("m2/src/lib.rs",
-            r#"
-            extern crate dep;
-            "#)
+        .file("m2/src/lib.rs", "extern crate dep;")
 
         .build();
 
-    project("dep1")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "dep"
-            version = "1.0.0"
-        "#,
-        )
+    project().at("dep1")
+        .file("Cargo.toml", &basic_manifest("dep", "1.0.0"))
         .file("src/lib.rs", "")
         .build();
 
-    project("dep2")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "dep"
-            version = "2.0.0"
-        "#,
-        )
+    project().at("dep2")
+        .file("Cargo.toml", &basic_manifest("dep", "2.0.0"))
         .file("src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build -v").masquerade_as_nightly_cargo(),
         execs()
-            .with_status(0)
             .with_stderr_contains(
-                "[RUNNING] `rustc [..]dep1[/]src[/]lib.rs [..] -C codegen-units=1 [..]",
+                "[RUNNING] `rustc [..]dep1/src/lib.rs [..] -C codegen-units=1 [..]",
             )
             .with_stderr_contains(
-                "[RUNNING] `rustc [..]dep2[/]src[/]lib.rs [..] -C codegen-units=2 [..]",
+                "[RUNNING] `rustc [..]dep2/src/lib.rs [..] -C codegen-units=2 [..]",
             ),
     );
 }

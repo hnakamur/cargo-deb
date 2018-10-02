@@ -2,18 +2,9 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::env;
 
-use cargotest;
-use cargo::util::ProcessBuilder;
-use cargotest::process;
-use cargotest::support::{execs, paths};
-use hamcrest::{assert_that, existing_dir, existing_file, is_not};
-use tempfile;
-
-fn cargo_process(s: &str) -> ProcessBuilder {
-    let mut p = cargotest::cargo_process();
-    p.arg(s);
-    p
-}
+use support::{cargo_process, git_process};
+use support::{execs, paths};
+use support::hamcrest::{assert_that, existing_dir, existing_file, is_not};
 
 fn create_empty_gitconfig() {
     // This helps on Windows where libgit2 is very aggressive in attempting to
@@ -25,15 +16,8 @@ fn create_empty_gitconfig() {
 #[test]
 fn simple_lib() {
     assert_that(
-        cargo_process("new")
-            .arg("--lib")
-            .arg("foo")
-            .arg("--vcs")
-            .arg("none")
-            .env("USER", "foo"),
-        execs()
-            .with_status(0)
-            .with_stderr("[CREATED] library `foo` project"),
+        cargo_process("new --lib foo --vcs none").env("USER", "foo"),
+        execs().with_stderr("[CREATED] library `foo` project"),
     );
 
     assert_that(&paths::root().join("foo"), existing_dir());
@@ -64,20 +48,15 @@ mod tests {
 
     assert_that(
         cargo_process("build").cwd(&paths::root().join("foo")),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn simple_bin() {
     assert_that(
-        cargo_process("new")
-            .arg("--bin")
-            .arg("foo")
-            .env("USER", "foo"),
-        execs()
-            .with_status(0)
-            .with_stderr("[CREATED] binary (application) `foo` project"),
+        cargo_process("new --bin foo").env("USER", "foo"),
+        execs().with_stderr("[CREATED] binary (application) `foo` project"),
     );
 
     assert_that(&paths::root().join("foo"), existing_dir());
@@ -86,7 +65,7 @@ fn simple_bin() {
 
     assert_that(
         cargo_process("build").cwd(&paths::root().join("foo")),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         &paths::root().join(&format!("foo/target/debug/foo{}", env::consts::EXE_SUFFIX)),
@@ -97,11 +76,7 @@ fn simple_bin() {
 #[test]
 fn both_lib_and_bin() {
     assert_that(
-        cargo_process("new")
-            .arg("--lib")
-            .arg("--bin")
-            .arg("foo")
-            .env("USER", "foo"),
+        cargo_process("new --lib --bin foo").env("USER", "foo"),
         execs()
             .with_status(101)
             .with_stderr("[ERROR] can't specify both lib and binary outputs"),
@@ -110,28 +85,20 @@ fn both_lib_and_bin() {
 
 #[test]
 fn simple_git() {
-    // Run inside a temp directory so that cargo will initialize a git repo.
-    // If this ran inside paths::root() it would detect that we are already
-    // inside a git repo and skip the initialization.
-    let td = tempfile::Builder::new().prefix("cargo").tempdir().unwrap();
     assert_that(
-        cargo_process("new")
-            .arg("--lib")
-            .arg("foo")
-            .cwd(td.path())
-            .env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new --lib foo").env("USER", "foo"),
+        execs(),
     );
 
-    assert_that(td.path(), existing_dir());
-    assert_that(&td.path().join("foo/Cargo.toml"), existing_file());
-    assert_that(&td.path().join("foo/src/lib.rs"), existing_file());
-    assert_that(&td.path().join("foo/.git"), existing_dir());
-    assert_that(&td.path().join("foo/.gitignore"), existing_file());
+    assert_that(&paths::root(), existing_dir());
+    assert_that(&paths::root().join("foo/Cargo.toml"), existing_file());
+    assert_that(&paths::root().join("foo/src/lib.rs"), existing_file());
+    assert_that(&paths::root().join("foo/.git"), existing_dir());
+    assert_that(&paths::root().join("foo/.gitignore"), existing_file());
 
     assert_that(
-        cargo_process("build").cwd(&td.path().join("foo")),
-        execs().with_status(0),
+        cargo_process("build").cwd(&paths::root().join("foo")),
+        execs(),
     );
 }
 
@@ -153,7 +120,7 @@ fn existing() {
     let dst = paths::root().join("foo");
     fs::create_dir(&dst).unwrap();
     assert_that(
-        cargo_process("new").arg("foo"),
+        cargo_process("new foo"),
         execs().with_status(101).with_stderr(format!(
             "[ERROR] destination `{}` already exists\n\n\
              Use `cargo init` to initialize the directory",
@@ -165,7 +132,7 @@ fn existing() {
 #[test]
 fn invalid_characters() {
     assert_that(
-        cargo_process("new").arg("foo.rs"),
+        cargo_process("new foo.rs"),
         execs().with_status(101).with_stderr(
             "\
 [ERROR] Invalid character `.` in crate name: `foo.rs`
@@ -177,7 +144,7 @@ use --name to override crate name",
 #[test]
 fn reserved_name() {
     assert_that(
-        cargo_process("new").arg("test"),
+        cargo_process("new test"),
         execs().with_status(101).with_stderr(
             "\
              [ERROR] The name `test` cannot be used as a crate name\n\
@@ -189,7 +156,7 @@ fn reserved_name() {
 #[test]
 fn reserved_binary_name() {
     assert_that(
-        cargo_process("new").arg("--bin").arg("incremental"),
+        cargo_process("new --bin incremental"),
         execs().with_status(101).with_stderr(
             "\
              [ERROR] The name `incremental` cannot be used as a crate name\n\
@@ -201,7 +168,7 @@ fn reserved_binary_name() {
 #[test]
 fn keyword_name() {
     assert_that(
-        cargo_process("new").arg("pub"),
+        cargo_process("new pub"),
         execs().with_status(101).with_stderr(
             "\
              [ERROR] The name `pub` cannot be used as a crate name\n\
@@ -214,8 +181,8 @@ fn keyword_name() {
 fn finds_author_user() {
     create_empty_gitconfig();
     assert_that(
-        cargo_process("new").arg("foo").env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo").env("USER", "foo"),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -231,8 +198,8 @@ fn finds_author_user() {
 fn finds_author_user_escaped() {
     create_empty_gitconfig();
     assert_that(
-        cargo_process("new").arg("foo").env("USER", "foo \"bar\""),
-        execs().with_status(0),
+        cargo_process("new foo").env("USER", "foo \"bar\""),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -248,11 +215,8 @@ fn finds_author_user_escaped() {
 fn finds_author_username() {
     create_empty_gitconfig();
     assert_that(
-        cargo_process("new")
-            .arg("foo")
-            .env_remove("USER")
-            .env("USERNAME", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo").env_remove("USER").env("USERNAME", "foo"),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -267,13 +231,12 @@ fn finds_author_username() {
 #[test]
 fn finds_author_priority() {
     assert_that(
-        cargo_process("new")
-            .arg("foo")
+        cargo_process("new foo")
             .env("USER", "bar2")
             .env("EMAIL", "baz2")
             .env("CARGO_NAME", "bar")
             .env("CARGO_EMAIL", "baz"),
-        execs().with_status(0),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -289,11 +252,10 @@ fn finds_author_priority() {
 fn finds_author_email() {
     create_empty_gitconfig();
     assert_that(
-        cargo_process("new")
-            .arg("foo")
+        cargo_process("new foo")
             .env("USER", "bar")
             .env("EMAIL", "baz"),
-        execs().with_status(0),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -307,17 +269,11 @@ fn finds_author_email() {
 
 #[test]
 fn finds_author_git() {
-    process("git")
-        .args(&["config", "--global", "user.name", "bar"])
-        .exec()
-        .unwrap();
-    process("git")
-        .args(&["config", "--global", "user.email", "baz"])
-        .exec()
-        .unwrap();
+    git_process("config --global user.name bar").exec().unwrap();
+    git_process("config --global user.email baz").exec().unwrap();
     assert_that(
-        cargo_process("new").arg("foo").env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo").env("USER", "foo"),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -331,28 +287,16 @@ fn finds_author_git() {
 
 #[test]
 fn finds_local_author_git() {
-    process("git").args(&["init"]).exec().unwrap();
-    process("git")
-        .args(&["config", "--global", "user.name", "foo"])
-        .exec()
-        .unwrap();
-    process("git")
-        .args(&["config", "--global", "user.email", "foo@bar"])
-        .exec()
-        .unwrap();
+    git_process("init").exec().unwrap();
+    git_process("config --global user.name foo").exec().unwrap();
+    git_process("config --global user.email foo@bar").exec().unwrap();
 
     // Set local git user config
-    process("git")
-        .args(&["config", "user.name", "bar"])
-        .exec()
-        .unwrap();
-    process("git")
-        .args(&["config", "user.email", "baz"])
-        .exec()
-        .unwrap();
+    git_process("config user.name bar").exec().unwrap();
+    git_process("config user.email baz").exec().unwrap();
     assert_that(
         cargo_process("init").env("USER", "foo"),
-        execs().with_status(0),
+        execs(),
     );
 
     let toml = paths::root().join("Cargo.toml");
@@ -367,11 +311,10 @@ fn finds_local_author_git() {
 #[test]
 fn finds_git_email() {
     assert_that(
-        cargo_process("new")
-            .arg("foo")
+        cargo_process("new foo")
             .env("GIT_AUTHOR_NAME", "foo")
             .env("GIT_AUTHOR_EMAIL", "gitfoo"),
-        execs().with_status(0),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -387,11 +330,10 @@ fn finds_git_email() {
 fn finds_git_author() {
     create_empty_gitconfig();
     assert_that(
-        cargo_process("new")
-            .arg("foo")
+        cargo_process("new foo")
             .env_remove("USER")
             .env("GIT_COMMITTER_NAME", "gitfoo"),
-        execs().with_status(0),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -405,14 +347,8 @@ fn finds_git_author() {
 
 #[test]
 fn author_prefers_cargo() {
-    process("git")
-        .args(&["config", "--global", "user.name", "foo"])
-        .exec()
-        .unwrap();
-    process("git")
-        .args(&["config", "--global", "user.email", "bar"])
-        .exec()
-        .unwrap();
+    git_process("config --global user.name foo").exec().unwrap();
+    git_process("config --global user.email bar").exec().unwrap();
     let root = paths::root();
     fs::create_dir(&root.join(".cargo")).unwrap();
     File::create(&root.join(".cargo/config"))
@@ -428,8 +364,8 @@ fn author_prefers_cargo() {
         .unwrap();
 
     assert_that(
-        cargo_process("new").arg("foo").env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo").env("USER", "foo"),
+        execs(),
     );
 
     let toml = paths::root().join("foo/Cargo.toml");
@@ -459,12 +395,8 @@ fn git_prefers_command_line() {
         .unwrap();
 
     assert_that(
-        cargo_process("new")
-            .arg("foo")
-            .arg("--vcs")
-            .arg("git")
-            .env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo --vcs git").env("USER", "foo"),
+        execs(),
     );
     assert!(paths::root().join("foo/.gitignore").exists());
 }
@@ -472,17 +404,18 @@ fn git_prefers_command_line() {
 #[test]
 fn subpackage_no_git() {
     assert_that(
-        cargo_process("new").arg("foo").env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo").env("USER", "foo"),
+        execs(),
     );
+
+    assert_that(&paths::root().join("foo/.git"), existing_dir());
+    assert_that(&paths::root().join("foo/.gitignore"), existing_file());
 
     let subpackage = paths::root().join("foo").join("components");
     fs::create_dir(&subpackage).unwrap();
     assert_that(
-        cargo_process("new")
-            .arg("foo/components/subcomponent")
-            .env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo/components/subcomponent").env("USER", "foo"),
+        execs(),
     );
 
     assert_that(
@@ -496,21 +429,54 @@ fn subpackage_no_git() {
 }
 
 #[test]
+fn subpackage_git_with_gitignore() {
+    assert_that(
+        cargo_process("new foo").env("USER", "foo"),
+        execs(),
+    );
+
+    assert_that(
+        &paths::root().join("foo/.git"),
+        existing_dir(),
+    );
+    assert_that(
+        &paths::root().join("foo/.gitignore"),
+        existing_file(),
+    );
+
+    let gitignore = paths::root().join("foo/.gitignore");
+    fs::write(gitignore, b"components").unwrap();
+
+    let subpackage = paths::root().join("foo/components");
+    fs::create_dir(&subpackage).unwrap();
+    assert_that(
+        cargo_process("new foo/components/subcomponent").env("USER", "foo"),
+        execs(),
+    );
+
+    assert_that(
+        &paths::root().join("foo/components/subcomponent/.git"),
+        existing_dir(),
+    );
+    assert_that(
+        &paths::root().join("foo/components/subcomponent/.gitignore"),
+        existing_file(),
+    );
+
+}
+
+#[test]
 fn subpackage_git_with_vcs_arg() {
     assert_that(
-        cargo_process("new").arg("foo").env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo").env("USER", "foo"),
+        execs(),
     );
 
     let subpackage = paths::root().join("foo").join("components");
     fs::create_dir(&subpackage).unwrap();
     assert_that(
-        cargo_process("new")
-            .arg("foo/components/subcomponent")
-            .arg("--vcs")
-            .arg("git")
-            .env("USER", "foo"),
-        execs().with_status(0),
+        cargo_process("new foo/components/subcomponent --vcs git").env("USER", "foo"),
+        execs(),
     );
 
     assert_that(
@@ -526,7 +492,7 @@ fn subpackage_git_with_vcs_arg() {
 #[test]
 fn unknown_flags() {
     assert_that(
-        cargo_process("new").arg("foo").arg("--flag"),
+        cargo_process("new foo --flag"),
         execs().with_status(1).with_stderr_contains(
             "error: Found argument '--flag' which wasn't expected, or isn't valid in this context",
         ),
@@ -536,10 +502,7 @@ fn unknown_flags() {
 #[test]
 fn explicit_invalid_name_not_suggested() {
     assert_that(
-        cargo_process("new")
-            .arg("--name")
-            .arg("10-invalid")
-            .arg("a"),
+        cargo_process("new --name 10-invalid a"),
         execs().with_status(101).with_stderr(
             "[ERROR] Package names starting with a digit cannot be used as a crate name",
         ),
@@ -549,14 +512,7 @@ fn explicit_invalid_name_not_suggested() {
 #[test]
 fn explicit_project_name() {
     assert_that(
-        cargo_process("new")
-            .arg("--lib")
-            .arg("foo")
-            .arg("--name")
-            .arg("bar")
-            .env("USER", "foo"),
-        execs()
-            .with_status(0)
-            .with_stderr("[CREATED] library `bar` project"),
+        cargo_process("new --lib foo --name bar").env("USER", "foo"),
+        execs().with_stderr("[CREATED] library `bar` project"),
     );
 }

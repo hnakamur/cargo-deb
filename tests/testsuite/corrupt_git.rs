@@ -2,24 +2,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cargo::util::paths as cargopaths;
-use cargotest::support::paths;
-use cargotest::support::{execs, git, project};
-use hamcrest::assert_that;
+use support::paths;
+use support::{basic_manifest, execs, git, project};
+use support::hamcrest::assert_that;
 
 #[test]
 fn deleting_database_files() {
-    let project = project("foo");
+    let project = project();
     let git_project = git::new("bar", |project| {
         project
-            .file(
-                "Cargo.toml",
-                r#"
-                [project]
-                name = "bar"
-                version = "0.5.0"
-                authors = []
-            "#,
-            )
+            .file("Cargo.toml", &basic_manifest("bar", "0.5.0"))
             .file("src/lib.rs", "")
     }).unwrap();
 
@@ -42,7 +34,7 @@ fn deleting_database_files() {
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(project.cargo("build"), execs().with_status(0));
+    assert_that(project.cargo("build"), execs());
 
     let mut files = Vec::new();
     find_files(&paths::home().join(".cargo/git/db"), &mut files);
@@ -57,7 +49,7 @@ fn deleting_database_files() {
         cargopaths::remove_file(&file).unwrap();
         assert_that(
             project.cargo("build").env("RUST_LOG", log).arg("-v"),
-            execs().with_status(0),
+            execs(),
         );
 
         if !file.exists() {
@@ -73,25 +65,17 @@ fn deleting_database_files() {
             .unwrap();
         assert_that(
             project.cargo("build").env("RUST_LOG", log).arg("-v"),
-            execs().with_status(0),
+            execs(),
         );
     }
 }
 
 #[test]
 fn deleting_checkout_files() {
-    let project = project("foo");
+    let project = project();
     let git_project = git::new("bar", |project| {
         project
-            .file(
-                "Cargo.toml",
-                r#"
-                [project]
-                name = "bar"
-                version = "0.5.0"
-                authors = []
-            "#,
-            )
+            .file("Cargo.toml", &basic_manifest("bar", "0.5.0"))
             .file("src/lib.rs", "")
     }).unwrap();
 
@@ -114,7 +98,7 @@ fn deleting_checkout_files() {
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(project.cargo("build"), execs().with_status(0));
+    assert_that(project.cargo("build"), execs());
 
     let dir = paths::home()
         .join(".cargo/git/checkouts")
@@ -147,7 +131,7 @@ fn deleting_checkout_files() {
         cargopaths::remove_file(&file).unwrap();
         assert_that(
             project.cargo("build").env("RUST_LOG", log).arg("-v"),
-            execs().with_status(0),
+            execs(),
         );
 
         if !file.exists() {
@@ -163,7 +147,7 @@ fn deleting_checkout_files() {
             .unwrap();
         assert_that(
             project.cargo("build").env("RUST_LOG", log).arg("-v"),
-            execs().with_status(0),
+            execs(),
         );
     }
 }

@@ -1,15 +1,25 @@
 #![cfg_attr(test, deny(warnings))]
-// Currently, Cargo does not use clippy for its source code.
-// But if someone runs it they should know that
-// @alexcrichton disagree with clippy on some style things
-#![cfg_attr(feature = "cargo-clippy", allow(explicit_iter_loop))]
+
+// Clippy isn't enforced by CI, and know that @alexcrichton isn't a fan :)
+#![cfg_attr(feature = "cargo-clippy", allow(boxed_local))]             // bug rust-lang-nursery/rust-clippy#1123
+#![cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]   // large project
+#![cfg_attr(feature = "cargo-clippy", allow(derive_hash_xor_eq))]      // there's an intentional incoherence
+#![cfg_attr(feature = "cargo-clippy", allow(explicit_into_iter_loop))] // (unclear why)
+#![cfg_attr(feature = "cargo-clippy", allow(explicit_iter_loop))]      // (unclear why)
+#![cfg_attr(feature = "cargo-clippy", allow(identity_op))]             // used for vertical alignment
+#![cfg_attr(feature = "cargo-clippy", allow(implicit_hasher))]         // large project
+#![cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]      // large project
+#![cfg_attr(feature = "cargo-clippy", allow(redundant_closure_call))]  // closures over try catch blocks
+#![cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]      // large project
+#![cfg_attr(feature = "cargo-clippy", allow(type_complexity))]         // there's an exceptionally complex type
+#![cfg_attr(feature = "cargo-clippy", allow(wrong_self_convention))]   // perhaps Rc should be special cased in Clippy?
 
 extern crate atty;
 extern crate clap;
 #[cfg(target_os = "macos")]
 extern crate core_foundation;
 extern crate crates_io as registry;
-extern crate crossbeam;
+extern crate crossbeam_utils;
 extern crate curl;
 #[macro_use]
 extern crate failure;
@@ -30,6 +40,7 @@ extern crate libgit2_sys;
 #[macro_use]
 extern crate log;
 extern crate num_cpus;
+extern crate rustfix;
 extern crate same_file;
 extern crate semver;
 #[macro_use]
@@ -44,6 +55,7 @@ extern crate tar;
 extern crate tempfile;
 extern crate termcolor;
 extern crate toml;
+extern crate unicode_width;
 extern crate url;
 
 use std::fmt;
@@ -58,6 +70,9 @@ pub use util::{CargoError, CargoResult, CliError, CliResult, Config};
 pub use util::errors::Internal;
 
 pub const CARGO_ENV: &str = "CARGO";
+
+#[macro_use]
+mod macros;
 
 pub mod core;
 pub mod ops;
@@ -151,15 +166,15 @@ pub fn exit_with_error(err: CliError, shell: &mut Shell) -> ! {
     std::process::exit(exit_code)
 }
 
-pub fn handle_error(err: CargoError, shell: &mut Shell) {
-    debug!("handle_error; err={:?}", &err);
+pub fn handle_error(err: &CargoError, shell: &mut Shell) {
+    debug!("handle_error; err={:?}", err);
 
-    let _ignored_result = shell.error(&err);
-    handle_cause(&err, shell);
+    let _ignored_result = shell.error(err);
+    handle_cause(err, shell);
 }
 
 fn handle_cause(cargo_err: &Error, shell: &mut Shell) -> bool {
-    fn print(error: String, shell: &mut Shell) {
+    fn print(error: &str, shell: &mut Shell) {
         drop(writeln!(shell.err(), "\nCaused by:"));
         drop(writeln!(shell.err(), "  {}", error));
     }
@@ -169,18 +184,18 @@ fn handle_cause(cargo_err: &Error, shell: &mut Shell) -> bool {
     if verbose == Verbose {
         // The first error has already been printed to the shell
         // Print all remaining errors
-        for err in cargo_err.causes().skip(1) {
-            print(err.to_string(), shell);
+        for err in cargo_err.iter_causes() {
+            print(&err.to_string(), shell);
         }
     } else {
         // The first error has already been printed to the shell
         // Print remaining errors until one marked as Internal appears
-        for err in cargo_err.causes().skip(1) {
+        for err in cargo_err.iter_causes() {
             if err.downcast_ref::<Internal>().is_some() {
                 return false;
             }
 
-            print(err.to_string(), shell);
+            print(&err.to_string(), shell);
         }
     }
 

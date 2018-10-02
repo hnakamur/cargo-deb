@@ -7,7 +7,7 @@ use util::Config;
 use util::errors::{CargoResult, HttpNot200};
 
 fn maybe_spurious(err: &Error) -> bool {
-    for e in err.causes() {
+    for e in err.iter_chain() {
         if let Some(git_err) = e.downcast_ref::<git2::Error>() {
             match git_err.class() {
                 git2::ErrorClass::Net | git2::ErrorClass::Os => return true,
@@ -62,7 +62,7 @@ where
                 remaining -= 1;
             }
             //todo impl from
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(e),
         }
     }
 }

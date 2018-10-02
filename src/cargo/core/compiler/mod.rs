@@ -61,7 +61,13 @@ pub trait Executor: Send + Sync + 'static {
 
     /// In case of an `Err`, Cargo will not continue with the build process for
     /// this package.
-    fn exec(&self, cmd: ProcessBuilder, _id: &PackageId, _target: &Target) -> CargoResult<()> {
+    fn exec(
+        &self,
+        cmd: ProcessBuilder,
+        _id: &PackageId,
+        _target: &Target,
+        _mode: CompileMode
+    ) -> CargoResult<()> {
         cmd.exec()?;
         Ok(())
     }
@@ -71,6 +77,7 @@ pub trait Executor: Send + Sync + 'static {
         cmd: ProcessBuilder,
         _id: &PackageId,
         _target: &Target,
+        _mode: CompileMode,
         handle_stdout: &mut FnMut(&str) -> CargoResult<()>,
         handle_stderr: &mut FnMut(&str) -> CargoResult<()>,
     ) -> CargoResult<()> {
@@ -154,26 +161,20 @@ fn compile<'a, 'cfg: 'a>(
 }
 
 fn rustc<'a, 'cfg>(
-    mut cx: &mut Context<'a, 'cfg>,
+    cx: &mut Context<'a, 'cfg>,
     unit: &Unit<'a>,
     exec: &Arc<Executor>,
 ) -> CargoResult<Work> {
     let mut rustc = prepare_rustc(cx, &unit.target.rustc_crate_types(), unit)?;
+    if cx.is_primary_package(unit) {
+        rustc.env("CARGO_PRIMARY_PACKAGE", "1");
+    }
     let build_plan = cx.bcx.build_config.build_plan;
 
     let name = unit.pkg.name().to_string();
     let buildkey = unit.buildkey();
 
-    // If this is an upstream dep we don't want warnings from, turn off all
-    // lints.
-    if !cx.bcx.show_warnings(unit.pkg.package_id()) {
-        rustc.arg("--cap-lints").arg("allow");
-
-    // If this is an upstream dep but we *do* want warnings, make sure that they
-    // don't fail compilation.
-    } else if !unit.pkg.package_id().source_id().is_path() {
-        rustc.arg("--cap-lints").arg("warn");
-    }
+    add_cap_lints(cx.bcx, unit, &mut rustc);
 
     let outputs = cx.outputs(unit)?;
     let root = cx.files().out_dir(unit);
@@ -197,12 +198,13 @@ fn rustc<'a, 'cfg>(
     } else {
         root.join(&cx.files().file_stem(unit))
     }.with_extension("d");
-    let dep_info_loc = fingerprint::dep_info_loc(&mut cx, unit);
+    let dep_info_loc = fingerprint::dep_info_loc(cx, unit);
 
     rustc.args(&cx.bcx.rustflags_args(unit)?);
     let json_messages = cx.bcx.build_config.json_messages();
     let package_id = unit.pkg.package_id().clone();
     let target = unit.target.clone();
+    let mode = unit.mode;
 
     exec.init(cx, unit);
     let exec = exec.clone();
@@ -255,6 +257,7 @@ fn rustc<'a, 'cfg>(
                 rustc,
                 &package_id,
                 &target,
+                mode,
                 &mut |line| {
                     if !line.is_empty() {
                         Err(internal(&format!(
@@ -284,11 +287,11 @@ fn rustc<'a, 'cfg>(
                     }
                     Ok(())
                 },
-            ).chain_err(|| format!("Could not compile `{}`.", name))?;
+            ).map_err(Internal::new).chain_err(|| format!("Could not compile `{}`.", name))?;
         } else if build_plan {
             state.build_plan(buildkey, rustc.clone(), outputs.clone());
         } else {
-            exec.exec(rustc, &package_id, &target)
+            exec.exec(rustc, &package_id, &target, mode)
                 .map_err(Internal::new)
                 .chain_err(|| format!("Could not compile `{}`.", name))?;
         }
@@ -563,7 +566,7 @@ fn prepare_rustc<'a, 'cfg>(
     crate_types: &[&str],
     unit: &Unit<'a>,
 ) -> CargoResult<ProcessBuilder> {
-    let mut base = cx.compilation.rustc_process(unit.pkg)?;
+    let mut base = cx.compilation.rustc_process(unit.pkg, unit.target)?;
     base.inherit_jobserver(&cx.jobserver);
     build_base_args(cx, &mut base, unit, crate_types)?;
     build_deps_args(&mut base, cx, unit)?;
@@ -572,10 +575,11 @@ fn prepare_rustc<'a, 'cfg>(
 
 fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult<Work> {
     let bcx = cx.bcx;
-    let mut rustdoc = cx.compilation.rustdoc_process(unit.pkg)?;
+    let mut rustdoc = cx.compilation.rustdoc_process(unit.pkg, unit.target)?;
     rustdoc.inherit_jobserver(&cx.jobserver);
     rustdoc.arg("--crate-name").arg(&unit.target.crate_name());
-    add_path_args(&cx.bcx, unit, &mut rustdoc);
+    add_path_args(bcx, unit, &mut rustdoc);
+    add_cap_lints(bcx, unit, &mut rustdoc);
 
     if unit.kind != Kind::Host {
         if let Some(ref target) = bcx.build_config.requested_target {
@@ -653,6 +657,19 @@ fn add_path_args(bcx: &BuildContext, unit: &Unit, cmd: &mut ProcessBuilder) {
     let (arg, cwd) = path_args(bcx, unit);
     cmd.arg(arg);
     cmd.cwd(cwd);
+}
+
+fn add_cap_lints(bcx: &BuildContext, unit: &Unit, cmd: &mut ProcessBuilder) {
+    // If this is an upstream dep we don't want warnings from, turn off all
+    // lints.
+    if !bcx.show_warnings(unit.pkg.package_id()) {
+        cmd.arg("--cap-lints").arg("allow");
+
+    // If this is an upstream dep but we *do* want warnings, make sure that they
+    // don't fail compilation.
+    } else if !unit.pkg.package_id().source_id().is_path() {
+        cmd.arg("--cap-lints").arg("warn");
+    }
 }
 
 fn build_base_args<'a, 'cfg>(
@@ -934,11 +951,11 @@ fn envify(s: &str) -> String {
 }
 
 impl Kind {
-    fn for_target(&self, target: &Target) -> Kind {
+    fn for_target(self, target: &Target) -> Kind {
         // Once we start compiling for the `Host` kind we continue doing so, but
         // if we are a `Target` kind and then we start compiling for a target
         // that needs to be on the host we lift ourselves up to `Host`
-        match *self {
+        match self {
             Kind::Host => Kind::Host,
             Kind::Target if target.for_host() => Kind::Host,
             Kind::Target => Kind::Target,

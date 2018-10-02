@@ -1,5 +1,7 @@
 use std::path::Path;
-use util::{CargoResult, CargoResultExt, Config};
+use std::cell::RefCell;
+
+use util::{CargoResult, CargoResultExt, Config, RustfixDiagnosticServer};
 
 /// Configuration information for a rustc build.
 #[derive(Debug)]
@@ -16,6 +18,13 @@ pub struct BuildConfig {
     pub message_format: MessageFormat,
     /// Output a build plan to stdout instead of actually compiling.
     pub build_plan: bool,
+    /// Use Cargo itself as the wrapper around rustc, only used for `cargo fix`
+    pub cargo_as_rustc_wrapper: bool,
+    /// Extra env vars to inject into rustc commands
+    pub extra_rustc_env: Vec<(String, String)>,
+    /// Extra args to inject into rustc commands
+    pub extra_rustc_args: Vec<String>,
+    pub rustfix_diagnostic_server: RefCell<Option<RustfixDiagnosticServer>>,
 }
 
 impl BuildConfig {
@@ -71,6 +80,10 @@ impl BuildConfig {
             mode,
             message_format: MessageFormat::Human,
             build_plan: false,
+            cargo_as_rustc_wrapper: false,
+            extra_rustc_env: Vec::new(),
+            extra_rustc_args: Vec::new(),
+            rustfix_diagnostic_server: RefCell::new(None),
         })
     }
 
@@ -121,8 +134,8 @@ pub enum CompileMode {
 
 impl CompileMode {
     /// Returns true if the unit is being checked.
-    pub fn is_check(&self) -> bool {
-        match *self {
+    pub fn is_check(self) -> bool {
+        match self {
             CompileMode::Check { .. } => true,
             _ => false,
         }
@@ -131,8 +144,8 @@ impl CompileMode {
     /// Returns true if this is a doc or doctest. Be careful using this.
     /// Although both run rustdoc, the dependencies for those two modes are
     /// very different.
-    pub fn is_doc(&self) -> bool {
-        match *self {
+    pub fn is_doc(self) -> bool {
+        match self {
             CompileMode::Doc { .. } | CompileMode::Doctest => true,
             _ => false,
         }
@@ -140,8 +153,8 @@ impl CompileMode {
 
     /// Returns true if this is any type of test (test, benchmark, doctest, or
     /// check-test).
-    pub fn is_any_test(&self) -> bool {
-        match *self {
+    pub fn is_any_test(self) -> bool {
+        match self {
             CompileMode::Test
             | CompileMode::Bench
             | CompileMode::Check { test: true }
@@ -151,8 +164,8 @@ impl CompileMode {
     }
 
     /// Returns true if this is the *execution* of a `build.rs` script.
-    pub fn is_run_custom_build(&self) -> bool {
-        *self == CompileMode::RunCustomBuild
+    pub fn is_run_custom_build(self) -> bool {
+        self == CompileMode::RunCustomBuild
     }
 
     /// List of all modes (currently used by `cargo clean -p` for computing

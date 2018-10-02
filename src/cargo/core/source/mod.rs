@@ -14,6 +14,11 @@ pub trait Source {
     /// Returns the `SourceId` corresponding to this source
     fn source_id(&self) -> &SourceId;
 
+    /// Returns the replaced `SourceId` corresponding to this source
+    fn replaced_source_id(&self) -> &SourceId {
+        self.source_id()
+    }
+
     /// Returns whether or not this source will return summaries with
     /// checksums listed.
     fn supports_checksums(&self) -> bool;
@@ -24,6 +29,12 @@ pub trait Source {
 
     /// Attempt to find the packages that match a dependency request.
     fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()>;
+
+    /// Attempt to find the packages that are close to a dependency request.
+    /// Each source gets to define what `close` means for it.
+    /// path/git sources may return all dependencies that are at that uri.
+    /// where as an Index source may return dependencies that have the same canonicalization.
+    fn fuzzy_query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()>;
 
     fn query_vec(&mut self, dep: &Dependency) -> CargoResult<Vec<Summary>> {
         let mut ret = Vec::new();
@@ -79,9 +90,19 @@ impl<'a, T: Source + ?Sized + 'a> Source for Box<T> {
         (**self).query(dep, f)
     }
 
+    /// Forwards to `Source::query`
+    fn fuzzy_query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
+        (**self).fuzzy_query(dep, f)
+    }
+
     /// Forwards to `Source::source_id`
     fn source_id(&self) -> &SourceId {
         (**self).source_id()
+    }
+
+    /// Forwards to `Source::replaced_source_id`
+    fn replaced_source_id(&self) -> &SourceId {
+        (**self).replaced_source_id()
     }
 
     /// Forwards to `Source::update`

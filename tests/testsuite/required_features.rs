@@ -1,11 +1,11 @@
-use cargotest::is_nightly;
-use cargotest::install::{cargo_home, has_installed_exe};
-use cargotest::support::{execs, project};
-use hamcrest::{assert_that, existing_file, is_not};
+use support::is_nightly;
+use support::install::{cargo_home, has_installed_exe};
+use support::{execs, project};
+use support::hamcrest::{assert_that, existing_file, is_not};
 
 #[test]
 fn build_bin_default_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -36,24 +36,18 @@ fn build_bin_default_features() {
             fn main() {}
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            #[cfg(feature = "a")]
-            pub fn foo() {}
-        "#,
-        )
+        .file("src/lib.rs", r#"#[cfg(feature = "a")] pub fn foo() {}"#)
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
     assert_that(
         p.cargo("build").arg("--no-default-features"),
-        execs().with_status(0),
+        execs(),
     );
 
-    assert_that(p.cargo("build").arg("--bin=foo"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--bin=foo"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
     assert_that(
@@ -71,7 +65,7 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
 #[test]
 fn build_bin_arg_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -93,14 +87,14 @@ fn build_bin_arg_features() {
 
     assert_that(
         p.cargo("build").arg("--features").arg("a"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.bin("foo"), existing_file());
 }
 
 #[test]
 fn build_bin_multiple_required_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -130,14 +124,14 @@ fn build_bin_multiple_required_features() {
         .file("src/foo_2.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     assert_that(&p.bin("foo_1"), is_not(existing_file()));
     assert_that(&p.bin("foo_2"), existing_file());
 
     assert_that(
         p.cargo("build").arg("--features").arg("c"),
-        execs().with_status(0),
+        execs(),
     );
 
     assert_that(&p.bin("foo_1"), existing_file());
@@ -145,13 +139,13 @@ fn build_bin_multiple_required_features() {
 
     assert_that(
         p.cargo("build").arg("--no-default-features"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn build_example_default_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -174,7 +168,7 @@ fn build_example_default_features() {
 
     assert_that(
         p.cargo("build").arg("--example=foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.bin("examples/foo"), existing_file());
 
@@ -193,7 +187,7 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
 #[test]
 fn build_example_arg_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -218,14 +212,14 @@ fn build_example_arg_features() {
             .arg("--example=foo")
             .arg("--features")
             .arg("a"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.bin("examples/foo"), existing_file());
 }
 
 #[test]
 fn build_example_multiple_required_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -264,7 +258,7 @@ Consider enabling them by passing e.g. `--features=\"b c\"`
     );
     assert_that(
         p.cargo("build").arg("--example=foo_2"),
-        execs().with_status(0),
+        execs(),
     );
 
     assert_that(&p.bin("examples/foo_1"), is_not(existing_file()));
@@ -275,14 +269,14 @@ Consider enabling them by passing e.g. `--features=\"b c\"`
             .arg("--example=foo_1")
             .arg("--features")
             .arg("c"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build")
             .arg("--example=foo_2")
             .arg("--features")
             .arg("c"),
-        execs().with_status(0),
+        execs(),
     );
 
     assert_that(&p.bin("examples/foo_1"), existing_file());
@@ -314,7 +308,7 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
 #[test]
 fn test_default_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -338,12 +332,11 @@ fn test_default_features() {
     assert_that(
         p.cargo("test"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test test ... ok"),
@@ -352,7 +345,6 @@ fn test_default_features() {
     assert_that(
         p.cargo("test").arg("--no-default-features"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]"
             ))
@@ -362,11 +354,10 @@ fn test_default_features() {
     assert_that(
         p.cargo("test").arg("--test=foo"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]"
+[RUNNING] target/debug/deps/foo-[..][EXE]"
             ))
             .with_stdout_contains("test test ... ok"),
     );
@@ -386,7 +377,7 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
 #[test]
 fn test_arg_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -409,12 +400,11 @@ fn test_arg_features() {
     assert_that(
         p.cargo("test").arg("--features").arg("a"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test test ... ok"),
@@ -423,7 +413,7 @@ fn test_arg_features() {
 
 #[test]
 fn test_multiple_required_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -454,12 +444,11 @@ fn test_multiple_required_features() {
     assert_that(
         p.cargo("test"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo_2-[..][EXE]",
+[RUNNING] target/debug/deps/foo_2-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test test ... ok"),
@@ -468,13 +457,12 @@ fn test_multiple_required_features() {
     assert_that(
         p.cargo("test").arg("--features").arg("c"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo_1-[..][EXE]
-[RUNNING] target[/]debug[/]deps[/]foo_2-[..][EXE]",
+[RUNNING] target/debug/deps/foo_1-[..][EXE]
+[RUNNING] target/debug/deps/foo_2-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains_n("test test ... ok", 2),
@@ -483,7 +471,6 @@ fn test_multiple_required_features() {
     assert_that(
         p.cargo("test").arg("--no-default-features"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]"
             ))
@@ -497,7 +484,7 @@ fn bench_default_features() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -530,12 +517,11 @@ fn bench_default_features() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test bench ... bench: [..]"),
@@ -544,7 +530,6 @@ fn bench_default_features() {
     assert_that(
         p.cargo("bench").arg("--no-default-features"),
         execs()
-            .with_status(0)
             .with_stderr(format!("[FINISHED] release [optimized] target(s) in [..]"))
             .with_stdout(""),
     );
@@ -552,11 +537,10 @@ fn bench_default_features() {
     assert_that(
         p.cargo("bench").arg("--bench=foo"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]"
+[RUNNING] target/release/deps/foo-[..][EXE]"
             ))
             .with_stdout_contains("test bench ... bench: [..]"),
     );
@@ -580,7 +564,7 @@ fn bench_arg_features() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -612,12 +596,11 @@ fn bench_arg_features() {
     assert_that(
         p.cargo("bench").arg("--features").arg("a"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test bench ... bench: [..]"),
@@ -630,7 +613,7 @@ fn bench_multiple_required_features() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -679,12 +662,11 @@ fn bench_multiple_required_features() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo_2-[..][EXE]",
+[RUNNING] target/release/deps/foo_2-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test bench ... bench: [..]"),
@@ -693,13 +675,12 @@ fn bench_multiple_required_features() {
     assert_that(
         p.cargo("bench").arg("--features").arg("c"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo_1-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]foo_2-[..][EXE]",
+[RUNNING] target/release/deps/foo_1-[..][EXE]
+[RUNNING] target/release/deps/foo_2-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains_n("test bench ... bench: [..]", 2),
@@ -708,7 +689,6 @@ fn bench_multiple_required_features() {
     assert_that(
         p.cargo("bench").arg("--no-default-features"),
         execs()
-            .with_status(0)
             .with_stderr(format!("[FINISHED] release [optimized] target(s) in [..]"))
             .with_stdout(""),
     );
@@ -716,7 +696,7 @@ fn bench_multiple_required_features() {
 
 #[test]
 fn install_default_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -742,9 +722,9 @@ fn install_default_features() {
         .file("examples/foo.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("install --path ."), execs().with_status(0));
+    assert_that(p.cargo("install --path ."), execs());
     assert_that(cargo_home(), has_installed_exe("foo"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 
     assert_that(
         p.cargo("install --path .").arg("--no-default-features"),
@@ -760,10 +740,10 @@ fn install_default_features() {
 
     assert_that(
         p.cargo("install --path .").arg("--bin=foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(cargo_home(), has_installed_exe("foo"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 
     assert_that(
         p.cargo("install --path .")
@@ -785,10 +765,10 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
     assert_that(
         p.cargo("install --path .").arg("--example=foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(cargo_home(), has_installed_exe("foo"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 
     assert_that(
         p.cargo("install --path .")
@@ -811,7 +791,7 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
 #[test]
 fn install_arg_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -833,15 +813,15 @@ fn install_arg_features() {
 
     assert_that(
         p.cargo("install").arg("--features").arg("a"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(cargo_home(), has_installed_exe("foo"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 }
 
 #[test]
 fn install_multiple_required_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -871,18 +851,18 @@ fn install_multiple_required_features() {
         .file("src/foo_2.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("install --path ."), execs().with_status(0));
+    assert_that(p.cargo("install --path ."), execs());
     assert_that(cargo_home(), is_not(has_installed_exe("foo_1")));
     assert_that(cargo_home(), has_installed_exe("foo_2"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 
     assert_that(
         p.cargo("install --path .").arg("--features").arg("c"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(cargo_home(), has_installed_exe("foo_1"));
     assert_that(cargo_home(), has_installed_exe("foo_2"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 
     assert_that(
         p.cargo("install --path .").arg("--no-default-features"),
@@ -900,7 +880,7 @@ fn install_multiple_required_features() {
 
 #[test]
 fn dep_feature_in_toml() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -957,16 +937,16 @@ fn dep_feature_in_toml() {
         .file("bar/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     // bin
-    assert_that(p.cargo("build").arg("--bin=foo"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--bin=foo"), execs());
     assert_that(&p.bin("foo"), existing_file());
 
     // example
     assert_that(
         p.cargo("build").arg("--example=foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.bin("examples/foo"), existing_file());
 
@@ -974,12 +954,11 @@ fn dep_feature_in_toml() {
     assert_that(
         p.cargo("test").arg("--test=foo"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test test ... ok"),
@@ -990,13 +969,12 @@ fn dep_feature_in_toml() {
         assert_that(
             p.cargo("bench").arg("--bench=foo"),
             execs()
-                .with_status(0)
                 .with_stderr(format!(
                     "\
 [COMPILING] bar v0.0.1 ({0}/bar)
 [COMPILING] foo v0.0.1 ({0})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                     p.url()
                 ))
                 .with_stdout_contains("test bench ... bench: [..]"),
@@ -1004,14 +982,14 @@ fn dep_feature_in_toml() {
     }
 
     // install
-    assert_that(p.cargo("install"), execs().with_status(0));
+    assert_that(p.cargo("install"), execs());
     assert_that(cargo_home(), has_installed_exe("foo"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 }
 
 #[test]
 fn dep_feature_in_cmd_line() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1068,7 +1046,7 @@ fn dep_feature_in_cmd_line() {
         .file("bar/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     // bin
     assert_that(
@@ -1086,7 +1064,7 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
             .arg("--bin=foo")
             .arg("--features")
             .arg("bar/a"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.bin("foo"), existing_file());
 
@@ -1106,7 +1084,7 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
             .arg("--example=foo")
             .arg("--features")
             .arg("bar/a"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.bin("examples/foo"), existing_file());
 
@@ -1114,7 +1092,6 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
     assert_that(
         p.cargo("test"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]"
             ))
@@ -1127,12 +1104,11 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
             .arg("--features")
             .arg("bar/a"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test test ... ok"),
@@ -1143,7 +1119,6 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
         assert_that(
             p.cargo("bench"),
             execs()
-                .with_status(0)
                 .with_stderr(format!("[FINISHED] release [optimized] target(s) in [..]"))
                 .with_stdout(""),
         );
@@ -1154,13 +1129,12 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
                 .arg("--features")
                 .arg("bar/a"),
             execs()
-                .with_status(0)
                 .with_stderr(format!(
                     "\
 [COMPILING] bar v0.0.1 ({0}/bar)
 [COMPILING] foo v0.0.1 ({0})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                     p.url()
                 ))
                 .with_stdout_contains("test bench ... bench: [..]"),
@@ -1182,15 +1156,15 @@ Consider enabling them by passing e.g. `--features=\"bar/a\"`
 
     assert_that(
         p.cargo("install").arg("--features").arg("bar/a"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(cargo_home(), has_installed_exe("foo"));
-    assert_that(p.cargo("uninstall").arg("foo"), execs().with_status(0));
+    assert_that(p.cargo("uninstall").arg("foo"), execs());
 }
 
 #[test]
 fn test_skips_compiling_bin_with_missing_required_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1216,12 +1190,11 @@ fn test_skips_compiling_bin_with_missing_required_features() {
     assert_that(
         p.cargo("test"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/debug/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("running 0 tests"),
@@ -1245,12 +1218,11 @@ error[E0463]: can't find crate for `bar`",
         assert_that(
             p.cargo("bench"),
             execs()
-                .with_status(0)
                 .with_stderr(format!(
                     "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                     p.url()
                 ))
                 .with_stdout_contains("running 0 tests"),
@@ -1274,7 +1246,7 @@ error[E0463]: can't find crate for `bar`",
 
 #[test]
 fn run_default() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1308,13 +1280,13 @@ Consider enabling them by passing e.g. `--features=\"a\"`
 
     assert_that(
         p.cargo("run").arg("--features").arg("a"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn run_default_multiple_required_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"

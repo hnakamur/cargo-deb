@@ -1,12 +1,12 @@
 use std::env;
 
-use cargotest::is_nightly;
-use cargotest::support::{execs, project};
-use hamcrest::assert_that;
+use support::is_nightly;
+use support::{execs, project};
+use support::hamcrest::assert_that;
 
 #[test]
 fn profile_overrides() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -26,17 +26,17 @@ fn profile_overrides() {
         .build();
     assert_that(
         p.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+[RUNNING] `rustc --crate-name test src/lib.rs --crate-type lib \
         --emit=dep-info,link \
         -C opt-level=1 \
         -C debug-assertions=on \
         -C metadata=[..] \
         -C rpath \
         --out-dir [..] \
-        -L dependency={dir}[/]target[/]debug[/]deps`
+        -L dependency={dir}/target/debug/deps`
 [FINISHED] dev [optimized] target(s) in [..]
 ",
             dir = p.root().display(),
@@ -47,7 +47,7 @@ fn profile_overrides() {
 
 #[test]
 fn opt_level_override_0() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -65,15 +65,15 @@ fn opt_level_override_0() {
         .build();
     assert_that(
         p.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+[RUNNING] `rustc --crate-name test src/lib.rs --crate-type lib \
         --emit=dep-info,link \
         -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir [..] \
-        -L dependency={dir}[/]target[/]debug[/]deps`
+        -L dependency={dir}/target/debug/deps`
 [FINISHED] [..] target(s) in [..]
 ",
             dir = p.root().display(),
@@ -84,7 +84,7 @@ fn opt_level_override_0() {
 
 #[test]
 fn debug_override_1() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -101,15 +101,15 @@ fn debug_override_1() {
         .build();
     assert_that(
         p.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+[RUNNING] `rustc --crate-name test src/lib.rs --crate-type lib \
         --emit=dep-info,link \
         -C debuginfo=1 \
         -C metadata=[..] \
         --out-dir [..] \
-        -L dependency={dir}[/]target[/]debug[/]deps`
+        -L dependency={dir}/target/debug/deps`
 [FINISHED] [..] target(s) in [..]
 ",
             dir = p.root().display(),
@@ -119,7 +119,7 @@ fn debug_override_1() {
 }
 
 fn check_opt_level_override(profile_level: &str, rustc_level: &str) {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -140,17 +140,17 @@ fn check_opt_level_override(profile_level: &str, rustc_level: &str) {
         .build();
     assert_that(
         p.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+[RUNNING] `rustc --crate-name test src/lib.rs --crate-type lib \
         --emit=dep-info,link \
         -C opt-level={level} \
         -C debuginfo=2 \
         -C debug-assertions=on \
         -C metadata=[..] \
         --out-dir [..] \
-        -L dependency={dir}[/]target[/]debug[/]deps`
+        -L dependency={dir}/target/debug/deps`
 [FINISHED] [..] target(s) in [..]
 ",
             dir = p.root().display(),
@@ -179,7 +179,7 @@ fn opt_level_overrides() {
 
 #[test]
 fn top_level_overrides_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -220,29 +220,29 @@ fn top_level_overrides_deps() {
         .build();
     assert_that(
         p.cargo("build").arg("-v").arg("--release"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] foo v0.0.0 ({url}/foo)
-[RUNNING] `rustc --crate-name foo foo[/]src[/]lib.rs \
+[RUNNING] `rustc --crate-name foo foo/src/lib.rs \
         --crate-type dylib --crate-type rlib \
         --emit=dep-info,link \
         -C prefer-dynamic \
         -C opt-level=1 \
         -C debuginfo=2 \
         -C metadata=[..] \
-        --out-dir {dir}[/]target[/]release[/]deps \
-        -L dependency={dir}[/]target[/]release[/]deps`
+        --out-dir {dir}/target/release/deps \
+        -L dependency={dir}/target/release/deps`
 [COMPILING] test v0.0.0 ({url})
-[RUNNING] `rustc --crate-name test src[/]lib.rs --crate-type lib \
+[RUNNING] `rustc --crate-name test src/lib.rs --crate-type lib \
         --emit=dep-info,link \
         -C opt-level=1 \
         -C debuginfo=2 \
         -C metadata=[..] \
         --out-dir [..] \
-        -L dependency={dir}[/]target[/]release[/]deps \
-        --extern foo={dir}[/]target[/]release[/]deps[/]\
+        -L dependency={dir}/target/release/deps \
+        --extern foo={dir}/target/release/deps/\
                      {prefix}foo[..]{suffix} \
-        --extern foo={dir}[/]target[/]release[/]deps[/]libfoo.rlib`
+        --extern foo={dir}/target/release/deps/libfoo.rlib`
 [FINISHED] release [optimized + debuginfo] target(s) in [..]
 ",
             dir = p.root().display(),
@@ -255,7 +255,7 @@ fn top_level_overrides_deps() {
 
 #[test]
 fn profile_in_non_root_manifest_triggers_a_warning() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -290,7 +290,7 @@ fn profile_in_non_root_manifest_triggers_a_warning() {
 
     assert_that(
         p.cargo("build").cwd(p.root().join("bar")).arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [WARNING] profiles for the non root package will be ignored, specify profiles at the workspace root:
 package:   [..]
@@ -304,7 +304,7 @@ workspace: [..]
 
 #[test]
 fn profile_in_virtual_manifest_works() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -332,7 +332,7 @@ fn profile_in_virtual_manifest_works() {
 
     assert_that(
         p.cargo("build").cwd(p.root().join("bar")).arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] bar v0.1.0 ([..])
 [RUNNING] `rustc [..]`
@@ -343,7 +343,7 @@ fn profile_in_virtual_manifest_works() {
 
 #[test]
 fn profile_panic_test_bench() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -363,7 +363,7 @@ fn profile_panic_test_bench() {
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr_contains(
+        execs().with_stderr_contains(
             "\
 [WARNING] `panic` setting is ignored for `test` profile
 [WARNING] `panic` setting is ignored for `bench` profile
@@ -374,7 +374,7 @@ fn profile_panic_test_bench() {
 
 #[test]
 fn profile_doc_deprecated() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -392,7 +392,6 @@ fn profile_doc_deprecated() {
     assert_that(
         p.cargo("build"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[WARNING] profile `doc` is deprecated and has no effect"),
     );
 }

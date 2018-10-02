@@ -1,10 +1,10 @@
 use std::str;
 
 use cargo::util::process;
-use cargotest::{is_nightly, ChannelChanger};
-use cargotest::support::paths::CargoPathExt;
-use cargotest::support::{basic_bin_manifest, basic_lib_manifest, execs, project};
-use hamcrest::{assert_that, existing_file};
+use support::{is_nightly, ChannelChanger};
+use support::paths::CargoPathExt;
+use support::{basic_manifest, basic_bin_manifest, basic_lib_manifest, execs, project};
+use support::hamcrest::{assert_that, existing_file};
 
 #[test]
 fn cargo_bench_simple() {
@@ -12,7 +12,7 @@ fn cargo_bench_simple() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file(
             "src/main.rs",
@@ -48,7 +48,7 @@ fn cargo_bench_simple() {
                 "\
 [COMPILING] foo v0.5.0 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test bench_hello ... bench: [..]"),
@@ -61,16 +61,7 @@ fn bench_bench_implicit() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             r#"
@@ -99,13 +90,12 @@ fn bench_bench_implicit() {
     assert_that(
         p.cargo("bench").arg("--benches"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]mybench-[..][EXE]
+[RUNNING] target/release/deps/foo-[..][EXE]
+[RUNNING] target/release/deps/mybench-[..][EXE]
 ",
                 dir = p.url()
             ))
@@ -119,16 +109,7 @@ fn bench_bin_implicit() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             r#"
@@ -157,12 +138,11 @@ fn bench_bin_implicit() {
     assert_that(
         p.cargo("bench").arg("--bins"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
+[RUNNING] target/release/deps/foo-[..][EXE]
 ",
                 dir = p.url()
             ))
@@ -176,16 +156,7 @@ fn bench_tarname() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "benches/bin1.rs",
             r#"
@@ -205,12 +176,11 @@ fn bench_tarname() {
     assert_that(
         p.cargo("bench").arg("--bench").arg("bin2"),
         execs()
-            .with_status(0)
             .with_stderr(format!(
                 "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]bin2-[..][EXE]
+[RUNNING] target/release/deps/bin2-[..][EXE]
 ",
                 dir = p.url()
             ))
@@ -224,16 +194,7 @@ fn bench_multiple_targets() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "benches/bin1.rs",
             r#"
@@ -264,7 +225,6 @@ fn bench_multiple_targets() {
             .arg("--bench")
             .arg("bin2"),
         execs()
-            .with_status(0)
             .with_stdout_contains("test run1 ... bench: [..]")
             .with_stdout_contains("test run2 ... bench: [..]")
             .with_stdout_does_not_contain("[..]run3[..]"),
@@ -277,7 +237,7 @@ fn cargo_bench_verbose() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file(
             "src/main.rs",
@@ -297,9 +257,9 @@ fn cargo_bench_verbose() {
             .with_stderr(&format!(
                 "\
 [COMPILING] foo v0.5.0 ({url})
-[RUNNING] `rustc [..] src[/]main.rs [..]`
+[RUNNING] `rustc [..] src/main.rs [..]`
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] `[..]target[/]release[/]deps[/]foo-[..][EXE] hello --bench`",
+[RUNNING] `[..]target/release/deps/foo-[..][EXE] hello --bench`",
                 url = p.url()
             ))
             .with_stdout_contains("test bench_hello ... bench: [..]"),
@@ -312,16 +272,7 @@ fn many_similar_names() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             "
@@ -380,7 +331,7 @@ fn cargo_bench_failing_test() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file(
             "src/main.rs",
@@ -417,7 +368,7 @@ fn cargo_bench_failing_test() {
                 "\
 [COMPILING] foo v0.5.0 ({})[..]
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_either_contains(
@@ -425,7 +376,7 @@ fn cargo_bench_failing_test() {
             )
             .with_either_contains("[..]left: `\"hello\"`[..]")
             .with_either_contains("[..]right: `\"nope\"`[..]")
-            .with_either_contains("[..]src[/]main.rs:15[..]")
+            .with_either_contains("[..]src/main.rs:15[..]")
             .with_status(101),
     );
 }
@@ -436,7 +387,7 @@ fn bench_with_lib_dep() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -492,8 +443,8 @@ fn bench_with_lib_dep() {
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]baz-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]
+[RUNNING] target/release/deps/baz-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test lib_bench ... bench: [..]")
@@ -507,7 +458,7 @@ fn bench_with_deep_lib_dep() {
         return;
     }
 
-    let p = project("bar")
+    let p = project().at("bar")
         .file(
             "Cargo.toml",
             r#"
@@ -535,16 +486,7 @@ fn bench_with_deep_lib_dep() {
         ",
         )
         .build();
-    let _p2 = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let _p2 = project()
         .file(
             "src/lib.rs",
             "
@@ -563,13 +505,12 @@ fn bench_with_deep_lib_dep() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] foo v0.0.1 ([..])
 [COMPILING] bar v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]bar-[..][EXE]",
+[RUNNING] target/release/deps/bar-[..][EXE]",
                 dir = p.url()
             ))
             .with_stdout_contains("test bar_bench ... bench: [..]"),
@@ -582,7 +523,7 @@ fn external_bench_explicit() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -629,8 +570,8 @@ fn external_bench_explicit() {
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]bench-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]
+[RUNNING] target/release/deps/bench-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test internal_bench ... bench: [..]")
@@ -644,16 +585,7 @@ fn external_bench_implicit() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             r#"
@@ -688,8 +620,8 @@ fn external_bench_implicit() {
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]external-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]
+[RUNNING] target/release/deps/external-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains("test internal_bench ... bench: [..]")
@@ -703,7 +635,7 @@ fn bench_autodiscover_2015() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -770,7 +702,7 @@ For more information on this warning you can consult
 https://github.com/rust-lang/cargo/issues/5330
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
+[RUNNING] target/release/deps/foo-[..][EXE]
 ",
             p.url()
         )),
@@ -783,25 +715,14 @@ fn dont_run_examples() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", r"")
         .file(
             "examples/dont-run-me-i-will-fail.rs",
-            r#"
-            fn main() { panic!("Examples should not be run by 'cargo test'"); }
-        "#,
+            r#"fn main() { panic!("Examples should not be run by 'cargo test'"); }"#,
         )
         .build();
-    assert_that(p.cargo("bench"), execs().with_status(0));
+    assert_that(p.cargo("bench"), execs());
 }
 
 #[test]
@@ -810,16 +731,7 @@ fn pass_through_command_line() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             "
@@ -836,12 +748,11 @@ fn pass_through_command_line() {
     assert_that(
         p.cargo("bench").arg("bar"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 dir = p.url()
             ))
             .with_stdout_contains("test bar ... bench: [..]"),
@@ -850,10 +761,9 @@ fn pass_through_command_line() {
     assert_that(
         p.cargo("bench").arg("foo"),
         execs()
-            .with_status(0)
             .with_stderr(
                 "[FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
             )
             .with_stdout_contains("test foo ... bench: [..]"),
     );
@@ -867,10 +777,10 @@ fn cargo_bench_twice() {
         return;
     }
 
-    let p = project("test_twice")
-        .file("Cargo.toml", &basic_lib_manifest("test_twice"))
+    let p = project()
+        .file("Cargo.toml", &basic_lib_manifest("foo"))
         .file(
-            "src/test_twice.rs",
+            "src/foo.rs",
             r#"
             #![crate_type = "rlib"]
             #![feature(test)]
@@ -886,7 +796,7 @@ fn cargo_bench_twice() {
     p.cargo("build");
 
     for _ in 0..2 {
-        assert_that(p.cargo("bench"), execs().with_status(0));
+        assert_that(p.cargo("bench"), execs());
     }
 }
 
@@ -896,7 +806,7 @@ fn lib_bin_same_name() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -942,8 +852,8 @@ fn lib_bin_same_name() {
                 "\
 [COMPILING] foo v0.0.1 ({})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 p.url()
             ))
             .with_stdout_contains_n("test [..] ... bench: [..]", 2),
@@ -956,16 +866,8 @@ fn lib_with_standard_name() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "syntax"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
+        .file("Cargo.toml", &basic_manifest("syntax", "0.0.1"))
         .file(
             "src/lib.rs",
             "
@@ -998,13 +900,12 @@ fn lib_with_standard_name() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] syntax v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]syntax-[..][EXE]
-[RUNNING] target[/]release[/]deps[/]bench-[..][EXE]",
+[RUNNING] target/release/deps/syntax-[..][EXE]
+[RUNNING] target/release/deps/bench-[..][EXE]",
                 dir = p.url()
             ))
             .with_stdout_contains("test foo_bench ... bench: [..]")
@@ -1018,7 +919,7 @@ fn lib_with_standard_name2() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1033,12 +934,7 @@ fn lib_with_standard_name2() {
             doctest = false
         "#,
         )
-        .file(
-            "src/lib.rs",
-            "
-            pub fn foo() {}
-        ",
-        )
+        .file("src/lib.rs", "pub fn foo() {}")
         .file(
             "src/main.rs",
             "
@@ -1059,12 +955,11 @@ fn lib_with_standard_name2() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] syntax v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]syntax-[..][EXE]",
+[RUNNING] target/release/deps/syntax-[..][EXE]",
                 dir = p.url()
             ))
             .with_stdout_contains("test bench ... bench: [..]"),
@@ -1077,7 +972,7 @@ fn bench_dylib() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1132,18 +1027,12 @@ fn bench_dylib() {
             crate_type = ["dylib"]
         "#,
         )
-        .file(
-            "bar/src/lib.rs",
-            "
-             pub fn baz() {}
-        ",
-        )
+        .file("bar/src/lib.rs", "pub fn baz() {}")
         .build();
 
     assert_that(
         p.cargo("bench").arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] bar v0.0.1 ({dir}/bar)
@@ -1153,8 +1042,8 @@ fn bench_dylib() {
 [RUNNING] [..] -C opt-level=3 [..]
 [RUNNING] [..] -C opt-level=3 [..]
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] `[..]target[/]release[/]deps[/]foo-[..][EXE] --bench`
-[RUNNING] `[..]target[/]release[/]deps[/]bench-[..][EXE] --bench`",
+[RUNNING] `[..]target/release/deps/foo-[..][EXE] --bench`
+[RUNNING] `[..]target/release/deps/bench-[..][EXE] --bench`",
                 dir = p.url()
             ))
             .with_stdout_contains_n("test foo ... bench: [..]", 2),
@@ -1164,14 +1053,13 @@ fn bench_dylib() {
     assert_that(
         p.cargo("bench").arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [FRESH] bar v0.0.1 ({dir}/bar)
 [FRESH] foo v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] `[..]target[/]release[/]deps[/]foo-[..][EXE] --bench`
-[RUNNING] `[..]target[/]release[/]deps[/]bench-[..][EXE] --bench`",
+[RUNNING] `[..]target/release/deps/foo-[..][EXE] --bench`
+[RUNNING] `[..]target/release/deps/bench-[..][EXE] --bench`",
                 dir = p.url()
             ))
             .with_stdout_contains_n("test foo ... bench: [..]", 2),
@@ -1184,7 +1072,7 @@ fn bench_twice_with_build_cmd() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1211,12 +1099,11 @@ fn bench_twice_with_build_cmd() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
                 dir = p.url()
             ))
             .with_stdout_contains("test foo ... bench: [..]"),
@@ -1225,10 +1112,9 @@ fn bench_twice_with_build_cmd() {
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
             .with_stderr(
                 "[FINISHED] release [optimized] target(s) in [..]
-[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]",
+[RUNNING] target/release/deps/foo-[..][EXE]",
             )
             .with_stdout_contains("test foo ... bench: [..]"),
     );
@@ -1240,12 +1126,12 @@ fn bench_with_examples() {
         return;
     }
 
-    let p = project("testbench")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "testbench"
+            name = "foo"
             version = "6.6.6"
             authors = []
 
@@ -1281,25 +1167,25 @@ fn bench_with_examples() {
             "benches/testb1.rs",
             "
             #![feature(test)]
-            extern crate testbench;
+            extern crate foo;
             extern crate test;
 
             use test::Bencher;
 
             #[bench]
             fn bench_bench2(_b: &mut Bencher) {
-                testbench::f2();
+                foo::f2();
             }
         ",
         )
         .file(
             "examples/teste1.rs",
             r#"
-            extern crate testbench;
+            extern crate foo;
 
             fn main() {
                 println!("example1");
-                testbench::f1();
+                foo::f1();
             }
         "#,
         )
@@ -1308,16 +1194,15 @@ fn bench_with_examples() {
     assert_that(
         p.cargo("bench").arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr(&format!(
                 "\
-[COMPILING] testbench v6.6.6 ({url})
+[COMPILING] foo v6.6.6 ({url})
 [RUNNING] `rustc [..]`
 [RUNNING] `rustc [..]`
 [RUNNING] `rustc [..]`
 [FINISHED] release [optimized] target(s) in [..]
-[RUNNING] `{dir}[/]target[/]release[/]deps[/]testbench-[..][EXE] --bench`
-[RUNNING] `{dir}[/]target[/]release[/]deps[/]testb1-[..][EXE] --bench`",
+[RUNNING] `{dir}/target/release/deps/foo-[..][EXE] --bench`
+[RUNNING] `{dir}/target/release/deps/testb1-[..][EXE] --bench`",
                 dir = p.root().display(),
                 url = p.url()
             ))
@@ -1332,7 +1217,7 @@ fn test_a_bench() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1352,24 +1237,17 @@ fn test_a_bench() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "benches/b.rs",
-            r#"
-            #[test]
-            fn foo() {}
-        "#,
-        )
+        .file("benches/b.rs", "#[test] fn foo() {}")
         .build();
 
     assert_that(
         p.cargo("test"),
         execs()
-            .with_status(0)
             .with_stderr(
                 "\
 [COMPILING] foo v0.1.0 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
-[RUNNING] target[/]debug[/]deps[/]b-[..][EXE]",
+[RUNNING] target/debug/deps/b-[..][EXE]",
             )
             .with_stdout_contains("test foo ... ok"),
     );
@@ -1381,16 +1259,7 @@ fn test_bench_no_run() {
         return;
     }
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            authors = []
-            version = "0.1.0"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file(
             "benches/bbaz.rs",
@@ -1409,9 +1278,9 @@ fn test_bench_no_run() {
 
     assert_that(
         p.cargo("bench").arg("--no-run"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
-[COMPILING] foo v0.1.0 ([..])
+[COMPILING] foo v0.0.1 ([..])
 [FINISHED] release [optimized] target(s) in [..]
 ",
         ),
@@ -1424,7 +1293,7 @@ fn test_bench_no_fail_fast() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file(
             "src/foo.rs",
@@ -1459,9 +1328,9 @@ fn test_bench_no_fail_fast() {
             .arg("--test-threads=1"),
         execs()
             .with_status(101)
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
+            .with_stderr_contains("[RUNNING] target/release/deps/foo-[..][EXE]")
             .with_stdout_contains("running 2 tests")
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
+            .with_stderr_contains("[RUNNING] target/release/deps/foo-[..][EXE]")
             .with_stdout_contains("test bench_hello [..]")
             .with_stdout_contains("test bench_nope [..]"),
     );
@@ -1473,7 +1342,7 @@ fn test_bench_multiple_packages() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1492,7 +1361,7 @@ fn test_bench_multiple_packages() {
         .file("src/lib.rs", "")
         .build();
 
-    let _bar = project("bar")
+    let _bar = project().at("bar")
         .file(
             "Cargo.toml",
             r#"
@@ -1521,7 +1390,7 @@ fn test_bench_multiple_packages() {
         )
         .build();
 
-    let _baz = project("baz")
+    let _baz = project().at("baz")
         .file(
             "Cargo.toml",
             r#"
@@ -1553,10 +1422,9 @@ fn test_bench_multiple_packages() {
     assert_that(
         p.cargo("bench").arg("-p").arg("bar").arg("-p").arg("baz"),
         execs()
-            .with_status(0)
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]bbaz-[..][EXE]")
+            .with_stderr_contains("[RUNNING] target/release/deps/bbaz-[..][EXE]")
             .with_stdout_contains("test bench_baz ... bench: [..]")
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]bbar-[..][EXE]")
+            .with_stderr_contains("[RUNNING] target/release/deps/bbar-[..][EXE]")
             .with_stdout_contains("test bench_bar ... bench: [..]"),
     );
 }
@@ -1567,7 +1435,7 @@ fn bench_all_workspace() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1581,12 +1449,7 @@ fn bench_all_workspace() {
             [workspace]
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {}
-        "#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             "benches/foo.rs",
             r#"
@@ -1599,20 +1462,8 @@ fn bench_all_workspace() {
             fn bench_foo(_: &mut Bencher) -> () { () }
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .file(
             "bar/benches/bar.rs",
             r#"
@@ -1630,10 +1481,9 @@ fn bench_all_workspace() {
     assert_that(
         p.cargo("bench").arg("--all"),
         execs()
-            .with_status(0)
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]bar-[..][EXE]")
+            .with_stderr_contains("[RUNNING] target/release/deps/bar-[..][EXE]")
             .with_stdout_contains("test bench_bar ... bench: [..]")
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
+            .with_stderr_contains("[RUNNING] target/release/deps/foo-[..][EXE]")
             .with_stdout_contains("test bench_foo ... bench: [..]"),
     );
 }
@@ -1644,7 +1494,7 @@ fn bench_all_exclude() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1656,20 +1506,8 @@ fn bench_all_exclude() {
             members = ["bar", "baz"]
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
+        .file("src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
         .file(
             "bar/src/lib.rs",
             r#"
@@ -1683,28 +1521,13 @@ fn bench_all_exclude() {
             }
         "#,
         )
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [project]
-            name = "baz"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "baz/src/lib.rs",
-            r#"
-            #[test]
-            pub fn baz() {
-                break_the_build();
-            }
-        "#,
-        )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.1.0"))
+        .file("baz/src/lib.rs", "#[test] pub fn baz() { break_the_build(); }")
         .build();
 
     assert_that(
         p.cargo("bench").arg("--all").arg("--exclude").arg("baz"),
-        execs().with_status(0).with_stdout_contains(
+        execs().with_stdout_contains(
             "\
 running 1 test
 test bar ... bench:           [..] ns/iter (+/- [..])",
@@ -1718,54 +1541,16 @@ fn bench_all_virtual_manifest() {
         return;
     }
 
-    let p = project("workspace")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [workspace]
-            members = ["foo", "bar"]
+            members = ["bar", "baz"]
         "#,
         )
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "foo/src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "foo/benches/foo.rs",
-            r#"
-            #![feature(test)]
-            extern crate test;
-
-            use test::Bencher;
-
-            #[bench]
-            fn bench_foo(_: &mut Bencher) -> () { () }
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .file(
             "bar/benches/bar.rs",
             r#"
@@ -1778,17 +1563,30 @@ fn bench_all_virtual_manifest() {
             fn bench_bar(_: &mut Bencher) -> () { () }
         "#,
         )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.1.0"))
+        .file("baz/src/lib.rs", "pub fn baz() {}")
+        .file(
+            "baz/benches/baz.rs",
+            r#"
+            #![feature(test)]
+            extern crate test;
+
+            use test::Bencher;
+
+            #[bench]
+            fn bench_baz(_: &mut Bencher) -> () { () }
+        "#,
+        )
         .build();
 
-    // The order in which foo and bar are built is not guaranteed
+    // The order in which bar and baz are built is not guaranteed
     assert_that(
         p.cargo("bench").arg("--all"),
         execs()
-            .with_status(0)
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]bar-[..][EXE]")
-            .with_stdout_contains("test bench_bar ... bench: [..]")
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
-            .with_stdout_contains("test bench_foo ... bench: [..]"),
+            .with_stderr_contains("[RUNNING] target/release/deps/baz-[..][EXE]")
+            .with_stdout_contains("test bench_baz ... bench: [..]")
+            .with_stderr_contains("[RUNNING] target/release/deps/bar-[..][EXE]")
+            .with_stdout_contains("test bench_bar ... bench: [..]"),
     );
 }
 
@@ -1799,7 +1597,7 @@ fn legacy_bench_name() {
         return;
     }
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1811,12 +1609,7 @@ fn legacy_bench_name() {
             name = "bench"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
+        .file("src/lib.rs", "pub fn foo() {}")
         .file(
             "src/bench.rs",
             r#"
@@ -1833,9 +1626,9 @@ fn legacy_bench_name() {
 
     assert_that(
         p.cargo("bench"),
-        execs().with_status(0).with_stderr_contains(
+        execs().with_stderr_contains(
             "\
-[WARNING] path `[..]src[/]bench.rs` was erroneously implicitly accepted for benchmark `bench`,
+[WARNING] path `[..]src/bench.rs` was erroneously implicitly accepted for benchmark `bench`,
 please set bench.path in Cargo.toml",
         ),
     );
@@ -1847,52 +1640,16 @@ fn bench_virtual_manifest_all_implied() {
         return;
     }
 
-    let p = project("workspace")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [workspace]
-            members = ["foo", "bar"]
+            members = ["bar", "baz"]
         "#,
         )
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "foo/src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "foo/benches/foo.rs",
-            r#"
-            #![feature(test)]
-            extern crate test;
-            use test::Bencher;
-            #[bench]
-            fn bench_foo(_: &mut Bencher) -> () { () }
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
+        .file("bar/src/lib.rs", "pub fn foo() {}")
         .file(
             "bar/benches/bar.rs",
             r#"
@@ -1903,17 +1660,28 @@ fn bench_virtual_manifest_all_implied() {
             fn bench_bar(_: &mut Bencher) -> () { () }
         "#,
         )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.1.0"))
+        .file("baz/src/lib.rs", "pub fn baz() {}")
+        .file(
+            "baz/benches/baz.rs",
+            r#"
+            #![feature(test)]
+            extern crate test;
+            use test::Bencher;
+            #[bench]
+            fn bench_baz(_: &mut Bencher) -> () { () }
+        "#,
+        )
         .build();
 
-    // The order in which foo and bar are built is not guaranteed
+    // The order in which bar and baz are built is not guaranteed
 
     assert_that(
         p.cargo("bench"),
         execs()
-            .with_status(0)
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]bar-[..][EXE]")
-            .with_stdout_contains("test bench_bar ... bench: [..]")
-            .with_stderr_contains("[RUNNING] target[/]release[/]deps[/]foo-[..][EXE]")
-            .with_stdout_contains("test bench_foo ... bench: [..]"),
+            .with_stderr_contains("[RUNNING] target/release/deps/baz-[..][EXE]")
+            .with_stdout_contains("test bench_baz ... bench: [..]")
+            .with_stderr_contains("[RUNNING] target/release/deps/bar-[..][EXE]")
+            .with_stdout_contains("test bench_bar ... bench: [..]"),
     );
 }

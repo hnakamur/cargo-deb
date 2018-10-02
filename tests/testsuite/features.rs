@@ -1,15 +1,15 @@
 use std::fs::File;
 use std::io::prelude::*;
 
-use cargotest::support::paths::CargoPathExt;
-use cargotest::support::{execs, project};
-use cargotest::ChannelChanger;
-use hamcrest::assert_that;
-use cargotest::support::registry::Package;
+use support::paths::CargoPathExt;
+use support::{basic_manifest, execs, project};
+use support::ChannelChanger;
+use support::hamcrest::assert_that;
+use support::registry::Package;
 
 #[test]
 fn invalid1() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -40,7 +40,7 @@ Caused by:
 
 #[test]
 fn invalid2() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -74,7 +74,7 @@ Caused by:
 
 #[test]
 fn invalid3() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -109,7 +109,7 @@ Consider adding `optional = true` to the dependency
 
 #[test]
 fn invalid4() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -124,15 +124,7 @@ fn invalid4() {
         "#,
         )
         .file("src/main.rs", "")
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "")
         .build();
 
@@ -151,15 +143,7 @@ failed to select a version for `bar` which could resolve this conflict",
         ),
     );
 
-    p.change_file(
-        "Cargo.toml",
-        r#"
-        [project]
-        name = "foo"
-        version = "0.0.1"
-        authors = []
-    "#,
-    );
+    p.change_file("Cargo.toml", &basic_manifest("foo", "0.0.1"));
 
     assert_that(
         p.cargo("build").arg("--features").arg("test"),
@@ -171,7 +155,7 @@ failed to select a version for `bar` which could resolve this conflict",
 
 #[test]
 fn invalid5() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -203,7 +187,7 @@ Caused by:
 
 #[test]
 fn invalid6() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -234,7 +218,7 @@ Caused by:
 
 #[test]
 fn invalid7() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -266,7 +250,7 @@ Caused by:
 
 #[test]
 fn invalid8() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -281,15 +265,7 @@ fn invalid8() {
         "#,
         )
         .file("src/main.rs", "")
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "")
         .build();
 
@@ -303,7 +279,7 @@ fn invalid8() {
 
 #[test]
 fn invalid9() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -317,20 +293,12 @@ fn invalid9() {
         "#,
         )
         .file("src/main.rs", "fn main() {}")
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "")
         .build();
 
     assert_that(p.cargo("build").arg("--features").arg("bar"),
-                execs().with_status(0).with_stderr("\
+                execs().with_stderr("\
 warning: Package `foo v0.0.1 ([..])` does not have feature `bar`. It has a required dependency with \
 that name, but only optional dependencies can be used as features. [..]
    Compiling bar v0.0.1 ([..])
@@ -341,7 +309,7 @@ that name, but only optional dependencies can be used as features. [..]
 
 #[test]
 fn invalid10() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -369,20 +337,12 @@ fn invalid10() {
         "#,
         )
         .file("bar/src/lib.rs", "")
-        .file(
-            "bar/baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("bar/baz/src/lib.rs", "")
         .build();
 
     assert_that(p.cargo("build"),
-                execs().with_status(0).with_stderr("\
+                execs().with_stderr("\
 warning: Package `bar v0.0.1 ([..])` does not have feature `baz`. It has a required dependency with \
 that name, but only optional dependencies can be used as features. [..]
    Compiling baz v0.0.1 ([..])
@@ -394,7 +354,7 @@ that name, but only optional dependencies can be used as features. [..]
 
 #[test]
 fn no_transitive_dep_feature_requirement() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -429,13 +389,7 @@ fn no_transitive_dep_feature_requirement() {
             path = "../bar"
         "#,
         )
-        .file(
-            "derived/src/lib.rs",
-            r#"
-            extern crate bar;
-            pub use bar::test;
-        "#,
-        )
+        .file("derived/src/lib.rs", "extern crate bar; pub use bar::test;")
         .file(
             "bar/Cargo.toml",
             r#"
@@ -466,7 +420,7 @@ fn no_transitive_dep_feature_requirement() {
 
 #[test]
 fn no_feature_doesnt_build() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -491,21 +445,13 @@ fn no_feature_doesnt_build() {
             fn main() {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -515,12 +461,12 @@ fn no_feature_doesnt_build() {
     );
     assert_that(
         p.process(&p.bin("foo")),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
 
     assert_that(
         p.cargo("build").arg("--features").arg("bar"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] bar v0.0.1 ({dir}/bar)
 [COMPILING] foo v0.0.1 ({dir})
@@ -531,13 +477,13 @@ fn no_feature_doesnt_build() {
     );
     assert_that(
         p.process(&p.bin("foo")),
-        execs().with_status(0).with_stdout("bar\n"),
+        execs().with_stdout("bar\n"),
     );
 }
 
 #[test]
 fn default_feature_pulled_in() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -565,21 +511,13 @@ fn default_feature_pulled_in() {
             fn main() {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] bar v0.0.1 ({dir}/bar)
 [COMPILING] foo v0.0.1 ({dir})
@@ -590,12 +528,12 @@ fn default_feature_pulled_in() {
     );
     assert_that(
         p.process(&p.bin("foo")),
-        execs().with_status(0).with_stdout("bar\n"),
+        execs().with_stdout("bar\n"),
     );
 
     assert_that(
         p.cargo("build").arg("--no-default-features"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -605,13 +543,13 @@ fn default_feature_pulled_in() {
     );
     assert_that(
         p.process(&p.bin("foo")),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
 }
 
 #[test]
 fn cyclic_feature() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -637,7 +575,7 @@ fn cyclic_feature() {
 
 #[test]
 fn cyclic_feature2() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -654,12 +592,12 @@ fn cyclic_feature2() {
         .file("src/main.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0).with_stdout(""));
+    assert_that(p.cargo("build"), execs().with_stdout(""));
 }
 
 #[test]
 fn groups_on_groups_on_groups() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -697,31 +635,15 @@ fn groups_on_groups_on_groups() {
             fn main() {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
@@ -735,7 +657,7 @@ fn groups_on_groups_on_groups() {
 
 #[test]
 fn many_cli_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -763,31 +685,15 @@ fn many_cli_features() {
             fn main() {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
     assert_that(
         p.cargo("build").arg("--features").arg("bar baz"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
@@ -801,7 +707,7 @@ fn many_cli_features() {
 
 #[test]
 fn union_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -872,7 +778,7 @@ fn union_features() {
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] d2 v0.0.1 ({dir}/d2)
 [COMPILING] d1 v0.0.1 ({dir}/d1)
@@ -886,7 +792,7 @@ fn union_features() {
 
 #[test]
 fn many_features_no_rebuilds() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -920,7 +826,7 @@ fn many_features_no_rebuilds() {
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] a v0.1.0 ({dir}/a)
 [COMPILING] b v0.1.0 ({dir})
@@ -933,7 +839,7 @@ fn many_features_no_rebuilds() {
 
     assert_that(
         p.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [FRESH] a v0.1.0 ([..]/a)
 [FRESH] b v0.1.0 ([..])
@@ -946,29 +852,20 @@ fn many_features_no_rebuilds() {
 // Tests that all cmd lines work with `--features ""`
 #[test]
 fn empty_features() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/main.rs", "fn main() {}")
         .build();
 
     assert_that(
         p.cargo("build").arg("--features").arg(""),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 // Tests that all cmd lines work with `--features ""`
 #[test]
 fn transitive_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -984,13 +881,7 @@ fn transitive_features() {
             path = "bar"
         "#,
         )
-        .file(
-            "src/main.rs",
-            "
-            extern crate bar;
-            fn main() { bar::baz(); }
-        ",
-        )
+        .file("src/main.rs", "extern crate bar; fn main() { bar::baz(); }")
         .file(
             "bar/Cargo.toml",
             r#"
@@ -1003,24 +894,18 @@ fn transitive_features() {
             baz = []
         "#,
         )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            #[cfg(feature = "baz")]
-            pub fn baz() {}
-        "#,
-        )
+        .file("bar/src/lib.rs", r#"#[cfg(feature = "baz")] pub fn baz() {}"#)
         .build();
 
     assert_that(
         p.cargo("build").arg("--features").arg("foo"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn everything_in_the_lockfile() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1057,15 +942,7 @@ fn everything_in_the_lockfile() {
         "#,
         )
         .file("d1/src/lib.rs", "")
-        .file(
-            "d2/Cargo.toml",
-            r#"
-            [package]
-            name = "d2"
-            version = "0.0.2"
-            authors = []
-        "#,
-        )
+        .file("d2/Cargo.toml", &basic_manifest("d2", "0.0.2"))
         .file("d2/src/lib.rs", "")
         .file(
             "d3/Cargo.toml",
@@ -1082,7 +959,7 @@ fn everything_in_the_lockfile() {
         .file("d3/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("fetch"), execs().with_status(0));
+    assert_that(p.cargo("fetch"), execs());
     let loc = p.root().join("Cargo.lock");
     let mut lockfile = String::new();
     t!(t!(File::open(&loc)).read_to_string(&mut lockfile));
@@ -1105,7 +982,7 @@ fn everything_in_the_lockfile() {
 
 #[test]
 fn no_rebuild_when_frobbing_default_feature() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1149,14 +1026,14 @@ fn no_rebuild_when_frobbing_default_feature() {
         .file("a/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
-    assert_that(p.cargo("build"), execs().with_status(0).with_stdout(""));
-    assert_that(p.cargo("build"), execs().with_status(0).with_stdout(""));
+    assert_that(p.cargo("build"), execs());
+    assert_that(p.cargo("build"), execs().with_stdout(""));
+    assert_that(p.cargo("build"), execs().with_stdout(""));
 }
 
 #[test]
 fn unions_work_with_no_default_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1170,13 +1047,7 @@ fn unions_work_with_no_default_features() {
             b = { path = "b" }
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            extern crate a;
-            pub fn foo() { a::a(); }
-        "#,
-        )
+        .file("src/lib.rs", "extern crate a; pub fn foo() { a::a(); }")
         .file(
             "b/Cargo.toml",
             r#"
@@ -1203,23 +1074,17 @@ fn unions_work_with_no_default_features() {
             f1 = []
         "#,
         )
-        .file(
-            "a/src/lib.rs",
-            r#"
-            #[cfg(feature = "f1")]
-            pub fn a() {}
-        "#,
-        )
+        .file("a/src/lib.rs", r#"#[cfg(feature = "f1")] pub fn a() {}"#)
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
-    assert_that(p.cargo("build"), execs().with_status(0).with_stdout(""));
-    assert_that(p.cargo("build"), execs().with_status(0).with_stdout(""));
+    assert_that(p.cargo("build"), execs());
+    assert_that(p.cargo("build"), execs().with_stdout(""));
+    assert_that(p.cargo("build"), execs().with_stdout(""));
 }
 
 #[test]
 fn optional_and_dev_dep() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1235,21 +1100,13 @@ fn optional_and_dev_dep() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.1.0"
-            authors = []
-        "#,
-        )
+        .file("foo/Cargo.toml", &basic_manifest("foo", "0.1.0"))
         .file("foo/src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] test v0.1.0 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -1260,7 +1117,7 @@ fn optional_and_dev_dep() {
 
 #[test]
 fn activating_feature_activates_dep() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1276,15 +1133,7 @@ fn activating_feature_activates_dep() {
             a = ["foo/a"]
         "#,
         )
-        .file(
-            "src/lib.rs",
-            "
-            extern crate foo;
-            pub fn bar() {
-                foo::bar();
-            }
-        ",
-        )
+        .file("src/lib.rs", "extern crate foo; pub fn bar() { foo::bar(); }")
         .file(
             "foo/Cargo.toml",
             r#"
@@ -1297,24 +1146,18 @@ fn activating_feature_activates_dep() {
             a = []
         "#,
         )
-        .file(
-            "foo/src/lib.rs",
-            r#"
-            #[cfg(feature = "a")]
-            pub fn bar() {}
-        "#,
-        )
+        .file("foo/src/lib.rs", r#"#[cfg(feature = "a")] pub fn bar() {}"#)
         .build();
 
     assert_that(
         p.cargo("build").arg("--features").arg("a").arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn dep_feature_in_cmd_line() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1350,13 +1193,7 @@ fn dep_feature_in_cmd_line() {
             derived-feat = ["bar/some-feat"]
         "#,
         )
-        .file(
-            "derived/src/lib.rs",
-            r#"
-            extern crate bar;
-            pub use bar::test;
-        "#,
-        )
+        .file("derived/src/lib.rs", "extern crate bar; pub use bar::test;")
         .file(
             "bar/Cargo.toml",
             r#"
@@ -1388,7 +1225,7 @@ fn dep_feature_in_cmd_line() {
         p.cargo("build")
             .arg("--features")
             .arg("derived/derived-feat"),
-        execs().with_status(0),
+        execs(),
     );
 
     // Trying to enable features of transitive dependencies is an error
@@ -1412,7 +1249,7 @@ fn dep_feature_in_cmd_line() {
 
 #[test]
 fn all_features_flag_enables_all_features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1448,27 +1285,19 @@ fn all_features_flag_enables_all_features() {
             }
         "#,
         )
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
     assert_that(
         p.cargo("build").arg("--all-features"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn many_cli_features_comma_delimited() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1496,31 +1325,15 @@ fn many_cli_features_comma_delimited() {
             fn main() {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
     assert_that(
         p.cargo("build").arg("--features").arg("bar,baz"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
@@ -1534,7 +1347,7 @@ fn many_cli_features_comma_delimited() {
 
 #[test]
 fn many_cli_features_comma_and_space_delimited() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1574,51 +1387,19 @@ fn many_cli_features_comma_and_space_delimited() {
             fn main() {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
         .file("baz/src/lib.rs", "pub fn baz() {}")
-        .file(
-            "bam/Cargo.toml",
-            r#"
-            [package]
-            name = "bam"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bam/Cargo.toml", &basic_manifest("bam", "0.0.1"))
         .file("bam/src/lib.rs", "pub fn bam() {}")
-        .file(
-            "bap/Cargo.toml",
-            r#"
-            [package]
-            name = "bap"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bap/Cargo.toml", &basic_manifest("bap", "0.0.1"))
         .file("bap/src/lib.rs", "pub fn bap() {}")
         .build();
 
     assert_that(
         p.cargo("build").arg("--features").arg("bar,baz bam bap"),
-        execs().with_status(0).with_stderr(format!(
+        execs().with_stderr(format!(
             "\
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
 [COMPILING] ba[..] v0.0.1 ({dir}/ba[..])
@@ -1636,17 +1417,17 @@ fn many_cli_features_comma_and_space_delimited() {
 fn combining_features_and_package() {
     Package::new("dep", "1.0.0").publish();
 
-    let p = project("ws")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [project]
-            name = "ws"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
             [workspace]
-            members = ["foo"]
+            members = ["bar"]
 
             [dependencies]
             dep = "1"
@@ -1654,10 +1435,10 @@ fn combining_features_and_package() {
         )
         .file("src/lib.rs", "")
         .file(
-            "foo/Cargo.toml",
+            "bar/Cargo.toml",
             r#"
             [package]
-            name = "foo"
+            name = "bar"
             version = "0.0.1"
             authors = []
             [features]
@@ -1665,7 +1446,7 @@ fn combining_features_and_package() {
         "#,
         )
         .file(
-            "foo/src/main.rs",
+            "bar/src/main.rs",
             r#"
             #[cfg(feature = "main")]
             fn main() {}
@@ -1710,18 +1491,18 @@ fn combining_features_and_package() {
     assert_that(
         p.cargo("build -Z package-features --all --all-features")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
-        p.cargo("run -Z package-features --package foo --features main")
+        p.cargo("run -Z package-features --package bar --features main")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn namespaced_invalid_feature() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1755,7 +1536,7 @@ Caused by:
 
 #[test]
 fn namespaced_invalid_dependency() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1789,7 +1570,7 @@ Caused by:
 
 #[test]
 fn namespaced_non_optional_dependency() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1827,7 +1608,7 @@ Consider adding `optional = true` to the dependency
 
 #[test]
 fn namespaced_implicit_feature() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1851,13 +1632,13 @@ fn namespaced_implicit_feature() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn namespaced_shadowed_dep() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1895,7 +1676,7 @@ Consider adding `crate:baz` to this feature's requirements.
 
 #[test]
 fn namespaced_shadowed_non_optional() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1934,7 +1715,7 @@ Consider adding `crate:baz` to this feature's requirements and marking the depen
 
 #[test]
 fn namespaced_implicit_non_optional() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1972,7 +1753,7 @@ A non-optional dependency of the same name is defined; consider adding `optional
 
 #[test]
 fn namespaced_same_name() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1996,7 +1777,7 @@ fn namespaced_same_name() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -2004,7 +1785,7 @@ fn namespaced_same_name() {
 fn only_dep_is_optional() {
     Package::new("bar", "0.1.0").publish();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -2028,7 +1809,7 @@ fn only_dep_is_optional() {
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -2036,7 +1817,7 @@ fn only_dep_is_optional() {
 fn all_features_all_crates() {
     Package::new("bar", "0.1.0").publish();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -2067,6 +1848,6 @@ fn all_features_all_crates() {
 
     assert_that(
         p.cargo("build --all-features --all"),
-        execs().with_status(0),
+        execs(),
     );
 }

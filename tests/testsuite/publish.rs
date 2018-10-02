@@ -2,19 +2,19 @@ use std::io::prelude::*;
 use std::fs::{self, File};
 use std::io::SeekFrom;
 
-use cargotest::ChannelChanger;
-use cargotest::support::git::repo;
-use cargotest::support::paths;
-use cargotest::support::{execs, project, publish};
+use support::ChannelChanger;
+use support::git::repo;
+use support::paths;
+use support::{basic_manifest, execs, project, publish};
 use flate2::read::GzDecoder;
-use hamcrest::assert_that;
+use support::hamcrest::assert_that;
 use tar::Archive;
 
 #[test]
 fn simple() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -34,7 +34,7 @@ fn simple() {
             .arg("--no-verify")
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `{reg}`
 [WARNING] manifest has no documentation, [..]
@@ -87,14 +87,10 @@ fn old_token_location() {
     let credentials = paths::root().join("home/.cargo/credentials");
     File::create(credentials)
         .unwrap()
-        .write_all(
-            br#"
-            token = "api-token"
-        "#,
-        )
+        .write_all(br#"token = "api-token""#)
         .unwrap();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -114,7 +110,7 @@ fn old_token_location() {
             .arg("--no-verify")
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `{reg}`
 [WARNING] manifest has no documentation, [..]
@@ -163,7 +159,7 @@ See [..]
 fn simple_with_host() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -183,7 +179,7 @@ fn simple_with_host() {
             .arg("--no-verify")
             .arg("--host")
             .arg(publish::registry().to_string()),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [WARNING] The flag '--host' is no longer valid.
 
@@ -241,7 +237,7 @@ See [..]
 fn simple_with_index_and_host() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -263,7 +259,7 @@ fn simple_with_index_and_host() {
             .arg(publish::registry().to_string())
             .arg("--host")
             .arg(publish::registry().to_string()),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [WARNING] The flag '--host' is no longer valid.
 
@@ -319,7 +315,7 @@ See [..]
 fn git_deps() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -360,7 +356,7 @@ repository and specify it with a path and version\n\
 fn path_dependency_no_version() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -376,15 +372,7 @@ fn path_dependency_no_version() {
         "#,
         )
         .file("src/main.rs", "fn main() {}")
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "")
         .build();
 
@@ -406,7 +394,7 @@ dependency `bar` does not specify a version
 fn unpublishable_crate() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -438,7 +426,7 @@ fn unpublishable_crate() {
 #[test]
 fn dont_publish_dirty() {
     publish::setup();
-    let p = project("foo").file("bar", "").build();
+    let p = project().file("bar", "").build();
 
     let _ = repo(&paths::root().join("foo"))
         .file(
@@ -480,7 +468,7 @@ to proceed despite this, pass the `--allow-dirty` flag
 fn publish_clean() {
     publish::setup();
 
-    let p = project("foo").build();
+    let p = project().build();
 
     let _ = repo(&paths::root().join("foo"))
         .file(
@@ -504,7 +492,7 @@ fn publish_clean() {
         p.cargo("publish")
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -512,7 +500,7 @@ fn publish_clean() {
 fn publish_in_sub_repo() {
     publish::setup();
 
-    let p = project("foo").file("baz", "").build();
+    let p = project().no_manifest().file("baz", "").build();
 
     let _ = repo(&paths::root().join("foo"))
         .file(
@@ -537,7 +525,7 @@ fn publish_in_sub_repo() {
             .cwd(p.root().join("bar"))
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -545,7 +533,7 @@ fn publish_in_sub_repo() {
 fn publish_when_ignored() {
     publish::setup();
 
-    let p = project("foo").file("baz", "").build();
+    let p = project().file("baz", "").build();
 
     let _ = repo(&paths::root().join("foo"))
         .file(
@@ -570,7 +558,7 @@ fn publish_when_ignored() {
         p.cargo("publish")
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -578,7 +566,7 @@ fn publish_when_ignored() {
 fn ignore_when_crate_ignored() {
     publish::setup();
 
-    let p = project("foo").file("bar/baz", "").build();
+    let p = project().no_manifest().file("bar/baz", "").build();
 
     let _ = repo(&paths::root().join("foo"))
         .file(".gitignore", "bar")
@@ -602,7 +590,7 @@ fn ignore_when_crate_ignored() {
             .cwd(p.root().join("bar"))
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -610,7 +598,7 @@ fn ignore_when_crate_ignored() {
 fn new_crate_rejected() {
     publish::setup();
 
-    let p = project("foo").file("baz", "").build();
+    let p = project().file("baz", "").build();
 
     let _ = repo(&paths::root().join("foo"))
         .nocommit_file(
@@ -640,7 +628,7 @@ fn new_crate_rejected() {
 fn dry_run() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -660,7 +648,7 @@ fn dry_run() {
             .arg("--dry-run")
             .arg("--index")
             .arg(publish::registry().to_string()),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `[..]`
 [WARNING] manifest has no documentation, [..]
@@ -684,7 +672,7 @@ See [..]
 fn block_publish_feature_not_enabled() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -728,7 +716,7 @@ consider adding `cargo-features = [\"alternative-registries\"]` to the manifest
 fn registry_not_in_publish_list() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -767,7 +755,7 @@ fn registry_not_in_publish_list() {
 fn publish_empty_list() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -804,7 +792,7 @@ fn publish_empty_list() {
 fn publish_allowed_registry() {
     publish::setup();
 
-    let p = project("foo").build();
+    let p = project().build();
 
     let _ = repo(&paths::root().join("foo"))
         .file(
@@ -832,7 +820,7 @@ fn publish_allowed_registry() {
             .arg("--registry")
             .arg("alternative")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -840,7 +828,7 @@ fn publish_allowed_registry() {
 fn block_publish_no_registry() {
     publish::setup();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"

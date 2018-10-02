@@ -2,30 +2,21 @@ use std::path::Path;
 use std::fs::{self, File};
 use std::env;
 
-use hamcrest::assert_that;
+use support::hamcrest::assert_that;
 
-use cargotest::{process, sleep_ms, ChannelChanger};
-use cargotest::support::{execs, project};
+use support::{process, sleep_ms, ChannelChanger};
+use support::{basic_manifest, execs, project};
 
 #[test]
 fn binary_with_debug() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
         .build();
 
     assert_that(
         p.cargo("build -Z unstable-options --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     check_dir_contents(
         &p.root().join("out"),
@@ -37,7 +28,7 @@ fn binary_with_debug() {
 
 #[test]
 fn static_library_with_debug() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -62,7 +53,7 @@ fn static_library_with_debug() {
     assert_that(
         p.cargo("build -Z unstable-options --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     check_dir_contents(
         &p.root().join("out"),
@@ -74,7 +65,7 @@ fn static_library_with_debug() {
 
 #[test]
 fn dynamic_library_with_debug() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -99,7 +90,7 @@ fn dynamic_library_with_debug() {
     assert_that(
         p.cargo("build -Z unstable-options --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     check_dir_contents(
         &p.root().join("out"),
@@ -111,7 +102,7 @@ fn dynamic_library_with_debug() {
 
 #[test]
 fn rlib_with_debug() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -135,7 +126,7 @@ fn rlib_with_debug() {
     assert_that(
         p.cargo("build -Z unstable-options --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     check_dir_contents(
         &p.root().join("out"),
@@ -147,7 +138,7 @@ fn rlib_with_debug() {
 
 #[test]
 fn include_only_the_binary_from_the_current_package() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -173,22 +164,14 @@ fn include_only_the_binary_from_the_current_package() {
             }
         "#,
         )
-        .file(
-            "utils/Cargo.toml",
-            r#"
-            [project]
-            name = "utils"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("utils/Cargo.toml", &basic_manifest("utils", "0.0.1"))
         .file("utils/src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build -Z unstable-options --bin foo --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     check_dir_contents(
         &p.root().join("out"),
@@ -200,16 +183,7 @@ fn include_only_the_binary_from_the_current_package() {
 
 #[test]
 fn out_dir_is_a_file() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/main.rs", r#"fn main() { println!("Hello, World!") }"#)
         .build();
     File::create(p.root().join("out")).unwrap();
@@ -225,23 +199,14 @@ fn out_dir_is_a_file() {
 
 #[test]
 fn replaces_artifacts() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/main.rs", r#"fn main() { println!("foo") }"#)
         .build();
 
     assert_that(
         p.cargo("build -Z unstable-options --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         process(&p.root()
@@ -255,7 +220,7 @@ fn replaces_artifacts() {
     assert_that(
         p.cargo("build -Z unstable-options --out-dir out")
             .masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         process(&p.root()
@@ -280,7 +245,7 @@ fn check_dir_contents(
 
     let actual = list_dir(out_dir);
     let mut expected = expected.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    expected.sort();
+    expected.sort_unstable();
     assert_eq!(actual, expected);
 }
 
@@ -290,6 +255,6 @@ fn list_dir(dir: &Path) -> Vec<String> {
         let entry = entry.unwrap();
         res.push(entry.file_name().into_string().unwrap());
     }
-    res.sort();
+    res.sort_unstable();
     res
 }
