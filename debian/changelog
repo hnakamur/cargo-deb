@@ -1,3 +1,27 @@
+cargo (0.30.0-1~exp1) UNRELEASED; urgency=medium
+
+  [ upstream ]
+  * Cargo can silently fix some bad lockfiles You can use --locked to
+    disable this behaviour.
+  * cargo-install will now allow you to cross compile an install using
+    --target.
+  * Added the cargo-fix subcommand to automatically move project code from
+    2015 edition to 2018.
+
+  [ Vasudev Kamath ]
+  * Refresh patch 2004 for new release.
+  * Add openssl crates fuzz,test doc and apps file to unsuspicious list.
+  * debian/patches:
+    + Drop patch 0774e97da3894f07ed5b6f7db175027a9bc4718b.patch for adding
+      cross compile support. Its merged upstream.
+    + Refresh patch 2001 to newer version of libgit2-sys.
+    + Refresh patch 2003 to newer version of libssh2-sys.
+    + Drop patch 1001 which is merged upstream.
+    + Refresh patch 2005 and 2007 to remove fuzz.
+    + Refresh patch 2002 with newer release.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Tue, 02 Oct 2018 22:16:27 +0530
+
 cargo (0.29.0-1) unstable; urgency=medium
 
   * Merge changes of 0.28.0-2, which was missed in first release of 0.29.0
