@@ -54,11 +54,12 @@ use std::time::{Duration, Instant};
 
 use semver;
 
-use core::{Dependency, PackageId, Registry, Summary};
-use core::PackageIdSpec;
 use core::interning::InternedString;
+use core::PackageIdSpec;
+use core::{Dependency, PackageId, Registry, Summary};
 use util::config::Config;
 use util::errors::{CargoError, CargoResult};
+use util::lev_distance::lev_distance;
 use util::profile;
 
 use self::context::{Activations, Context};
@@ -70,9 +71,9 @@ pub use self::encode::{Metadata, WorkspaceResolve};
 pub use self::resolve::{Deps, DepsNotReplaced, Resolve};
 pub use self::types::Method;
 
+mod conflict_cache;
 mod context;
 mod encode;
-mod conflict_cache;
 mod resolve;
 mod types;
 
@@ -230,7 +231,9 @@ fn activate_deps_loop(
         // to amortize the cost of the current time lookup.
         ticks += 1;
         if let Some(config) = config {
-            if config.shell().is_err_tty() && !printed && ticks % 1000 == 0
+            if config.shell().is_err_tty()
+                && !printed
+                && ticks % 1000 == 0
                 && start.elapsed() - deps_time > time_to_print
             {
                 printed = true;
@@ -258,14 +261,14 @@ fn activate_deps_loop(
             "{}[{}]>{} {} candidates",
             parent.name(),
             cur,
-            dep.name(),
+            dep.package_name(),
             candidates.len()
         );
         trace!(
             "{}[{}]>{} {} prev activations",
             parent.name(),
             cur,
-            dep.name(),
+            dep.package_name(),
             cx.prev_active(&dep).len()
         );
 
@@ -293,20 +296,16 @@ fn activate_deps_loop(
         let mut backtracked = false;
 
         loop {
-            let next = remaining_candidates.next(&cx, &dep);
+            let next = remaining_candidates.next(&mut conflicting_activations, &cx, &dep);
 
-            let (candidate, has_another) = next.or_else(|conflicting| {
+            let (candidate, has_another) = next.ok_or(()).or_else(|_| {
                 // If we get here then our `remaining_candidates` was just
                 // exhausted, so `dep` failed to activate.
                 //
                 // It's our job here to backtrack, if possible, and find a
                 // different candidate to activate. If we can't find any
                 // candidates whatsoever then it's time to bail entirely.
-                trace!("{}[{}]>{} -- no candidates", parent.name(), cur, dep.name());
-
-                // Add all the reasons to our frame's list of conflicting
-                // activations, as we may use this to start backtracking later.
-                conflicting_activations.extend(conflicting);
+                trace!("{}[{}]>{} -- no candidates", parent.name(), cur, dep.package_name());
 
                 // Use our list of `conflicting_activations` to add to our
                 // global list of past conflicting activations, effectively
@@ -399,16 +398,10 @@ fn activate_deps_loop(
                 "{}[{}]>{} trying {}",
                 parent.name(),
                 cur,
-                dep.name(),
+                dep.package_name(),
                 candidate.summary.version()
             );
-            let res = activate(
-                &mut cx,
-                registry,
-                Some((&parent, &dep)),
-                candidate,
-                &method,
-            );
+            let res = activate(&mut cx, registry, Some((&parent, &dep)), candidate, &method);
 
             let successfully_activated = match res {
                 // Success! We've now activated our `candidate` in our context
@@ -522,8 +515,6 @@ fn activate_deps_loop(
                     // we'll want to present an error message for sure.
                     let activate_for_error_message = has_past_conflicting_dep && !has_another && {
                         just_here_for_the_error_messages || {
-                            conflicting_activations
-                                .extend(remaining_candidates.conflicting_prev_active.clone());
                             find_candidate(
                                 &mut backtrack_stack.clone(),
                                 &parent,
@@ -558,7 +549,7 @@ fn activate_deps_loop(
                             "{}[{}]>{} skipping {} ",
                             parent.name(),
                             cur,
-                            dep.name(),
+                            dep.package_name(),
                             pid.version()
                         );
                         false
@@ -692,13 +683,10 @@ struct BacktrackFrame {
 /// is defined within a `Context`.
 ///
 /// Candidates passed to `new` may not be returned from `next` as they could be
-/// filtered out, and if iteration stops a map of all packages which caused
-/// filtered out candidates to be filtered out will be returned.
+/// filtered out, and as they are filtered the causes will be added to `conflicting_prev_active`.
 #[derive(Clone)]
 struct RemainingCandidates {
     remaining: RcVecIter<Candidate>,
-    // note: change to RcList or something if clone is to expensive
-    conflicting_prev_active: HashMap<PackageId, ConflictReason>,
     // This is a inlined peekable generator
     has_another: Option<Candidate>,
 }
@@ -707,7 +695,6 @@ impl RemainingCandidates {
     fn new(candidates: &Rc<Vec<Candidate>>) -> RemainingCandidates {
         RemainingCandidates {
             remaining: RcVecIter::new(Rc::clone(candidates)),
-            conflicting_prev_active: HashMap::new(),
             has_another: None,
         }
     }
@@ -730,9 +717,10 @@ impl RemainingCandidates {
     /// original list for the reason listed.
     fn next(
         &mut self,
+        conflicting_prev_active: &mut HashMap<PackageId, ConflictReason>,
         cx: &Context,
         dep: &Dependency,
-    ) -> Result<(Candidate, bool), HashMap<PackageId, ConflictReason>> {
+    ) -> Option<(Candidate, bool)> {
         let prev_active = cx.prev_active(dep);
 
         for (_, b) in self.remaining.by_ref() {
@@ -743,9 +731,9 @@ impl RemainingCandidates {
             if let Some(link) = b.summary.links() {
                 if let Some(a) = cx.links.get(&link) {
                     if a != b.summary.package_id() {
-                        self.conflicting_prev_active
+                        conflicting_prev_active
                             .entry(a.clone())
-                            .or_insert_with(|| ConflictReason::Links(link.to_string()));
+                            .or_insert_with(|| ConflictReason::Links(link));
                         continue;
                     }
                 }
@@ -764,7 +752,7 @@ impl RemainingCandidates {
                 .find(|a| compatible(a.version(), b.summary.version()))
             {
                 if *a != b.summary {
-                    self.conflicting_prev_active
+                    conflicting_prev_active
                         .entry(a.package_id().clone())
                         .or_insert(ConflictReason::Semver);
                     continue;
@@ -777,21 +765,14 @@ impl RemainingCandidates {
             // get returned later, and if we replaced something then that was
             // actually the candidate to try first so we return that.
             if let Some(r) = mem::replace(&mut self.has_another, Some(b)) {
-                return Ok((r, true));
+                return Some((r, true));
             }
         }
 
         // Alright we've entirely exhausted our list of candidates. If we've got
         // something stashed away return that here (also indicating that there's
-        // nothing else). If nothing is stashed away we return the list of all
-        // conflicting activations, if any.
-        //
-        // TODO: can the `conflicting_prev_active` clone be avoided here? should
-        //       panic if this is called twice and an error is already returned
-        self.has_another
-            .take()
-            .map(|r| (r, false))
-            .ok_or_else(|| self.conflicting_prev_active.clone())
+        // nothing else).
+        self.has_another.take().map(|r| (r, false))
     }
 }
 
@@ -831,12 +812,14 @@ fn find_candidate(
     conflicting_activations: &HashMap<PackageId, ConflictReason>,
 ) -> Option<(Candidate, bool, BacktrackFrame)> {
     while let Some(mut frame) = backtrack_stack.pop() {
-        let next = frame
-            .remaining_candidates
-            .next(&frame.context_backup, &frame.dep);
+        let next = frame.remaining_candidates.next(
+            &mut frame.conflicting_activations,
+            &frame.context_backup,
+            &frame.dep,
+        );
         let (candidate, has_another) = match next {
-            Ok(pair) => pair,
-            Err(_) => continue,
+            Some(pair) => pair,
+            None => continue,
         };
         // When we're calling this method we know that `parent` failed to
         // activate. That means that some dependency failed to get resolved for
@@ -870,19 +853,21 @@ fn activation_error(
 ) -> CargoError {
     let graph = cx.graph();
     if !candidates.is_empty() {
-        let mut msg = format!("failed to select a version for `{}`.", dep.name());
+        let mut msg = format!("failed to select a version for `{}`.", dep.package_name());
         msg.push_str("\n    ... required by ");
         msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
 
         msg.push_str("\nversions that meet the requirements `");
         msg.push_str(&dep.version_req().to_string());
         msg.push_str("` are: ");
-        msg.push_str(&candidates
-            .iter()
-            .map(|v| v.summary.version())
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(", "));
+        msg.push_str(
+            &candidates
+                .iter()
+                .map(|v| v.summary.version())
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
 
         let mut conflicting_activations: Vec<_> = conflicting_activations.iter().collect();
         conflicting_activations.sort_unstable();
@@ -894,7 +879,7 @@ fn activation_error(
         for &(p, r) in links_errors.iter() {
             if let ConflictReason::Links(ref link) = *r {
                 msg.push_str("\n\nthe package `");
-                msg.push_str(&*dep.name());
+                msg.push_str(&*dep.package_name());
                 msg.push_str("` links to the native library `");
                 msg.push_str(link);
                 msg.push_str("`, but it conflicts with a previous package which links to `");
@@ -913,11 +898,11 @@ fn activation_error(
                 msg.push_str("\n\nthe package `");
                 msg.push_str(&*p.name());
                 msg.push_str("` depends on `");
-                msg.push_str(&*dep.name());
+                msg.push_str(&*dep.package_name());
                 msg.push_str("`, with features: `");
                 msg.push_str(features);
                 msg.push_str("` but `");
-                msg.push_str(&*dep.name());
+                msg.push_str(&*dep.package_name());
                 msg.push_str("` does not have these features.\n");
             }
             // p == parent so the full path is redundant.
@@ -936,23 +921,22 @@ fn activation_error(
         }
 
         msg.push_str("\n\nfailed to select a version for `");
-        msg.push_str(&*dep.name());
+        msg.push_str(&*dep.package_name());
         msg.push_str("` which could resolve this conflict");
 
         return format_err!("{}", msg);
     }
 
-    // Once we're all the way down here, we're definitely lost in the
-    // weeds! We didn't actually find any candidates, so we need to
+    // We didn't actually find any candidates, so we need to
     // give an error message that nothing was found.
     //
-    // Note that we re-query the registry with a new dependency that
-    // allows any version so we can give some nicer error reporting
-    // which indicates a few versions that were actually found.
+    // Maybe the user mistyped the ver_req? Like `dep="2"` when `dep="0.2"`
+    // was meant. So we re-query the registry with `deb="*"` so we can
+    // list a few versions that were actually found.
     let all_req = semver::VersionReq::parse("*").unwrap();
     let mut new_dep = dep.clone();
     new_dep.set_version_req(all_req);
-    let mut candidates = match registry.query_vec(&new_dep) {
+    let mut candidates = match registry.query_vec(&new_dep, false) {
         Ok(candidates) => candidates,
         Err(e) => return e,
     };
@@ -978,7 +962,7 @@ fn activation_error(
              location searched: {}\n\
              versions found: {}\n",
             dep.version_req(),
-            dep.name(),
+            dep.package_name(),
             dep.source_id(),
             versions
         );
@@ -997,12 +981,41 @@ fn activation_error(
 
         msg
     } else {
+        // Maybe the user mistyped the name? Like `dep-thing` when `Dep_Thing`
+        // was meant. So we try asking the registry for a `fuzzy` search for suggestions.
+        let mut candidates = Vec::new();
+        if let Err(e) = registry.query(&new_dep, &mut |s| candidates.push(s.name()), true) {
+            return e;
+        };
+        candidates.sort_unstable();
+        candidates.dedup();
+        let mut candidates: Vec<_> = candidates
+            .iter()
+            .map(|n| (lev_distance(&*new_dep.package_name(), &*n), n))
+            .filter(|&(d, _)| d < 4)
+            .collect();
+        candidates.sort_by_key(|o| o.0);
         let mut msg = format!(
             "no matching package named `{}` found\n\
              location searched: {}\n",
-            dep.name(),
+            dep.package_name(),
             dep.source_id()
         );
+        if !candidates.is_empty() {
+            let mut names = candidates
+                .iter()
+                .take(3)
+                .map(|c| c.1.as_str())
+                .collect::<Vec<_>>();
+
+            if candidates.len() > 3 {
+                names.push("...");
+            }
+
+            msg.push_str("did you mean: ");
+            msg.push_str(&names.join(", "));
+            msg.push_str("\n");
+        }
         msg.push_str("required by ");
         msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
 
@@ -1041,7 +1054,8 @@ fn check_cycles(resolve: &Resolve, activations: &Activations) -> CargoResult<()>
         .collect();
 
     // Sort packages to produce user friendly deterministic errors.
-    let all_packages = resolve.iter().collect::<BinaryHeap<_>>().into_sorted_vec();
+    let mut all_packages: Vec<_> = resolve.iter().collect();
+    all_packages.sort_unstable();
     let mut checked = HashSet::new();
     for pkg in all_packages {
         if !checked.contains(pkg) {

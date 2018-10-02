@@ -1,15 +1,15 @@
-use cargotest::is_nightly;
-use cargotest::support::{execs, project};
-use hamcrest::assert_that;
+use support::is_nightly;
+use support::{execs, project};
+use support::hamcrest::assert_that;
 
 #[test]
 fn probe_cfg_before_crate_type_discovery() {
-    let client = project("client")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "client"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
@@ -30,7 +30,7 @@ fn probe_cfg_before_crate_type_discovery() {
         "#,
         )
         .build();
-    let _noop = project("noop")
+    let _noop = project().at("noop")
         .file(
             "Cargo.toml",
             r#"
@@ -57,17 +57,17 @@ fn probe_cfg_before_crate_type_discovery() {
         )
         .build();
 
-    assert_that(client.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
 fn noop() {
-    let client = project("client")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "client"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
@@ -88,7 +88,7 @@ fn noop() {
         "#,
         )
         .build();
-    let _noop = project("noop")
+    let _noop = project().at("noop")
         .file(
             "Cargo.toml",
             r#"
@@ -115,18 +115,18 @@ fn noop() {
         )
         .build();
 
-    assert_that(client.cargo("build"), execs().with_status(0));
-    assert_that(client.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
 fn impl_and_derive() {
-    let client = project("client")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "client"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
@@ -155,7 +155,7 @@ fn impl_and_derive() {
         "#,
         )
         .build();
-    let _transmogrify = project("transmogrify")
+    let _transmogrify = project().at("transmogrify")
         .file(
             "Cargo.toml",
             r#"
@@ -195,10 +195,10 @@ fn impl_and_derive() {
         )
         .build();
 
-    assert_that(client.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(
-        client.cargo("run"),
-        execs().with_status(0).with_stdout("X { success: true }"),
+        p.cargo("run"),
+        execs().with_stdout("X { success: true }"),
     );
 }
 
@@ -208,12 +208,12 @@ fn plugin_and_proc_macro() {
         return;
     }
 
-    let questionable = project("questionable")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "questionable"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
@@ -247,14 +247,14 @@ fn plugin_and_proc_macro() {
 
     let msg = "  lib.plugin and lib.proc-macro cannot both be true";
     assert_that(
-        questionable.cargo("build"),
+        p.cargo("build"),
         execs().with_status(101).with_stderr_contains(msg),
     );
 }
 
 #[test]
 fn proc_macro_doctest() {
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -294,7 +294,6 @@ fn a() {
     assert_that(
         foo.cargo("test"),
         execs()
-            .with_status(0)
             .with_stdout_contains("test a ... ok")
             .with_stdout_contains_n("test [..] ... ok", 2),
     );

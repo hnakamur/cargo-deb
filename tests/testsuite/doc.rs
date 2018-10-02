@@ -1,18 +1,19 @@
-use cargotest;
+use support;
 use std::str;
 use std::fs::{self, File};
 use std::io::Read;
 
-use cargotest::{rustc_host, ChannelChanger};
-use cargotest::support::{execs, project, path2url};
-use cargotest::support::registry::Package;
-use hamcrest::{assert_that, existing_dir, existing_file, is_not};
+use support::{is_nightly, rustc_host, ChannelChanger};
+use support::{basic_manifest, basic_lib_manifest, execs, git, project, path2url};
+use support::paths::CargoPathExt;
+use support::registry::Package;
+use support::hamcrest::{assert_that, existing_dir, existing_file, is_not};
 use cargo::util::ProcessError;
 use glob::glob;
 
 #[test]
 fn simple() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -24,17 +25,12 @@ fn simple() {
         "#,
         )
         .file("build.rs", "fn main() {}")
-        .file(
-            "src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
+        .file("src/lib.rs", "pub fn foo() {}")
         .build();
 
     assert_that(
         p.cargo("doc"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [..] foo v0.0.1 ({dir})
 [..] foo v0.0.1 ({dir})
@@ -49,7 +45,7 @@ fn simple() {
 
 #[test]
 fn doc_no_libs() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -63,40 +59,21 @@ fn doc_no_libs() {
             doc = false
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            bad code
-        "#,
-        )
+        .file("src/main.rs", "bad code")
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
 }
 
 #[test]
 fn doc_twice() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file(
-            "src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
+    let p = project()
+        .file("src/lib.rs", "pub fn foo() {}")
         .build();
 
     assert_that(
         p.cargo("doc"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [DOCUMENTING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -105,12 +82,12 @@ fn doc_twice() {
         )),
     );
 
-    assert_that(p.cargo("doc"), execs().with_status(0).with_stdout(""))
+    assert_that(p.cargo("doc"), execs().with_stdout(""))
 }
 
 #[test]
 fn doc_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -123,33 +100,14 @@ fn doc_deps() {
             path = "bar"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            extern crate bar;
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("src/lib.rs", "extern crate bar; pub fn foo() {}")
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
     assert_that(
         p.cargo("doc"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [..] bar v0.0.1 ({dir}/bar)
 [..] bar v0.0.1 ({dir}/bar)
@@ -181,7 +139,7 @@ fn doc_deps() {
     assert_that(
         p.cargo("doc")
             .env("RUST_LOG", "cargo::ops::cargo_rustc::fingerprint"),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
 
     assert_that(&p.root().join("target/doc"), existing_dir());
@@ -191,7 +149,7 @@ fn doc_deps() {
 
 #[test]
 fn doc_no_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -204,33 +162,14 @@ fn doc_no_deps() {
             path = "bar"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            extern crate bar;
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("src/lib.rs", "extern crate bar; pub fn foo() {}")
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
     assert_that(
         p.cargo("doc").arg("--no-deps"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [CHECKING] bar v0.0.1 ({dir}/bar)
 [DOCUMENTING] foo v0.0.1 ({dir})
@@ -250,7 +189,7 @@ fn doc_no_deps() {
 
 #[test]
 fn doc_only_bin() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -263,31 +202,12 @@ fn doc_only_bin() {
             path = "bar"
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            extern crate bar;
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("src/main.rs", "extern crate bar; pub fn foo() {}")
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
-    assert_that(p.cargo("doc").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("doc").arg("-v"), execs());
 
     assert_that(&p.root().join("target/doc"), existing_dir());
     assert_that(&p.root().join("target/doc/bar/index.html"), existing_file());
@@ -296,7 +216,7 @@ fn doc_only_bin() {
 
 #[test]
 fn doc_multiple_targets_same_name_lib() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -304,8 +224,7 @@ fn doc_multiple_targets_same_name_lib() {
             members = ["foo", "bar"]
         "#,
         )
-        .file(
-            "foo/Cargo.toml",
+        .file("foo/Cargo.toml",
             r#"
             [package]
             name = "foo"
@@ -340,7 +259,7 @@ fn doc_multiple_targets_same_name_lib() {
 
 #[test]
 fn doc_multiple_targets_same_name() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -378,7 +297,6 @@ fn doc_multiple_targets_same_name() {
     assert_that(
         p.cargo("doc").arg("--all"),
         execs()
-            .with_status(0)
             .with_stderr_contains(&format!("[DOCUMENTING] foo v0.1.0 ({}/foo)", root))
             .with_stderr_contains(&format!("[DOCUMENTING] bar v0.1.0 ({}/bar)", root))
             .with_stderr_contains("[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]"),
@@ -390,7 +308,7 @@ fn doc_multiple_targets_same_name() {
 
 #[test]
 fn doc_multiple_targets_same_name_bin() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -434,7 +352,7 @@ fn doc_multiple_targets_same_name_bin() {
 
 #[test]
 fn doc_multiple_targets_same_name_undoced() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -467,21 +385,12 @@ fn doc_multiple_targets_same_name_undoced() {
         .file("bar/src/foo-cli.rs", "")
         .build();
 
-    assert_that(p.cargo("doc").arg("--all"), execs().with_status(0));
+    assert_that(p.cargo("doc").arg("--all"), execs());
 }
 
 #[test]
 fn doc_lib_bin_same_name_documents_lib() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             r#"
@@ -503,7 +412,7 @@ fn doc_lib_bin_same_name_documents_lib() {
 
     assert_that(
         p.cargo("doc"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [DOCUMENTING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -525,16 +434,7 @@ fn doc_lib_bin_same_name_documents_lib() {
 
 #[test]
 fn doc_lib_bin_same_name_documents_lib_when_requested() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             r#"
@@ -556,7 +456,7 @@ fn doc_lib_bin_same_name_documents_lib_when_requested() {
 
     assert_that(
         p.cargo("doc").arg("--lib"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [DOCUMENTING] foo v0.0.1 ({dir})
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -578,16 +478,7 @@ fn doc_lib_bin_same_name_documents_lib_when_requested() {
 
 #[test]
 fn doc_lib_bin_same_name_documents_named_bin_when_requested() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             r#"
@@ -609,7 +500,7 @@ fn doc_lib_bin_same_name_documents_named_bin_when_requested() {
 
     assert_that(
         p.cargo("doc").arg("--bin").arg("foo"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [CHECKING] foo v0.0.1 ({dir})
 [DOCUMENTING] foo v0.0.1 ({dir})
@@ -632,16 +523,7 @@ fn doc_lib_bin_same_name_documents_named_bin_when_requested() {
 
 #[test]
 fn doc_lib_bin_same_name_documents_bins_when_requested() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/main.rs",
             r#"
@@ -663,7 +545,7 @@ fn doc_lib_bin_same_name_documents_bins_when_requested() {
 
     assert_that(
         p.cargo("doc").arg("--bins"),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [CHECKING] foo v0.0.1 ({dir})
 [DOCUMENTING] foo v0.0.1 ({dir})
@@ -686,7 +568,7 @@ fn doc_lib_bin_same_name_documents_bins_when_requested() {
 
 #[test]
 fn doc_dash_p() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -713,21 +595,13 @@ fn doc_dash_p() {
         "#,
         )
         .file("a/src/lib.rs", "extern crate b;")
-        .file(
-            "b/Cargo.toml",
-            r#"
-            [package]
-            name = "b"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("b/Cargo.toml", &basic_manifest("b", "0.0.1"))
         .file("b/src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("doc").arg("-p").arg("a"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [..] b v0.0.1 (file://[..])
 [..] b v0.0.1 (file://[..])
@@ -740,39 +614,21 @@ fn doc_dash_p() {
 
 #[test]
 fn doc_same_name() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file("src/bin/main.rs", "fn main() {}")
         .file("examples/main.rs", "fn main() {}")
         .file("tests/main.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
 }
 
 #[test]
 fn doc_target() {
     const TARGET: &'static str = "arm-unknown-linux-gnueabihf";
 
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             r#"
@@ -788,7 +644,7 @@ fn doc_target() {
 
     assert_that(
         p.cargo("doc").arg("--target").arg(TARGET).arg("--verbose"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         &p.root().join(&format!("target/{}/doc", TARGET)),
@@ -803,7 +659,7 @@ fn doc_target() {
 
 #[test]
 fn target_specific_not_documented() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -817,24 +673,16 @@ fn target_specific_not_documented() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [package]
-            name = "a"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("a/Cargo.toml", &basic_manifest("a", "0.0.1"))
         .file("a/src/lib.rs", "not rust")
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
 }
 
 #[test]
 fn output_not_captured() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -848,15 +696,7 @@ fn output_not_captured() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [package]
-            name = "a"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("a/Cargo.toml", &basic_manifest("a", "0.0.1"))
         .file(
             "a/src/lib.rs",
             "
@@ -889,7 +729,7 @@ fn output_not_captured() {
 
 #[test]
 fn target_specific_documented() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -916,15 +756,7 @@ fn target_specific_documented() {
             pub fn foo() {}
         ",
         )
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [package]
-            name = "a"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("a/Cargo.toml", &basic_manifest("a", "0.0.1"))
         .file(
             "a/src/lib.rs",
             "
@@ -934,12 +766,12 @@ fn target_specific_documented() {
         )
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
 }
 
 #[test]
 fn no_document_build_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -952,21 +784,8 @@ fn no_document_build_deps() {
             a = { path = "a" }
         "#,
         )
-        .file(
-            "src/lib.rs",
-            "
-            pub fn foo() {}
-        ",
-        )
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [package]
-            name = "a"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("src/lib.rs", "pub fn foo() {}")
+        .file("a/Cargo.toml", &basic_manifest("a", "0.0.1"))
         .file(
             "a/src/lib.rs",
             "
@@ -978,31 +797,22 @@ fn no_document_build_deps() {
         )
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
 }
 
 #[test]
 fn doc_release() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("--release"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--release"), execs());
     assert_that(
         p.cargo("doc").arg("--release").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [DOCUMENTING] foo v0.0.1 ([..])
-[RUNNING] `rustdoc [..] src[/]lib.rs [..]`
+[RUNNING] `rustdoc [..] src/lib.rs [..]`
 [FINISHED] release [optimized] target(s) in [..]
 ",
         ),
@@ -1011,7 +821,7 @@ fn doc_release() {
 
 #[test]
 fn doc_multiple_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1027,43 +837,11 @@ fn doc_multiple_deps() {
             path = "baz"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            extern crate bar;
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
-        .file(
-            "baz/Cargo.toml",
-            r#"
-            [package]
-            name = "baz"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
-        .file(
-            "baz/src/lib.rs",
-            r#"
-            pub fn baz() {}
-        "#,
-        )
+        .file("src/lib.rs", "extern crate bar; pub fn foo() {}")
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.0.1"))
+        .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
     assert_that(
@@ -1073,7 +851,7 @@ fn doc_multiple_deps() {
             .arg("-p")
             .arg("baz")
             .arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 
     assert_that(&p.root().join("target/doc"), existing_dir());
@@ -1083,7 +861,7 @@ fn doc_multiple_deps() {
 
 #[test]
 fn features() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1099,13 +877,7 @@ fn features() {
             foo = ["bar/bar"]
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            #[cfg(feature = "foo")]
-            pub fn foo() {}
-        "#,
-        )
+        .file("src/lib.rs", r#"#[cfg(feature = "foo")] pub fn foo() {}"#)
         .file(
             "bar/Cargo.toml",
             r#"
@@ -1126,17 +898,11 @@ fn features() {
             }
         "#,
         )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            #[cfg(feature = "bar")]
-            pub fn bar() {}
-        "#,
-        )
+        .file("bar/src/lib.rs", r#"#[cfg(feature = "bar")] pub fn bar() {}"#)
         .build();
     assert_that(
         p.cargo("doc").arg("--features").arg("foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(&p.root().join("target/doc"), existing_dir());
     assert_that(
@@ -1151,16 +917,7 @@ fn features() {
 
 #[test]
 fn rerun_when_dir_removed() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             r#"
@@ -1170,27 +927,18 @@ fn rerun_when_dir_removed() {
         )
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
 
     fs::remove_dir_all(p.root().join("target/doc/foo")).unwrap();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
 }
 
 #[test]
 fn document_only_lib() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             r#"
@@ -1209,16 +957,16 @@ fn document_only_lib() {
         "#,
         )
         .build();
-    assert_that(p.cargo("doc").arg("--lib"), execs().with_status(0));
+    assert_that(p.cargo("doc").arg("--lib"), execs());
     assert_that(&p.root().join("target/doc/foo/index.html"), existing_file());
 }
 
 #[test]
 fn plugins_no_use_target() {
-    if !cargotest::is_nightly() {
+    if !support::is_nightly() {
         return;
     }
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1237,13 +985,13 @@ fn plugins_no_use_target() {
         p.cargo("doc")
             .arg("--target=x86_64-unknown-openbsd")
             .arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn doc_all_workspace() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1257,33 +1005,15 @@ fn doc_all_workspace() {
             [workspace]
         "#,
         )
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("src/main.rs", "fn main() {}")
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
     // The order in which bar is compiled or documented is not deterministic
     assert_that(
         p.cargo("doc").arg("--all"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])")
             .with_stderr_contains("[..] Checking bar v0.1.0 ([..])")
             .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])"),
@@ -1292,147 +1022,95 @@ fn doc_all_workspace() {
 
 #[test]
 fn doc_all_virtual_manifest() {
-    let p = project("workspace")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [workspace]
-            members = ["foo", "bar"]
+            members = ["bar", "baz"]
         "#,
         )
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "foo/src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.1.0"))
+        .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
-    // The order in which foo and bar are documented is not guaranteed
+    // The order in which bar and baz are documented is not guaranteed
     assert_that(
         p.cargo("doc").arg("--all"),
         execs()
-            .with_status(0)
-            .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])")
-            .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])"),
+            .with_stderr_contains("[..] Documenting baz v0.1.0 ([..])")
+            .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])"),
     );
 }
 
 #[test]
 fn doc_virtual_manifest_all_implied() {
-    let p = project("workspace")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [workspace]
-            members = ["foo", "bar"]
+            members = ["bar", "baz"]
         "#,
         )
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "foo/src/lib.rs",
-            r#"
-            pub fn foo() {}
-        "#,
-        )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
-        .file(
-            "bar/src/lib.rs",
-            r#"
-            pub fn bar() {}
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
+        .file("bar/src/lib.rs", "pub fn bar() {}")
+        .file("baz/Cargo.toml", &basic_manifest("baz", "0.1.0"))
+        .file("baz/src/lib.rs", "pub fn baz() {}")
         .build();
 
-    // The order in which foo and bar are documented is not guaranteed
+    // The order in which bar and baz are documented is not guaranteed
     assert_that(
         p.cargo("doc"),
         execs()
-            .with_status(0)
-            .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])")
-            .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])"),
+            .with_stderr_contains("[..] Documenting baz v0.1.0 ([..])")
+            .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])"),
     );
 }
 
 #[test]
 fn doc_all_member_dependency_same_name() {
-    let p = project("workspace")
+    if !is_nightly() {
+        // This can be removed once 1.29 is stable (rustdoc --cap-lints).
+        return;
+    }
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [workspace]
-            members = ["a"]
+            members = ["bar"]
         "#,
         )
         .file(
-            "a/Cargo.toml",
+            "bar/Cargo.toml",
             r#"
             [project]
-            name = "a"
+            name = "bar"
             version = "0.1.0"
 
             [dependencies]
-            a = "0.1.0"
+            bar = "0.1.0"
         "#,
         )
-        .file(
-            "a/src/lib.rs",
-            r#"
-            pub fn a() {}
-        "#,
-        )
+        .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
 
-    Package::new("a", "0.1.0").publish();
+    Package::new("bar", "0.1.0").publish();
 
     assert_that(
         p.cargo("doc").arg("--all"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[..] Updating registry `[..]`")
-            .with_stderr_contains("[..] Documenting a v0.1.0 ([..])"),
+            .with_stderr_contains("[..] Documenting bar v0.1.0 ([..])"),
     );
 }
 
 #[test]
 fn doc_workspace_open_help_message() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1440,23 +1118,9 @@ fn doc_workspace_open_help_message() {
             members = ["foo", "bar"]
         "#,
         )
-        .file(
-            "foo/Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.1.0"
-        "#,
-        )
+        .file("foo/Cargo.toml", &basic_manifest("foo", "0.1.0"))
         .file("foo/src/lib.rs", "")
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.1.0"
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.1.0"))
         .file("bar/src/lib.rs", "")
         .build();
 
@@ -1483,7 +1147,7 @@ fn doc_workspace_open_help_message() {
 #[test]
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn doc_workspace_open_different_library_and_package_names() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1507,16 +1171,15 @@ fn doc_workspace_open_different_library_and_package_names() {
     assert_that(
         p.cargo("doc --open").env("BROWSER", "echo"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])")
-            .with_stderr_contains("[..] Opening [..][/]foo[/]target[/]doc[/]foolib[/]index.html")
+            .with_stderr_contains("[..] Opening [..]/foo/target/doc/foolib/index.html")
     );
 }
 
 #[test]
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn doc_workspace_open_binary() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1541,16 +1204,15 @@ fn doc_workspace_open_binary() {
     assert_that(
         p.cargo("doc --open").env("BROWSER", "echo"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])")
-            .with_stderr_contains("[..] Opening [..][/]foo[/]target[/]doc[/]foobin[/]index.html")
+            .with_stderr_contains("[..] Opening [..]/foo/target/doc/foobin/index.html")
     );
 }
 
 #[test]
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn doc_workspace_open_binary_and_library() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1578,20 +1240,19 @@ fn doc_workspace_open_binary_and_library() {
     assert_that(
         p.cargo("doc --open").env("BROWSER", "echo"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[..] Documenting foo v0.1.0 ([..])")
-            .with_stderr_contains("[..] Opening [..][/]foo[/]target[/]doc[/]foolib[/]index.html")
+            .with_stderr_contains("[..] Opening [..]/foo/target/doc/foolib/index.html")
     );
 }
 
 #[test]
 fn doc_edition() {
-    if !cargotest::is_nightly() {
+    if !support::is_nightly() {
         // Stable rustdoc won't have the edition option.  Remove this once it
         // is stabilized.
         return;
     }
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1609,14 +1270,47 @@ fn doc_edition() {
     assert_that(
         p.cargo("doc -v").masquerade_as_nightly_cargo(),
         execs()
-            .with_status(0)
             .with_stderr_contains("[RUNNING] `rustdoc [..]-Zunstable-options --edition=2018[..]"),
     );
 
     assert_that(
         p.cargo("test -v").masquerade_as_nightly_cargo(),
         execs()
-            .with_status(0)
+            .with_stderr_contains("[RUNNING] `rustdoc [..]-Zunstable-options --edition=2018[..]")
+    );
+}
+
+#[test]
+fn doc_target_edition() {
+    if !support::is_nightly() {
+        return;
+    }
+    let p = project()
+        .file(
+            "Cargo.toml",
+            r#"
+            cargo-features = ["edition"]
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [lib]
+            edition = "2018"
+        "#,
+        )
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("doc -v").masquerade_as_nightly_cargo(),
+        execs()
+            .with_stderr_contains("[RUNNING] `rustdoc [..]-Zunstable-options --edition=2018[..]"),
+    );
+
+    assert_that(
+        p.cargo("test -v").masquerade_as_nightly_cargo(),
+        execs()
             .with_stderr_contains("[RUNNING] `rustdoc [..]-Zunstable-options --edition=2018[..]")
     );
 }
@@ -1625,7 +1319,11 @@ fn doc_edition() {
 // caused `cargo doc` to fail.
 #[test]
 fn issue_5345() {
-    let foo = project("foo")
+    if !is_nightly() {
+        // This can be removed once 1.29 is stable (rustdoc --cap-lints).
+        return;
+    }
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1646,6 +1344,80 @@ fn issue_5345() {
     Package::new("bar", "0.1.0").publish();
     Package::new("bar", "0.2.0").publish();
 
-    assert_that(foo.cargo("build"), execs().with_status(0));
-    assert_that(foo.cargo("doc"), execs().with_status(0));
+    assert_that(foo.cargo("build"), execs());
+    assert_that(foo.cargo("doc"), execs());
+}
+
+#[test]
+fn doc_private_items() {
+    let foo = project()
+        .file("src/lib.rs", "mod private { fn private_item() {} }")
+        .build();
+    assert_that(foo.cargo("doc").arg("--document-private-items"), execs());
+
+    assert_that(&foo.root().join("target/doc"), existing_dir());
+    assert_that(&foo.root().join("target/doc/foo/private/index.html"), existing_file());
+}
+
+#[test]
+fn doc_cap_lints() {
+    if !is_nightly() {
+        // This can be removed once 1.29 is stable (rustdoc --cap-lints).
+        return;
+    }
+    let a = git::new("a", |p| {
+        p.file("Cargo.toml", &basic_lib_manifest("a")).file(
+            "src/lib.rs",
+            "
+            #![deny(intra_doc_link_resolution_failure)]
+
+            /// [bad_link]
+            pub fn foo() {}
+        ",
+        )
+    }).unwrap();
+
+    let p = project()
+        .file(
+            "Cargo.toml",
+            &format!(
+                r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+            authors = []
+
+            [dependencies]
+            a = {{ git = '{}' }}
+        "#,
+                a.url()
+            ),
+        )
+        .file("src/lib.rs", "")
+        .build();
+
+    assert_that(
+        p.cargo("doc"),
+        execs().with_stderr_unordered(
+            "\
+[UPDATING] git repository `[..]`
+[DOCUMENTING] a v0.5.0 ([..])
+[CHECKING] a v0.5.0 ([..])
+[DOCUMENTING] foo v0.0.1 ([..])
+[FINISHED] dev [..]
+",
+        ),
+    );
+
+    p.root().join("target").rm_rf();
+
+    assert_that(
+        p.cargo("doc -vv"),
+        execs().with_stderr_contains(
+            "\
+[WARNING] `[bad_link]` cannot be resolved, ignoring it...
+",
+        ),
+    );
+
 }

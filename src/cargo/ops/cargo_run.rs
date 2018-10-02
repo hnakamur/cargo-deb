@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use ops::{self, Packages};
+use ops;
 use util::{self, CargoResult, ProcessError};
-use core::{TargetKind, Workspace};
+use core::{TargetKind, Workspace, nightly_features_allowed};
 
 pub fn run(
     ws: &Workspace,
@@ -11,21 +11,11 @@ pub fn run(
 ) -> CargoResult<Option<ProcessError>> {
     let config = ws.config();
 
-    let pkg = match options.spec {
-        Packages::All | Packages::Default | Packages::OptOut(_) => {
-            unreachable!("cargo run supports single package only")
-        }
-        Packages::Packages(ref xs) => match xs.len() {
-            0 => ws.current()?,
-            1 => ws.members()
-                .find(|pkg| *pkg.name() == xs[0])
-                .ok_or_else(|| {
-                    format_err!("package `{}` is not a member of the workspace", xs[0])
-                })?,
-            _ => unreachable!("cargo run supports single package only"),
-        },
-    };
+    let pkg = options.get_package(ws)?
+        .unwrap_or_else(|| unreachable!("cargo run supports single package only"));
 
+    // We compute the `bins` here *just for diagnosis*.  The actual set of packages to be run
+    // is determined by the `ops::compile` call below.
     let bins: Vec<_> = pkg.manifest()
         .targets()
         .iter()
@@ -49,27 +39,33 @@ pub fn run(
 
     if bins.len() == 1 {
         let &(name, kind) = bins.first().unwrap();
-        match kind {
-            &TargetKind::ExampleLib(..) => { 
-                bail!(
+        if let TargetKind::ExampleLib(..) = kind {
+            bail!(
                     "example target `{}` is a library and cannot be executed",
                     name
-                ) 
-            },
-            _ => { }
-        };
+                )
+        }
     }
 
     if bins.len() > 1 {
         if !options.filter.is_specific() {
             let names: Vec<&str> = bins.into_iter().map(|bin| bin.0).collect();
-            bail!(
-                "`cargo run` requires that a project only have one \
-                 executable; use the `--bin` option to specify which one \
-                 to run\navailable binaries: {}", 
-                 names.join(", ")
-                
-            )
+            if nightly_features_allowed() {
+                bail!(
+                    "`cargo run` could not determine which binary to run. \
+                    Use the `--bin` option to specify a binary, \
+                    or (on nightly) the `default-run` manifest key.\n\
+                    available binaries: {}",
+                    names.join(", ")
+                )
+            } else {
+                bail!(
+                    "`cargo run` requires that a project only have one \
+                    executable; use the `--bin` option to specify which one \
+                    to run\navailable binaries: {}",
+                    names.join(", ")
+                )
+            }
         } else {
             bail!(
                 "`cargo run` can run at most one executable, but \

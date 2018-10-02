@@ -83,6 +83,24 @@ impl<'a> CompileOptions<'a> {
             export_dir: None,
         })
     }
+
+    // Returns the unique specified package, or None
+    pub fn get_package<'b>(&self, ws: &'b Workspace) -> CargoResult<Option<&'b Package>> {
+        Ok(match self.spec {
+            Packages::All | Packages::Default | Packages::OptOut(_) => {
+                None
+            }
+            Packages::Packages(ref xs) => match xs.len() {
+                0 => Some(ws.current()?),
+                1 => Some(ws.members()
+                    .find(|pkg| *pkg.name() == xs[0])
+                    .ok_or_else(|| {
+                        format_err!("package `{}` is not a member of the workspace", xs[0])
+                    })?),
+                _ => None,
+            },
+        })
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -104,7 +122,7 @@ impl Packages {
         })
     }
 
-    pub fn into_package_id_specs(&self, ws: &Workspace) -> CargoResult<Vec<PackageIdSpec>> {
+    pub fn to_package_id_specs(&self, ws: &Workspace) -> CargoResult<Vec<PackageIdSpec>> {
         let specs = match *self {
             Packages::All => ws.members()
                 .map(Package::package_id)
@@ -167,7 +185,8 @@ pub fn compile<'a>(
     ws: &Workspace<'a>,
     options: &CompileOptions<'a>,
 ) -> CargoResult<Compilation<'a>> {
-    compile_with_exec(ws, options, Arc::new(DefaultExecutor))
+    let exec: Arc<Executor> = Arc::new(DefaultExecutor);
+    compile_with_exec(ws, options, &exec)
 }
 
 /// Like `compile` but allows specifying a custom `Executor` that will be able to intercept build
@@ -175,22 +194,9 @@ pub fn compile<'a>(
 pub fn compile_with_exec<'a>(
     ws: &Workspace<'a>,
     options: &CompileOptions<'a>,
-    exec: Arc<Executor>,
+    exec: &Arc<Executor>,
 ) -> CargoResult<Compilation<'a>> {
-    for member in ws.members() {
-        for warning in member.manifest().warnings().iter() {
-            if warning.is_critical {
-                let err = format_err!("{}", warning.message);
-                let cx = format_err!(
-                    "failed to parse manifest at `{}`",
-                    member.manifest_path().display()
-                );
-                return Err(err.context(cx).into());
-            } else {
-                options.config.shell().warn(&warning.message)?
-            }
-        }
-    }
+    ws.emit_warnings()?;
     compile_ws(ws, None, options, exec)
 }
 
@@ -198,7 +204,7 @@ pub fn compile_ws<'a>(
     ws: &Workspace<'a>,
     source: Option<Box<Source + 'a>>,
     options: &CompileOptions<'a>,
-    exec: Arc<Executor>,
+    exec: &Arc<Executor>,
 ) -> CargoResult<Compilation<'a>> {
     let CompileOptions {
         config,
@@ -219,7 +225,7 @@ pub fn compile_ws<'a>(
         Kind::Host
     };
 
-    let specs = spec.into_package_id_specs(ws)?;
+    let specs = spec.to_package_id_specs(ws)?;
     let features = Method::split_features(features);
     let method = Method::Required {
         dev_deps: ws.require_optional_deps() || filter.need_dev_deps(build_config.mode),
@@ -291,11 +297,11 @@ pub fn compile_ws<'a>(
             profiles,
             extra_compiler_args,
         )?;
-        let mut cx = Context::new(config, &bcx)?;
+        let cx = Context::new(config, &bcx)?;
         cx.compile(&units, export_dir.clone(), &exec)?
     };
 
-    return Ok(ret);
+    Ok(ret)
 }
 
 impl FilterRule {
@@ -540,7 +546,11 @@ fn generate_targets<'a>(
                 proposals.extend(default_units);
                 if build_config.mode == CompileMode::Test {
                     // Include doctest for lib.
-                    if let Some(t) = pkg.targets().iter().find(|t| t.is_lib() && t.doctested()) {
+                    if let Some(t) = pkg
+                        .targets()
+                        .iter()
+                        .find(|t| t.is_lib() && t.doctested() && t.doctestable())
+                    {
                         proposals.push((new_unit(pkg, t, CompileMode::Doctest), false));
                     }
                 }
@@ -555,9 +565,16 @@ fn generate_targets<'a>(
             } => {
                 if lib {
                     if let Some(target) = pkg.targets().iter().find(|t| t.is_lib()) {
+                        if build_config.mode == CompileMode::Doctest && !target.doctestable() {
+                            bail!(
+                                "doc tests are not supported for crate type(s) `{}` in package `{}`",
+                                target.rustc_crate_types().join(", "),
+                                pkg.name()
+                            );
+                        }
                         proposals.push((new_unit(pkg, target, build_config.mode), false));
                     } else if !all_targets {
-                        bail!("no library targets found")
+                        bail!("no library targets found in package `{}`", pkg.name())
                     }
                 }
                 // If --tests was specified, add all targets that would be

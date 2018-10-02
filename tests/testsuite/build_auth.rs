@@ -6,9 +6,9 @@ use std::thread;
 
 use git2;
 use bufstream::BufStream;
-use cargotest::support::paths;
-use cargotest::support::{execs, project};
-use hamcrest::assert_that;
+use support::paths;
+use support::{basic_manifest, execs, project};
+use support::hamcrest::assert_that;
 
 // Test that HTTP auth is offered from `credential.helper`
 #[test]
@@ -71,16 +71,8 @@ fn http_auth_offered() {
         );
     });
 
-    let script = project("script")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "script"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let script = project().at("script")
+        .file("Cargo.toml", &basic_manifest("script", "0.1.0"))
         .file(
             "src/main.rs",
             r#"
@@ -92,7 +84,7 @@ fn http_auth_offered() {
         )
         .build();
 
-    assert_that(script.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(script.cargo("build").arg("-v"), execs());
     let script = script.bin("script");
 
     let config = paths::home().join(".gitconfig");
@@ -101,7 +93,7 @@ fn http_auth_offered() {
         .set_str("credential.helper", &script.display().to_string())
         .unwrap();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -167,7 +159,7 @@ fn https_something_happens() {
         drop(conn.read(&mut [0; 16]));
     });
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -231,7 +223,7 @@ fn ssh_something_happens() {
         drop(server.accept().unwrap());
     });
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(

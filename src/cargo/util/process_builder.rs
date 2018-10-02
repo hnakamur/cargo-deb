@@ -8,7 +8,7 @@ use std::process::{Command, Output, Stdio};
 use jobserver::Client;
 use shell_escape::escape;
 
-use util::{process_error, CargoError, CargoResult, CargoResultExt, read2};
+use util::{process_error, CargoResult, CargoResultExt, read2};
 
 /// A builder object for an external process, similar to `std::process::Command`.
 #[derive(Clone, Debug)]
@@ -133,7 +133,7 @@ impl ProcessBuilder {
         let mut command = self.build_command();
         let exit = command.status().chain_err(|| {
             process_error(
-                &format!("could not execute process `{}`", self.debug_string()),
+                &format!("could not execute process {}", self),
                 None,
                 None,
             )
@@ -143,11 +143,8 @@ impl ProcessBuilder {
             Ok(())
         } else {
             Err(process_error(
-                &format!(
-                    "process didn't exit successfully: `{}`",
-                    self.debug_string()
-                ),
-                Some(&exit),
+                &format!("process didn't exit successfully: {}", self),
+                Some(exit),
                 None,
             ).into())
         }
@@ -162,9 +159,9 @@ impl ProcessBuilder {
 
         let mut command = self.build_command();
         let error = command.exec();
-        Err(CargoError::from(error)
+        Err(::util::CargoError::from(error)
             .context(process_error(
-                &format!("could not execute process `{}`", self.debug_string()),
+                &format!("could not execute process {}", self),
                 None,
                 None,
             ))
@@ -185,7 +182,7 @@ impl ProcessBuilder {
 
         let output = command.output().chain_err(|| {
             process_error(
-                &format!("could not execute process `{}`", self.debug_string()),
+                &format!("could not execute process {}", self),
                 None,
                 None,
             )
@@ -195,11 +192,8 @@ impl ProcessBuilder {
             Ok(output)
         } else {
             Err(process_error(
-                &format!(
-                    "process didn't exit successfully: `{}`",
-                    self.debug_string()
-                ),
-                Some(&output.status),
+                &format!("process didn't exit successfully: {}", self),
+                Some(output.status),
                 Some(&output),
             ).into())
         }
@@ -261,7 +255,7 @@ impl ProcessBuilder {
         })()
             .chain_err(|| {
             process_error(
-                &format!("could not execute process `{}`", self.debug_string()),
+                &format!("could not execute process {}", self),
                 None,
                 None,
             )
@@ -276,20 +270,17 @@ impl ProcessBuilder {
             let to_print = if print_output { Some(&output) } else { None };
             if !output.status.success() {
                 return Err(process_error(
-                    &format!(
-                        "process didn't exit successfully: `{}`",
-                        self.debug_string()
-                    ),
-                    Some(&output.status),
+                    &format!("process didn't exit successfully: {}", self),
+                    Some(output.status),
                     to_print,
                 ).into());
             } else if let Some(e) = callback_error {
                 let cx = process_error(
-                    &format!("failed to parse process output: `{}`", self.debug_string()),
-                    Some(&output.status),
+                    &format!("failed to parse process output: {}", self),
+                    Some(output.status),
                     to_print,
                 );
-                return Err(CargoError::from(e).context(cx).into());
+                return Err(e.context(cx).into());
             }
         }
 
@@ -320,16 +311,6 @@ impl ProcessBuilder {
             c.configure(&mut command);
         }
         command
-    }
-
-    /// Get the command line for the process as a string.
-    fn debug_string(&self) -> String {
-        let mut program = format!("{}", self.program.to_string_lossy());
-        for arg in &self.args {
-            program.push(' ');
-            program.push_str(&format!("{}", arg.to_string_lossy()));
-        }
-        program
     }
 }
 

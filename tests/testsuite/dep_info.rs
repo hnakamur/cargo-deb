@@ -1,15 +1,15 @@
-use cargotest::support::{basic_bin_manifest, execs, main_file, project};
+use support::{basic_bin_manifest, execs, main_file, project};
 use filetime::FileTime;
-use hamcrest::{assert_that, existing_file};
+use support::hamcrest::{assert_that, existing_file};
 
 #[test]
 fn build_dep_info() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file("src/foo.rs", &main_file(r#""i am foo""#, &[]))
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     let depinfo_bin_path = &p.bin("foo").with_extension("d");
 
@@ -18,7 +18,7 @@ fn build_dep_info() {
 
 #[test]
 fn build_dep_info_lib() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -37,7 +37,7 @@ fn build_dep_info_lib() {
         .file("examples/ex.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("--example=ex"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--example=ex"), execs());
     assert_that(
         &p.example_lib("ex", "lib").with_extension("d"),
         existing_file(),
@@ -46,7 +46,7 @@ fn build_dep_info_lib() {
 
 #[test]
 fn build_dep_info_rlib() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -64,7 +64,7 @@ fn build_dep_info_rlib() {
         .file("examples/ex.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("--example=ex"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--example=ex"), execs());
     assert_that(
         &p.example_lib("ex", "rlib").with_extension("d"),
         existing_file(),
@@ -73,7 +73,7 @@ fn build_dep_info_rlib() {
 
 #[test]
 fn build_dep_info_dylib() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -91,7 +91,7 @@ fn build_dep_info_dylib() {
         .file("examples/ex.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("--example=ex"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--example=ex"), execs());
     assert_that(
         &p.example_lib("ex", "dylib").with_extension("d"),
         existing_file(),
@@ -100,23 +100,14 @@ fn build_dep_info_dylib() {
 
 #[test]
 fn no_rewrite_if_no_change() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     let dep_info = p.root().join("target/debug/libfoo.d");
     let metadata1 = dep_info.metadata().unwrap();
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     let metadata2 = dep_info.metadata().unwrap();
 
     assert_eq!(

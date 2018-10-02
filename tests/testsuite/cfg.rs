@@ -2,10 +2,10 @@ use std::str::FromStr;
 use std::fmt;
 
 use cargo::util::{Cfg, CfgExpr};
-use cargotest::rustc_host;
-use cargotest::support::registry::Package;
-use cargotest::support::{execs, project};
-use hamcrest::assert_that;
+use support::rustc_host;
+use support::registry::Package;
+use support::{basic_manifest, execs, project};
+use support::hamcrest::assert_that;
 
 macro_rules! c {
     ($a:ident) => (
@@ -143,7 +143,7 @@ fn cfg_matches() {
 
 #[test]
 fn cfg_easy() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -159,24 +159,16 @@ fn cfg_easy() {
         "#,
         )
         .file("src/lib.rs", "extern crate b;")
-        .file(
-            "b/Cargo.toml",
-            r#"
-            [package]
-            name = "b"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("b/Cargo.toml", &basic_manifest("b", "0.0.1"))
         .file("b/src/lib.rs", "")
         .build();
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
 }
 
 #[test]
 fn dont_include() {
     let other_family = if cfg!(unix) { "windows" } else { "unix" };
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -193,20 +185,12 @@ fn dont_include() {
             ),
         )
         .file("src/lib.rs", "")
-        .file(
-            "b/Cargo.toml",
-            r#"
-            [package]
-            name = "b"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("b/Cargo.toml", &basic_manifest("b", "0.0.1"))
         .file("b/src/lib.rs", "")
         .build();
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] a v0.0.1 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
@@ -217,18 +201,18 @@ fn dont_include() {
 
 #[test]
 fn works_through_the_registry() {
-    Package::new("foo", "0.1.0").publish();
+    Package::new("baz", "0.1.0").publish();
     Package::new("bar", "0.1.0")
-        .target_dep("foo", "0.1.0", "cfg(unix)")
-        .target_dep("foo", "0.1.0", "cfg(windows)")
+        .target_dep("baz", "0.1.0", "cfg(unix)")
+        .target_dep("baz", "0.1.0", "cfg(windows)")
         .publish();
 
-    let p = project("a")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "a"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
@@ -236,22 +220,19 @@ fn works_through_the_registry() {
             bar = "0.1.0"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            "#[allow(unused_extern_crates)] extern crate bar;",
-        )
+        .file("src/lib.rs", "#[allow(unused_extern_crates)] extern crate bar;")
         .build();
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [UPDATING] registry [..]
 [DOWNLOADING] [..]
 [DOWNLOADING] [..]
-[COMPILING] foo v0.1.0
+[COMPILING] baz v0.1.0
 [COMPILING] bar v0.1.0
-[COMPILING] a v0.0.1 ([..])
+[COMPILING] foo v0.0.1 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
         ),
@@ -262,42 +243,39 @@ fn works_through_the_registry() {
 fn ignore_version_from_other_platform() {
     let this_family = if cfg!(unix) { "unix" } else { "windows" };
     let other_family = if cfg!(unix) { "windows" } else { "unix" };
-    Package::new("foo", "0.1.0").publish();
-    Package::new("foo", "0.2.0").publish();
+    Package::new("bar", "0.1.0").publish();
+    Package::new("bar", "0.2.0").publish();
 
-    let p = project("a")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
                 r#"
             [package]
-            name = "a"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
             [target.'cfg({})'.dependencies]
-            foo = "0.1.0"
+            bar = "0.1.0"
 
             [target.'cfg({})'.dependencies]
-            foo = "0.2.0"
+            bar = "0.2.0"
         "#,
                 this_family, other_family
             ),
         )
-        .file(
-            "src/lib.rs",
-            "#[allow(unused_extern_crates)] extern crate foo;",
-        )
+        .file("src/lib.rs", "#[allow(unused_extern_crates)] extern crate bar;")
         .build();
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [UPDATING] registry [..]
 [DOWNLOADING] [..]
-[COMPILING] foo v0.1.0
-[COMPILING] a v0.0.1 ([..])
+[COMPILING] bar v0.1.0
+[COMPILING] foo v0.0.1 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
         ),
@@ -306,12 +284,12 @@ fn ignore_version_from_other_platform() {
 
 #[test]
 fn bad_target_spec() {
-    let p = project("a")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "a"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
@@ -340,17 +318,17 @@ Caused by:
 
 #[test]
 fn bad_target_spec2() {
-    let p = project("a")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "a"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
-            [target.'cfg(foo =)'.dependencies]
-            bar = "0.1.0"
+            [target.'cfg(bar =)'.dependencies]
+            baz = "0.1.0"
         "#,
         )
         .file("src/lib.rs", "")
@@ -363,7 +341,7 @@ fn bad_target_spec2() {
 [ERROR] failed to parse manifest at `[..]`
 
 Caused by:
-  failed to parse `foo =` as a cfg expression
+  failed to parse `bar =` as a cfg expression
 
 Caused by:
   expected a string, found nothing
@@ -374,7 +352,7 @@ Caused by:
 
 #[test]
 fn multiple_match_ok() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -402,23 +380,15 @@ fn multiple_match_ok() {
             ),
         )
         .file("src/lib.rs", "extern crate b;")
-        .file(
-            "b/Cargo.toml",
-            r#"
-            [package]
-            name = "b"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("b/Cargo.toml", &basic_manifest("b", "0.0.1"))
         .file("b/src/lib.rs", "")
         .build();
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
 }
 
 #[test]
 fn any_ok() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -432,25 +402,17 @@ fn any_ok() {
         "#,
         )
         .file("src/lib.rs", "extern crate b;")
-        .file(
-            "b/Cargo.toml",
-            r#"
-            [package]
-            name = "b"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("b/Cargo.toml", &basic_manifest("b", "0.0.1"))
         .file("b/src/lib.rs", "")
         .build();
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
 }
 
 // https://github.com/rust-lang/cargo/issues/5313
 #[test]
-#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
 fn cfg_looks_at_rustflags_for_target() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -472,21 +434,13 @@ fn cfg_looks_at_rustflags_for_target() {
             fn main() { b::foo(); }
         "#,
         )
-        .file(
-            "b/Cargo.toml",
-            r#"
-            [package]
-            name = "b"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("b/Cargo.toml", &basic_manifest("b", "0.0.1"))
         .file("b/src/lib.rs", "pub fn foo() {}")
         .build();
 
     assert_that(
         p.cargo("build --target x86_64-unknown-linux-gnu")
             .env("RUSTFLAGS", "--cfg with_b"),
-        execs().with_status(0),
+        execs(),
     );
 }

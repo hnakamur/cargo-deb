@@ -193,7 +193,7 @@ unable to verify that `{0}` is the same as when the lockfile was generated
 
     pub fn features_sorted(&self, pkg: &PackageId) -> Vec<&str> {
         let mut v = Vec::from_iter(self.features(pkg).iter().map(|s| s.as_ref()));
-        v.sort();
+        v.sort_unstable();
         v
     }
 
@@ -237,10 +237,10 @@ unable to verify that `{0}` is the same as when the lockfile was generated
 
 impl fmt::Debug for Resolve {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "graph: {:?}\n", self.graph)?;
-        write!(fmt, "\nfeatures: {{\n")?;
+        writeln!(fmt, "graph: {:?}", self.graph)?;
+        writeln!(fmt, "\nfeatures: {{")?;
         for (pkg, features) in &self.features {
-            write!(fmt, "  {}: {:?}\n", pkg, features)?;
+            writeln!(fmt, "  {}: {:?}", pkg, features)?;
         }
         write!(fmt, "}}")
     }

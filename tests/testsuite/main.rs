@@ -13,15 +13,13 @@ extern crate serde_derive;
 #[macro_use]
 extern crate serde_json;
 extern crate tar;
-extern crate tempfile;
 extern crate toml;
 extern crate url;
 #[cfg(windows)]
 extern crate winapi;
 
 #[macro_use]
-mod cargotest;
-mod hamcrest;
+mod support;
 
 mod alt_registry;
 mod bad_config;
@@ -49,8 +47,10 @@ mod death;
 mod dep_info;
 mod directory;
 mod doc;
+mod edition;
 mod features;
 mod fetch;
+mod fix;
 mod freshness;
 mod generate_lockfile;
 mod git;
@@ -87,6 +87,7 @@ mod rustdocflags;
 mod rustdoc;
 mod rustflags;
 mod search;
+mod shell_quoting;
 mod small_fd_limits;
 mod test;
 mod tool_paths;

@@ -1,21 +1,13 @@
 use std::io::Write;
 use std::fs::{self, File};
 
-use cargotest::rustc_host;
-use cargotest::support::{execs, paths, project, project_in_home};
-use hamcrest::assert_that;
+use support::rustc_host;
+use support::{basic_manifest, basic_lib_manifest, execs, paths, project, project_in_home};
+use support::hamcrest::assert_that;
 
 #[test]
 fn env_rustflags_normal_source() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -59,7 +51,7 @@ fn env_rustflags_build_script() {
     // RUSTFLAGS should be passed to rustc for build scripts
     // when --target is not specified.
     // In this test if --cfg foo is passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -82,7 +74,7 @@ fn env_rustflags_build_script() {
 
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -91,7 +83,7 @@ fn env_rustflags_build_script_dep() {
     // RUSTFLAGS should be passed to rustc for build scripts
     // when --target is not specified.
     // In this test if --cfg foo is not passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -105,22 +97,10 @@ fn env_rustflags_build_script_dep() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "build.rs",
-            r#"
-            fn main() { }
-        "#,
-        )
+        .file("build.rs", "fn main() {}")
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file(
             "src/lib.rs",
             r#"
@@ -133,7 +113,7 @@ fn env_rustflags_build_script_dep() {
 
     assert_that(
         foo.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -142,7 +122,7 @@ fn env_rustflags_plugin() {
     // RUSTFLAGS should be passed to rustc for plugins
     // when --target is not specified.
     // In this test if --cfg foo is not passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -167,7 +147,7 @@ fn env_rustflags_plugin() {
 
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -176,7 +156,7 @@ fn env_rustflags_plugin_dep() {
     // RUSTFLAGS should be passed to rustc for plugins
     // when --target is not specified.
     // In this test if --cfg foo is not passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -192,25 +172,10 @@ fn env_rustflags_plugin_dep() {
             path = "../bar"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            fn foo() { }
-        "#,
-        )
+        .file("src/lib.rs", "fn foo() {}")
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-
-            [lib]
-            name = "bar"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_lib_manifest("bar"))
         .file(
             "src/lib.rs",
             r#"
@@ -223,21 +188,13 @@ fn env_rustflags_plugin_dep() {
 
     assert_that(
         foo.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn env_rustflags_normal_source_with_target() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -299,7 +256,7 @@ fn env_rustflags_build_script_with_target() {
     // RUSTFLAGS should not be passed to rustc for build scripts
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -326,7 +283,7 @@ fn env_rustflags_build_script_with_target() {
             .env("RUSTFLAGS", "--cfg foo")
             .arg("--target")
             .arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -335,7 +292,7 @@ fn env_rustflags_build_script_dep_with_target() {
     // RUSTFLAGS should not be passed to rustc for build scripts
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -349,22 +306,10 @@ fn env_rustflags_build_script_dep_with_target() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "build.rs",
-            r#"
-            fn main() { }
-        "#,
-        )
+        .file("build.rs", "fn main() {}")
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file(
             "src/lib.rs",
             r#"
@@ -381,7 +326,7 @@ fn env_rustflags_build_script_dep_with_target() {
             .env("RUSTFLAGS", "--cfg foo")
             .arg("--target")
             .arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -390,7 +335,7 @@ fn env_rustflags_plugin_with_target() {
     // RUSTFLAGS should not be passed to rustc for plugins
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -419,7 +364,7 @@ fn env_rustflags_plugin_with_target() {
             .env("RUSTFLAGS", "--cfg foo")
             .arg("--target")
             .arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -428,7 +373,7 @@ fn env_rustflags_plugin_dep_with_target() {
     // RUSTFLAGS should not be passed to rustc for plugins
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -444,25 +389,10 @@ fn env_rustflags_plugin_dep_with_target() {
             path = "../bar"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            fn foo() { }
-        "#,
-        )
+        .file("src/lib.rs", "fn foo() {}")
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-
-            [lib]
-            name = "bar"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_lib_manifest("bar"))
         .file(
             "src/lib.rs",
             r#"
@@ -479,25 +409,17 @@ fn env_rustflags_plugin_dep_with_target() {
             .env("RUSTFLAGS", "--cfg foo")
             .arg("--target")
             .arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn env_rustflags_recompile() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     // Setting RUSTFLAGS forces a recompile
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "-Z bogus"),
@@ -507,21 +429,13 @@ fn env_rustflags_recompile() {
 
 #[test]
 fn env_rustflags_recompile2() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
     // Setting RUSTFLAGS forces a recompile
     assert_that(
@@ -532,39 +446,23 @@ fn env_rustflags_recompile2() {
 
 #[test]
 fn env_rustflags_no_recompile() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_stdout("").with_status(0),
+        execs().with_stdout(""),
     );
 }
 
 #[test]
 fn build_rustflags_normal_source() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -600,7 +498,7 @@ fn build_rustflags_build_script() {
     // RUSTFLAGS should be passed to rustc for build scripts
     // when --target is not specified.
     // In this test if --cfg foo is passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -628,7 +526,7 @@ fn build_rustflags_build_script() {
         )
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
@@ -636,7 +534,7 @@ fn build_rustflags_build_script_dep() {
     // RUSTFLAGS should be passed to rustc for build scripts
     // when --target is not specified.
     // In this test if --cfg foo is not passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -650,12 +548,7 @@ fn build_rustflags_build_script_dep() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "build.rs",
-            r#"
-            fn main() { }
-        "#,
-        )
+        .file("build.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -664,15 +557,8 @@ fn build_rustflags_build_script_dep() {
             "#,
         )
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file(
             "src/lib.rs",
             r#"
@@ -683,7 +569,7 @@ fn build_rustflags_build_script_dep() {
         )
         .build();
 
-    assert_that(foo.cargo("build"), execs().with_status(0));
+    assert_that(foo.cargo("build"), execs());
 }
 
 #[test]
@@ -691,7 +577,7 @@ fn build_rustflags_plugin() {
     // RUSTFLAGS should be passed to rustc for plugins
     // when --target is not specified.
     // In this test if --cfg foo is not passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -721,7 +607,7 @@ fn build_rustflags_plugin() {
         )
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
@@ -729,7 +615,7 @@ fn build_rustflags_plugin_dep() {
     // RUSTFLAGS should be passed to rustc for plugins
     // when --target is not specified.
     // In this test if --cfg foo is not passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -745,12 +631,7 @@ fn build_rustflags_plugin_dep() {
             path = "../bar"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            fn foo() { }
-        "#,
-        )
+        .file("src/lib.rs", "fn foo() {}")
         .file(
             ".cargo/config",
             r#"
@@ -759,18 +640,8 @@ fn build_rustflags_plugin_dep() {
             "#,
         )
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-
-            [lib]
-            name = "bar"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_lib_manifest("bar"))
         .file(
             "src/lib.rs",
             r#"
@@ -781,20 +652,12 @@ fn build_rustflags_plugin_dep() {
         )
         .build();
 
-    assert_that(foo.cargo("build"), execs().with_status(0));
+    assert_that(foo.cargo("build"), execs());
 }
 
 #[test]
 fn build_rustflags_normal_source_with_target() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -848,7 +711,7 @@ fn build_rustflags_build_script_with_target() {
     // RUSTFLAGS should not be passed to rustc for build scripts
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -879,7 +742,7 @@ fn build_rustflags_build_script_with_target() {
     let host = rustc_host();
     assert_that(
         p.cargo("build").arg("--target").arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -888,7 +751,7 @@ fn build_rustflags_build_script_dep_with_target() {
     // RUSTFLAGS should not be passed to rustc for build scripts
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -902,12 +765,7 @@ fn build_rustflags_build_script_dep_with_target() {
         "#,
         )
         .file("src/lib.rs", "")
-        .file(
-            "build.rs",
-            r#"
-            fn main() { }
-        "#,
-        )
+        .file("build.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -916,15 +774,8 @@ fn build_rustflags_build_script_dep_with_target() {
             "#,
         )
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file(
             "src/lib.rs",
             r#"
@@ -938,7 +789,7 @@ fn build_rustflags_build_script_dep_with_target() {
     let host = rustc_host();
     assert_that(
         foo.cargo("build").arg("--target").arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -947,7 +798,7 @@ fn build_rustflags_plugin_with_target() {
     // RUSTFLAGS should not be passed to rustc for plugins
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -980,7 +831,7 @@ fn build_rustflags_plugin_with_target() {
     let host = rustc_host();
     assert_that(
         p.cargo("build").arg("--target").arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -989,7 +840,7 @@ fn build_rustflags_plugin_dep_with_target() {
     // RUSTFLAGS should not be passed to rustc for plugins
     // when --target is specified.
     // In this test if --cfg foo is passed the build will fail.
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -1005,12 +856,7 @@ fn build_rustflags_plugin_dep_with_target() {
             path = "../bar"
         "#,
         )
-        .file(
-            "src/lib.rs",
-            r#"
-            fn foo() { }
-        "#,
-        )
+        .file("src/lib.rs", "fn foo() {}")
         .file(
             ".cargo/config",
             r#"
@@ -1019,18 +865,8 @@ fn build_rustflags_plugin_dep_with_target() {
             "#,
         )
         .build();
-    let _bar = project("bar")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-
-            [lib]
-            name = "bar"
-        "#,
-        )
+    let _bar = project().at("bar")
+        .file("Cargo.toml", &basic_lib_manifest("bar"))
         .file(
             "src/lib.rs",
             r#"
@@ -1044,25 +880,17 @@ fn build_rustflags_plugin_dep_with_target() {
     let host = rustc_host();
     assert_that(
         foo.cargo("build").arg("--target").arg(host),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn build_rustflags_recompile() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 
     // Setting RUSTFLAGS forces a recompile
     let config = r#"
@@ -1079,21 +907,13 @@ fn build_rustflags_recompile() {
 
 #[test]
 fn build_rustflags_recompile2() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
 
     // Setting RUSTFLAGS forces a recompile
@@ -1111,15 +931,7 @@ fn build_rustflags_recompile2() {
 
 #[test]
 fn build_rustflags_no_recompile() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file(
             ".cargo/config",
@@ -1132,11 +944,11 @@ fn build_rustflags_no_recompile() {
 
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build").env("RUSTFLAGS", "--cfg foo"),
-        execs().with_stdout("").with_status(0),
+        execs().with_stdout(""),
     );
 }
 
@@ -1159,31 +971,15 @@ fn build_rustflags_with_home_config() {
     // And we need the project to be inside the home directory
     // so the walking process finds the home project twice.
     let p = project_in_home("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
         .file("src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("-v"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("-v"), execs());
 }
 
 #[test]
 fn target_rustflags_normal_source() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -1220,15 +1016,7 @@ fn target_rustflags_normal_source() {
 // target.{}.rustflags takes precedence over build.rustflags
 #[test]
 fn target_rustflags_precedence() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "")
         .file(
             ".cargo/config",
@@ -1257,15 +1045,7 @@ fn target_rustflags_precedence() {
 
 #[test]
 fn cfg_rustflags_normal_source() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "pub fn t() {}")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -1288,7 +1068,7 @@ fn cfg_rustflags_normal_source() {
 
     assert_that(
         p.cargo("build").arg("--lib").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1299,7 +1079,7 @@ fn cfg_rustflags_normal_source() {
 
     assert_that(
         p.cargo("build").arg("--bin=a").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1310,7 +1090,7 @@ fn cfg_rustflags_normal_source() {
 
     assert_that(
         p.cargo("build").arg("--example=b").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1321,7 +1101,7 @@ fn cfg_rustflags_normal_source() {
 
     assert_that(
         p.cargo("test").arg("--no-run").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1334,7 +1114,7 @@ fn cfg_rustflags_normal_source() {
 
     assert_that(
         p.cargo("bench").arg("--no-run").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1349,15 +1129,7 @@ fn cfg_rustflags_normal_source() {
 // target.'cfg(...)'.rustflags takes precedence over build.rustflags
 #[test]
 fn cfg_rustflags_precedence() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p = project()
         .file("src/lib.rs", "pub fn t() {}")
         .file("src/bin/a.rs", "fn main() {}")
         .file("examples/b.rs", "fn main() {}")
@@ -1383,7 +1155,7 @@ fn cfg_rustflags_precedence() {
 
     assert_that(
         p.cargo("build").arg("--lib").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1394,7 +1166,7 @@ fn cfg_rustflags_precedence() {
 
     assert_that(
         p.cargo("build").arg("--bin=a").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1405,7 +1177,7 @@ fn cfg_rustflags_precedence() {
 
     assert_that(
         p.cargo("build").arg("--example=b").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1416,7 +1188,7 @@ fn cfg_rustflags_precedence() {
 
     assert_that(
         p.cargo("test").arg("--no-run").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1429,7 +1201,7 @@ fn cfg_rustflags_precedence() {
 
     assert_that(
         p.cargo("bench").arg("--no-run").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg bar[..]`
@@ -1443,15 +1215,7 @@ fn cfg_rustflags_precedence() {
 
 #[test]
 fn target_rustflags_string_and_array_form1() {
-    let p1 = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p1 = project()
         .file("src/lib.rs", "")
         .file(
             ".cargo/config",
@@ -1464,7 +1228,7 @@ fn target_rustflags_string_and_array_form1() {
 
     assert_that(
         p1.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg foo[..]`
@@ -1473,15 +1237,7 @@ fn target_rustflags_string_and_array_form1() {
         ),
     );
 
-    let p2 = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p2 = project()
         .file("src/lib.rs", "")
         .file(
             ".cargo/config",
@@ -1494,7 +1250,7 @@ fn target_rustflags_string_and_array_form1() {
 
     assert_that(
         p2.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg foo[..]`
@@ -1506,15 +1262,7 @@ fn target_rustflags_string_and_array_form1() {
 
 #[test]
 fn target_rustflags_string_and_array_form2() {
-    let p1 = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p1 = project()
         .file(
             ".cargo/config",
             &format!(
@@ -1530,7 +1278,7 @@ fn target_rustflags_string_and_array_form2() {
 
     assert_that(
         p1.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg foo[..]`
@@ -1539,15 +1287,7 @@ fn target_rustflags_string_and_array_form2() {
         ),
     );
 
-    let p2 = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p2 = project()
         .file(
             ".cargo/config",
             &format!(
@@ -1563,7 +1303,7 @@ fn target_rustflags_string_and_array_form2() {
 
     assert_that(
         p2.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] --cfg foo[..]`
@@ -1575,15 +1315,7 @@ fn target_rustflags_string_and_array_form2() {
 
 #[test]
 fn two_matching_in_config() {
-    let p1 = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-            name = "foo"
-            version = "0.0.1"
-        "#,
-        )
+    let p1 = project()
         .file(
             ".cargo/config",
             r#"
@@ -1613,9 +1345,9 @@ fn two_matching_in_config() {
         )
         .build();
 
-    assert_that(p1.cargo("run"), execs().with_status(0));
+    assert_that(p1.cargo("run"), execs());
     assert_that(
         p1.cargo("build"),
-        execs().with_status(0).with_stderr("[FINISHED] [..]"),
+        execs().with_stderr("[FINISHED] [..]"),
     );
 }

@@ -21,8 +21,8 @@ pub fn cli() -> App {
             "Test only this package's library",
             "Test only the specified binary",
             "Test all binaries",
-            "Check that the specified examples compile",
-            "Check that all examples compile",
+            "Test only the specified example",
+            "Test all examples",
             "Test only the specified test target",
             "Test all tests",
             "Test only the specified bench target",
@@ -127,11 +127,11 @@ pub fn exec(config: &mut Config, args: &ArgMatches) -> CliResult {
     );
 
     let err = ops::run_tests(&ws, &ops, &test_args)?;
-    return match err {
+    match err {
         None => Ok(()),
         Some(err) => Err(match err.exit.as_ref().and_then(|e| e.code()) {
             Some(i) => CliError::new(format_err!("{}", err.hint(&ws)), i),
             None => CliError::new(err.into(), 101),
         }),
-    };
+    }
 }

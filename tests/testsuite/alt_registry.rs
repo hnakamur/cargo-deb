@@ -1,13 +1,13 @@
-use cargotest::ChannelChanger;
-use cargotest::support::registry::{self, alt_api_path, Package};
-use cargotest::support::{execs, paths, project};
-use hamcrest::assert_that;
+use support::ChannelChanger;
+use support::registry::{self, alt_api_path, Package};
+use support::{basic_manifest, execs, paths, project};
+use support::hamcrest::assert_that;
 use std::fs::File;
 use std::io::Write;
 
 #[test]
 fn is_feature_gated() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -36,7 +36,7 @@ fn is_feature_gated() {
 
 #[test]
 fn depend_on_alt_registry() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -59,7 +59,7 @@ fn depend_on_alt_registry() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `{reg}`
 [DOWNLOADING] bar v0.0.1 (registry `file://[..]`)
@@ -74,13 +74,13 @@ fn depend_on_alt_registry() {
 
     assert_that(
         p.cargo("clean").masquerade_as_nightly_cargo(),
-        execs().with_status(0),
+        execs(),
     );
 
     // Don't download a second time
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] bar v0.0.1 (registry `file://[..]`)
 [COMPILING] foo v0.0.1 ({dir})
@@ -93,7 +93,7 @@ fn depend_on_alt_registry() {
 
 #[test]
 fn depend_on_alt_registry_depends_on_same_registry_no_index() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -120,7 +120,7 @@ fn depend_on_alt_registry_depends_on_same_registry_no_index() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `{reg}`
 [DOWNLOADING] [..] v0.0.1 (registry `file://[..]`)
@@ -138,7 +138,7 @@ fn depend_on_alt_registry_depends_on_same_registry_no_index() {
 
 #[test]
 fn depend_on_alt_registry_depends_on_same_registry() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -165,7 +165,7 @@ fn depend_on_alt_registry_depends_on_same_registry() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `{reg}`
 [DOWNLOADING] [..] v0.0.1 (registry `file://[..]`)
@@ -183,7 +183,7 @@ fn depend_on_alt_registry_depends_on_same_registry() {
 
 #[test]
 fn depend_on_alt_registry_depends_on_crates_io() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -210,7 +210,7 @@ fn depend_on_alt_registry_depends_on_crates_io() {
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [UPDATING] registry `{alt_reg}`
 [UPDATING] registry `{reg}`
@@ -232,7 +232,7 @@ fn depend_on_alt_registry_depends_on_crates_io() {
 fn registry_and_path_dep_works() {
     registry::init();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -249,21 +249,13 @@ fn registry_and_path_dep_works() {
         "#,
         )
         .file("src/main.rs", "fn main() {}")
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [project]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "")
         .build();
 
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
-        execs().with_status(0).with_stderr(&format!(
+        execs().with_stderr(&format!(
             "\
 [COMPILING] bar v0.0.1 ({dir}/bar)
 [COMPILING] foo v0.0.1 ({dir})
@@ -278,7 +270,7 @@ fn registry_and_path_dep_works() {
 fn registry_incompatible_with_git() {
     registry::init();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -304,7 +296,7 @@ fn registry_incompatible_with_git() {
 
 #[test]
 fn cannot_publish_to_crates_io_with_registry_dependency() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -334,7 +326,7 @@ fn cannot_publish_to_crates_io_with_registry_dependency() {
 
 #[test]
 fn publish_with_registry_dependency() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -363,7 +355,7 @@ fn publish_with_registry_dependency() {
             .arg("alternative")
             .arg("TOKEN")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 
     assert_that(
@@ -372,13 +364,13 @@ fn publish_with_registry_dependency() {
             .arg("--registry")
             .arg("alternative")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
 #[test]
 fn alt_registry_and_crates_io_deps() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -408,7 +400,6 @@ fn alt_registry_and_crates_io_deps() {
     assert_that(
         p.cargo("build").masquerade_as_nightly_cargo(),
         execs()
-            .with_status(0)
             .with_stderr_contains(format!(
                 "[UPDATING] registry `{}`",
                 registry::alt_registry()
@@ -427,16 +418,7 @@ fn alt_registry_and_crates_io_deps() {
 
 #[test]
 fn block_publish_due_to_no_token() {
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [project]
-            name = "foo"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+    let p = project()
         .file("src/main.rs", "fn main() {}")
         .build();
 
@@ -458,7 +440,7 @@ fn block_publish_due_to_no_token() {
 
 #[test]
 fn publish_to_alt_registry() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -484,7 +466,7 @@ fn publish_to_alt_registry() {
             .arg("alternative")
             .arg("TOKEN")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 
     // Now perform the actual publish
@@ -494,7 +476,7 @@ fn publish_to_alt_registry() {
             .arg("--registry")
             .arg("alternative")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 
     // Ensure that the crate is uploaded
@@ -503,7 +485,7 @@ fn publish_to_alt_registry() {
 
 #[test]
 fn publish_with_crates_io_dep() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -533,7 +515,7 @@ fn publish_with_crates_io_dep() {
             .arg("alternative")
             .arg("TOKEN")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 
     assert_that(
@@ -542,7 +524,7 @@ fn publish_with_crates_io_dep() {
             .arg("--registry")
             .arg("alternative")
             .arg("-Zunstable-options"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -562,7 +544,7 @@ fn credentials_in_url_forbidden() {
         )
         .unwrap();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"

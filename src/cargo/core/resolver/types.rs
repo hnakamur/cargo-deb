@@ -3,15 +3,14 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
 
-use core::{Dependency, PackageId, PackageIdSpec, Registry, Summary};
 use core::interning::InternedString;
+use core::{Dependency, PackageId, PackageIdSpec, Registry, Summary};
 use util::{CargoError, CargoResult};
 
 pub struct RegistryQueryer<'a> {
     pub registry: &'a mut (Registry + 'a),
     replacements: &'a [(PackageIdSpec, Dependency)],
     try_to_use: &'a HashSet<&'a PackageId>,
-    // TODO: with nll the Rc can be removed
     cache: HashMap<Dependency, Rc<Vec<Candidate>>>,
     // If set the list of dependency candidates will be sorted by minimal
     // versions first. That allows `cargo update -Z minimal-versions` which will
@@ -52,7 +51,7 @@ impl<'a> RegistryQueryer<'a> {
                 summary: s,
                 replace: None,
             });
-        })?;
+        }, false)?;
         for candidate in ret.iter_mut() {
             let summary = &candidate.summary;
 
@@ -64,9 +63,9 @@ impl<'a> RegistryQueryer<'a> {
                 None => continue,
                 Some(replacement) => replacement,
             };
-            debug!("found an override for {} {}", dep.name(), dep.version_req());
+            debug!("found an override for {} {}", dep.package_name(), dep.version_req());
 
-            let mut summaries = self.registry.query_vec(dep)?.into_iter();
+            let mut summaries = self.registry.query_vec(dep, false)?.into_iter();
             let s = summaries.next().ok_or_else(|| {
                 format_err!(
                     "no matching package for override `{}` found\n\
@@ -118,7 +117,7 @@ impl<'a> RegistryQueryer<'a> {
             }
 
             for dep in summary.dependencies() {
-                debug!("\t{} => {}", dep.name(), dep.version_req());
+                debug!("\t{} => {}", dep.package_name(), dep.version_req());
             }
 
             candidate.replace = replace;
@@ -200,13 +199,12 @@ impl DepsFrame {
     /// candidates in that entry.
     fn min_candidates(&self) -> usize {
         self.remaining_siblings
-            .clone()
-            .next()
+            .peek()
             .map(|(_, (_, candidates, _))| candidates.len())
             .unwrap_or(0)
     }
 
-    pub fn flatten<'s>(&'s self) -> impl Iterator<Item=(&PackageId, Dependency)> + 's {
+    pub fn flatten<'s>(&'s self) -> impl Iterator<Item = (&PackageId, Dependency)> + 's {
         self.remaining_siblings
             .clone()
             .map(move |(_, (d, _, _))| (self.parent.package_id(), d))
@@ -279,7 +277,7 @@ pub enum ConflictReason {
     /// The `links` key is being violated. For example one crate in the
     /// dependency graph has `links = "foo"` but this crate also had that, and
     /// we're only allowed one per dependency graph.
-    Links(String),
+    Links(InternedString),
 
     /// A dependency listed features that weren't actually available on the
     /// candidate. For example we tried to activate feature `foo` but the
@@ -315,6 +313,13 @@ impl<T> RcVecIter<T> {
             vec,
         }
     }
+
+    fn peek(&self) -> Option<(usize, &T)> {
+        self.rest
+            .clone()
+            .next()
+            .and_then(|i| self.vec.get(i).map(|val| (i, &*val)))
+    }
 }
 
 // Not derived to avoid `T: Clone`
@@ -333,7 +338,7 @@ where
 {
     type Item = (usize, T);
 
-    fn next(&mut self) -> Option<(usize, T)> {
+    fn next(&mut self) -> Option<Self::Item> {
         self.rest
             .next()
             .and_then(|i| self.vec.get(i).map(|val| (i, val.clone())))

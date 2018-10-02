@@ -1,16 +1,11 @@
-use cargotest::support::{basic_bin_manifest, execs, project};
-use hamcrest::assert_that;
+use support::{basic_bin_manifest, execs, project};
+use support::hamcrest::assert_that;
 
 #[test]
 fn alias_incorrect_config_type() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-        }"#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -32,14 +27,9 @@ expected a list, but found a integer for [..]",
 
 #[test]
 fn alias_default_config_overrides_config() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-        }"#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -52,21 +42,15 @@ fn alias_default_config_overrides_config() {
     assert_that(
         p.cargo("b").arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[COMPILING] foo v0.5.0 [..]"),
     );
 }
 
 #[test]
 fn alias_config() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-        }"#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -79,7 +63,6 @@ fn alias_config() {
     assert_that(
         p.cargo("b-cargo-test -v"),
         execs()
-            .with_status(0)
             .with_stderr_contains(
                 "\
 [COMPILING] foo v0.5.0 [..]
@@ -90,14 +73,9 @@ fn alias_config() {
 
 #[test]
 fn recursive_alias() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-        }"#,
-        )
+        .file("src/main.rs", r"fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -110,7 +88,7 @@ fn recursive_alias() {
 
     assert_that(
         p.cargo("a-cargo-test"),
-        execs().with_status(0).with_stderr_contains(
+        execs().with_stderr_contains(
             "\
 [COMPILING] foo v0.5.0 [..]
 [RUNNING] `rustc --crate-name foo [..]",
@@ -120,14 +98,9 @@ fn recursive_alias() {
 
 #[test]
 fn alias_list_test() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-         }"#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -140,7 +113,6 @@ fn alias_list_test() {
     assert_that(
         p.cargo("b-cargo-test").arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[COMPILING] foo v0.5.0 [..]")
             .with_stderr_contains("[RUNNING] `rustc --crate-name [..]"),
     );
@@ -148,14 +120,9 @@ fn alias_list_test() {
 
 #[test]
 fn alias_with_flags_config() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-         }"#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -168,7 +135,6 @@ fn alias_with_flags_config() {
     assert_that(
         p.cargo("b-cargo-test").arg("-v"),
         execs()
-            .with_status(0)
             .with_stderr_contains("[COMPILING] foo v0.5.0 [..]")
             .with_stderr_contains("[RUNNING] `rustc --crate-name foo [..]"),
     );
@@ -176,14 +142,9 @@ fn alias_with_flags_config() {
 
 #[test]
 fn cant_shadow_builtin() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
-        .file(
-            "src/main.rs",
-            r#"
-            fn main() {
-         }"#,
-        )
+        .file("src/main.rs", "fn main() {}")
         .file(
             ".cargo/config",
             r#"
@@ -195,7 +156,7 @@ fn cant_shadow_builtin() {
 
     assert_that(
         p.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [WARNING] alias `build` is ignored, because it is shadowed by a built in command
 [COMPILING] foo v0.5.0 ([..])

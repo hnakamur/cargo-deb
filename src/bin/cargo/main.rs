@@ -1,3 +1,6 @@
+#![cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))] // large project
+#![cfg_attr(feature = "cargo-clippy", allow(redundant_closure))]  // there's a false positive
+
 extern crate cargo;
 extern crate clap;
 extern crate env_logger;
@@ -23,8 +26,11 @@ mod cli;
 mod command_prelude;
 mod commands;
 
+use command_prelude::*;
+
 fn main() {
     env_logger::init();
+    cargo::core::maybe_allow_nightly_features();
 
     let mut config = match Config::default() {
         Ok(cfg) => cfg,
@@ -34,10 +40,14 @@ fn main() {
         }
     };
 
-    let result = {
-        init_git_transports(&mut config);
-        let _token = cargo::util::job::setup();
-        cli::main(&mut config)
+    let result = match cargo::ops::fix_maybe_exec_rustc() {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            init_git_transports(&config);
+            let _token = cargo::util::job::setup();
+            cli::main(&mut config)
+        }
+        Err(e) => Err(CliError::from(e)),
     };
 
     match result {
@@ -73,7 +83,7 @@ fn aliased_command(config: &Config, command: &str) -> CargoResult<Option<Vec<Str
 }
 
 /// List all runnable commands
-fn list_commands(config: &Config) -> BTreeSet<(String, Option<String>)> {
+fn list_commands(config: &Config) -> BTreeSet<CommandInfo> {
     let prefix = "cargo-";
     let suffix = env::consts::EXE_SUFFIX;
     let mut commands = BTreeSet::new();
@@ -93,16 +103,19 @@ fn list_commands(config: &Config) -> BTreeSet<(String, Option<String>)> {
             }
             if is_executable(entry.path()) {
                 let end = filename.len() - suffix.len();
-                commands.insert((
-                    filename[prefix.len()..end].to_string(),
-                    Some(path.display().to_string()),
-                ));
+                commands.insert(CommandInfo::External {
+                    name: filename[prefix.len()..end].to_string(),
+                    path: path.clone(),
+                });
             }
         }
     }
 
     for cmd in commands::builtin() {
-        commands.insert((cmd.get_name().to_string(), None));
+        commands.insert(CommandInfo::BuiltIn {
+            name: cmd.get_name().to_string(),
+            about: cmd.p.meta.about.map(|s| s.to_string()),
+        });
     }
 
     commands
@@ -112,12 +125,12 @@ fn find_closest(config: &Config, cmd: &str) -> Option<String> {
     let cmds = list_commands(config);
     // Only consider candidates with a lev_distance of 3 or less so we don't
     // suggest out-of-the-blue options.
-    let mut filtered = cmds.iter()
-        .map(|&(ref c, _)| (lev_distance(c, cmd), c))
+    cmds.into_iter()
+        .map(|c| c.name())
+        .map(|c| (lev_distance(&c, cmd), c))
         .filter(|&(d, _)| d < 4)
-        .collect::<Vec<_>>();
-    filtered.sort_by(|a, b| a.0.cmp(&b.0));
-    filtered.get(0).map(|slot| slot.1.clone())
+        .min_by_key(|a| a.0)
+        .map(|slot| slot.1)
 }
 
 fn execute_external_subcommand(config: &Config, cmd: &str, args: &[&str]) -> CliResult {

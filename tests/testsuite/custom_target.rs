@@ -1,23 +1,13 @@
-use cargotest::is_nightly;
-use cargotest::support::{execs, project};
-use hamcrest::assert_that;
+use support::is_nightly;
+use support::{basic_manifest, execs, project};
+use support::hamcrest::assert_that;
 
 #[test]
 fn custom_target_minimal() {
     if !is_nightly() {
         return;
     }
-    let p = project("foo")
-        .file(
-            "Cargo.toml",
-            r#"
-            [package]
-
-            name = "foo"
-            version = "0.0.1"
-            authors = ["author@example.com"]
-        "#,
-        )
+    let p = project()
         .file(
             "src/lib.rs",
             r#"
@@ -62,7 +52,7 @@ fn custom_target_minimal() {
             .arg("--target")
             .arg("custom-target.json")
             .arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build")
@@ -70,7 +60,7 @@ fn custom_target_minimal() {
             .arg("--target")
             .arg("src/../custom-target.json")
             .arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 }
 
@@ -79,7 +69,7 @@ fn custom_target_dependency() {
     if !is_nightly() {
         return;
     }
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -111,16 +101,7 @@ fn custom_target_dependency() {
             unsafe auto trait Freeze {}
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-
-            name = "bar"
-            version = "0.0.1"
-            authors = ["author@example.com"]
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file(
             "bar/src/lib.rs",
             r#"
@@ -165,6 +146,6 @@ fn custom_target_dependency() {
             .arg("--target")
             .arg("custom-target.json")
             .arg("-v"),
-        execs().with_status(0),
+        execs(),
     );
 }

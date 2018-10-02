@@ -1,17 +1,17 @@
-use cargotest::support::{execs, project, Project};
-use cargotest::support::registry::Package;
-use hamcrest::assert_that;
+use support::{execs, project, Project};
+use support::registry::Package;
+use support::hamcrest::assert_that;
 
 static WARNING1: &'static str = "Hello! I'm a warning. :)";
 static WARNING2: &'static str = "And one more!";
 
 fn make_lib(lib_src: &str) {
-    Package::new("foo", "0.0.1")
+    Package::new("bar", "0.0.1")
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "foo"
+            name = "bar"
             authors = []
             version = "0.0.1"
             build = "build.rs"
@@ -37,17 +37,17 @@ fn make_lib(lib_src: &str) {
 }
 
 fn make_upstream(main_src: &str) -> Project {
-    project("bar")
+    project()
         .file(
             "Cargo.toml",
             r#"
             [package]
-            name = "bar"
+            name = "foo"
             version = "0.0.1"
             authors = []
 
             [dependencies]
-            foo = "*"
+            bar = "*"
         "#,
         )
         .file("src/main.rs", &format!("fn main() {{ {} }}", main_src))
@@ -60,12 +60,12 @@ fn no_warning_on_success() {
     let upstream = make_upstream("");
     assert_that(
         upstream.cargo("build"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [UPDATING] registry `[..]`
-[DOWNLOADING] foo v0.0.1 ([..])
-[COMPILING] foo v0.0.1
-[COMPILING] bar v0.0.1 ([..])
+[DOWNLOADING] bar v0.0.1 ([..])
+[COMPILING] bar v0.0.1
+[COMPILING] foo v0.0.1 ([..])
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
         ),
@@ -85,9 +85,9 @@ fn no_warning_on_bin_failure() {
             .with_stderr_does_not_contain(&format!("[WARNING] {}", WARNING1))
             .with_stderr_does_not_contain(&format!("[WARNING] {}", WARNING2))
             .with_stderr_contains("[UPDATING] registry `[..]`")
-            .with_stderr_contains("[DOWNLOADING] foo v0.0.1 ([..])")
-            .with_stderr_contains("[COMPILING] foo v0.0.1")
-            .with_stderr_contains("[COMPILING] bar v0.0.1 ([..])"),
+            .with_stderr_contains("[DOWNLOADING] bar v0.0.1 ([..])")
+            .with_stderr_contains("[COMPILING] bar v0.0.1")
+            .with_stderr_contains("[COMPILING] foo v0.0.1 ([..])"),
     );
 }
 
@@ -101,10 +101,10 @@ fn warning_on_lib_failure() {
             .with_status(101)
             .with_stdout_does_not_contain("hidden stdout")
             .with_stderr_does_not_contain("hidden stderr")
-            .with_stderr_does_not_contain("[COMPILING] bar v0.0.1 ([..])")
+            .with_stderr_does_not_contain("[COMPILING] foo v0.0.1 ([..])")
             .with_stderr_contains("[UPDATING] registry `[..]`")
-            .with_stderr_contains("[DOWNLOADING] foo v0.0.1 ([..])")
-            .with_stderr_contains("[COMPILING] foo v0.0.1")
+            .with_stderr_contains("[DOWNLOADING] bar v0.0.1 ([..])")
+            .with_stderr_contains("[COMPILING] bar v0.0.1")
             .with_stderr_contains(&format!("[WARNING] {}", WARNING1))
             .with_stderr_contains(&format!("[WARNING] {}", WARNING2)),
     );

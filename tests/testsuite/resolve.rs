@@ -1,16 +1,16 @@
 use std::collections::{BTreeMap, HashSet};
 
-use hamcrest::{assert_that, contains, is_not};
+use support::hamcrest::{assert_that, contains, is_not};
 
 use cargo::core::source::{GitReference, SourceId};
 use cargo::core::dependency::Kind::{self, Development};
-use cargo::core::{Dependency, PackageId, Registry, Summary};
+use cargo::core::{Dependency, PackageId, Registry, Summary, enable_nightly_features};
 use cargo::util::{CargoResult, Config, ToUrl};
 use cargo::core::resolver::{self, Method};
 
-use cargotest::ChannelChanger;
-use cargotest::support::{execs, project};
-use cargotest::support::registry::Package;
+use support::ChannelChanger;
+use support::{execs, project};
+use support::registry::Package;
 
 fn resolve(
     pkg: &PackageId,
@@ -28,9 +28,9 @@ fn resolve_with_config(
 ) -> CargoResult<Vec<PackageId>> {
     struct MyRegistry<'a>(&'a [Summary]);
     impl<'a> Registry for MyRegistry<'a> {
-        fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
+        fn query(&mut self, dep: &Dependency, f: &mut FnMut(Summary), fuzzy: bool) -> CargoResult<()> {
             for summary in self.0.iter() {
-                if dep.matches(summary) {
+                if fuzzy || dep.matches(summary) {
                     f(summary.clone());
                 }
             }
@@ -38,7 +38,7 @@ fn resolve_with_config(
         }
     }
     let mut registry = MyRegistry(registry);
-    let summary = Summary::new(pkg.clone(), deps, BTreeMap::new(), None, false).unwrap();
+    let summary = Summary::new(pkg.clone(), deps, &BTreeMap::<String, Vec<String>>::new(), None::<String>, false).unwrap();
     let method = Method::Everything;
     let resolve = resolver::resolve(
         &[(summary, method)],
@@ -98,15 +98,15 @@ macro_rules! pkg {
     ($pkgid:expr => [$($deps:expr),+]) => ({
         let d: Vec<Dependency> = vec![$($deps.to_dep()),+];
         let pkgid = $pkgid.to_pkgid();
-        let link = if pkgid.name().ends_with("-sys") {Some(pkgid.name().to_string())} else {None};
+        let link = if pkgid.name().ends_with("-sys") {Some(pkgid.name().as_str())} else {None};
 
-        Summary::new(pkgid, d, BTreeMap::new(), link, false).unwrap()
+        Summary::new(pkgid, d, &BTreeMap::<String, Vec<String>>::new(), link, false).unwrap()
     });
 
     ($pkgid:expr) => ({
         let pkgid = $pkgid.to_pkgid();
-        let link = if pkgid.name().ends_with("-sys") {Some(pkgid.name().to_string())} else {None};
-        Summary::new(pkgid, Vec::new(), BTreeMap::new(), link, false).unwrap()
+        let link = if pkgid.name().ends_with("-sys") {Some(pkgid.name().as_str())} else {None};
+        Summary::new(pkgid, Vec::new(), &BTreeMap::<String, Vec<String>>::new(), link, false).unwrap()
     })
 }
 
@@ -117,11 +117,11 @@ fn registry_loc() -> SourceId {
 
 fn pkg(name: &str) -> Summary {
     let link = if name.ends_with("-sys") {
-        Some(name.to_string())
+        Some(name)
     } else {
         None
     };
-    Summary::new(pkg_id(name), Vec::new(), BTreeMap::new(), link, false).unwrap()
+    Summary::new(pkg_id(name), Vec::new(), &BTreeMap::<String, Vec<String>>::new(), link, false).unwrap()
 }
 
 fn pkg_id(name: &str) -> PackageId {
@@ -138,14 +138,14 @@ fn pkg_id_loc(name: &str, loc: &str) -> PackageId {
 
 fn pkg_loc(name: &str, loc: &str) -> Summary {
     let link = if name.ends_with("-sys") {
-        Some(name.to_string())
+        Some(name)
     } else {
         None
     };
     Summary::new(
         pkg_id_loc(name, loc),
         Vec::new(),
-        BTreeMap::new(),
+        &BTreeMap::<String, Vec<String>>::new(),
         link,
         false,
     ).unwrap()
@@ -342,6 +342,7 @@ fn test_resolving_maximum_version_with_transitive_deps() {
 
 #[test]
 fn test_resolving_minimum_version_with_transitive_deps() {
+    enable_nightly_features(); // -Z minimal-versions
     // When the minimal-versions config option is specified then the lowest
     // possible version of a package should be selected. "util 1.0.0" can't be
     // selected because of the requirements of "bar", so the minimum version
@@ -394,7 +395,7 @@ fn minimal_version_cli() {
     Package::new("dep", "1.0.0").publish();
     Package::new("dep", "1.1.0").publish();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -414,7 +415,7 @@ fn minimal_version_cli() {
         p.cargo("generate-lockfile")
             .masquerade_as_nightly_cargo()
             .arg("-Zminimal-versions"),
-        execs().with_status(0),
+        execs(),
     );
 
     let lock = p.read_lockfile();
@@ -434,6 +435,46 @@ fn resolving_incompat_versions() {
         resolve(
             &pkg_id("root"),
             vec![dep_req("foo", "=1.0.1"), dep("bar")],
+            &reg
+        ).is_err()
+    );
+}
+
+#[test]
+fn resolving_wrong_case_from_registry() {
+    // In the future we may #5678 allow this to happen.
+    // For back compatibility reasons, we probably won't.
+    // But we may want to future prove ourselves by understanding it.
+    // This test documents the current behavior.
+    let reg = registry(vec![
+        pkg!(("foo", "1.0.0")),
+        pkg!("bar" => ["Foo"]),
+    ]);
+
+    assert!(
+        resolve(
+            &pkg_id("root"),
+            vec![dep("bar")],
+            &reg
+        ).is_err()
+    );
+}
+
+#[test]
+fn resolving_mis_hyphenated_from_registry() {
+    // In the future we may #2775 allow this to happen.
+    // For back compatibility reasons, we probably won't.
+    // But we may want to future prove ourselves by understanding it.
+    // This test documents the current behavior.
+    let reg = registry(vec![
+        pkg!(("fo-o", "1.0.0")),
+        pkg!("bar" => ["fo_o"]),
+    ]);
+
+    assert!(
+        resolve(
+            &pkg_id("root"),
+            vec![dep("bar")],
             &reg
         ).is_err()
     );
@@ -464,7 +505,7 @@ fn resolving_backtrack() {
 fn resolving_backtrack_features() {
     // test for cargo/issues/4347
     let mut bad = dep("bar");
-    bad.set_features(vec!["bad".to_string()]);
+    bad.set_features(vec!["bad"]);
 
     let reg = registry(vec![
         pkg!(("foo", "1.0.2") => [bad]),

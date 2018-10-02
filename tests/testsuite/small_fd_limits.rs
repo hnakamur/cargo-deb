@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use git2;
-use cargotest::support::{execs, project};
-use cargotest::support::registry::Package;
-use cargotest::support::paths;
-use cargotest::support::git;
-use hamcrest::assert_that;
+use support::{execs, project};
+use support::registry::Package;
+use support::paths;
+use support::git;
+use support::hamcrest::assert_that;
 
 use url::Url;
 
@@ -20,7 +20,7 @@ fn find_index() -> PathBuf {
 fn run_test(path_env: Option<&OsStr>) {
     const N: usize = 50;
 
-    let foo = project("foo")
+    let foo = project()
         .file(
             "Cargo.toml",
             r#"
@@ -37,7 +37,7 @@ fn run_test(path_env: Option<&OsStr>) {
         .build();
     Package::new("bar", "0.1.0").publish();
 
-    assert_that(foo.cargo("build"), execs().with_status(0));
+    assert_that(foo.cargo("build"), execs());
 
     let index = find_index();
     let path = paths::home().join("tmp");
@@ -75,7 +75,7 @@ fn run_test(path_env: Option<&OsStr>) {
         cmd.env("PATH", path);
     }
     cmd.env("RUST_LOG", "trace");
-    assert_that(cmd, execs().with_status(0));
+    assert_that(cmd, execs());
     let after = find_index()
         .join(".git/objects/pack")
         .read_dir()

@@ -1,44 +1,44 @@
 use std::env;
 
-use cargotest::support::{basic_bin_manifest, execs, git, main_file, project};
-use cargotest::support::registry::Package;
-use hamcrest::{assert_that, existing_dir, existing_file, is_not};
+use support::{basic_manifest, basic_bin_manifest, execs, git, main_file, project};
+use support::registry::Package;
+use support::hamcrest::{assert_that, existing_dir, existing_file, is_not};
 
 #[test]
 fn cargo_clean_simple() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file("src/foo.rs", &main_file(r#""i am foo""#, &[]))
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(&p.build_dir(), existing_dir());
 
-    assert_that(p.cargo("clean"), execs().with_status(0));
+    assert_that(p.cargo("clean"), execs());
     assert_that(&p.build_dir(), is_not(existing_dir()));
 }
 
 #[test]
 fn different_dir() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file("src/foo.rs", &main_file(r#""i am foo""#, &[]))
         .file("src/bar/a.rs", "")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(&p.build_dir(), existing_dir());
 
     assert_that(
         p.cargo("clean").cwd(&p.root().join("src")),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
     assert_that(&p.build_dir(), is_not(existing_dir()));
 }
 
 #[test]
 fn clean_multiple_packages() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -57,35 +57,13 @@ fn clean_multiple_packages() {
         "#,
         )
         .file("src/foo.rs", &main_file(r#""i am foo""#, &[]))
-        .file(
-            "d1/Cargo.toml",
-            r#"
-            [package]
-            name = "d1"
-            version = "0.0.1"
-            authors = []
-
-            [[bin]]
-                name = "d1"
-        "#,
-        )
+        .file("d1/Cargo.toml", &basic_bin_manifest("d1"))
         .file("d1/src/main.rs", "fn main() { println!(\"d1\"); }")
-        .file(
-            "d2/Cargo.toml",
-            r#"
-            [package]
-            name = "d2"
-            version = "0.0.1"
-            authors = []
-
-            [[bin]]
-                name = "d2"
-        "#,
-        )
+        .file("d2/Cargo.toml", &basic_bin_manifest("d2"))
         .file("d2/src/main.rs", "fn main() { println!(\"d2\"); }")
         .build();
 
-    assert_that(p.cargo("build -p d1 -p d2 -p foo"), execs().with_status(0));
+    assert_that(p.cargo("build -p d1 -p d2 -p foo"), execs());
 
     let d1_path = &p.build_dir()
         .join("debug")
@@ -100,7 +78,7 @@ fn clean_multiple_packages() {
 
     assert_that(
         p.cargo("clean -p d1 -p d2").cwd(&p.root().join("src")),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
     assert_that(&p.bin("foo"), existing_file());
     assert_that(d1_path, is_not(existing_file()));
@@ -109,7 +87,7 @@ fn clean_multiple_packages() {
 
 #[test]
 fn clean_release() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -123,36 +101,28 @@ fn clean_release() {
         "#,
         )
         .file("src/main.rs", "fn main() {}")
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [package]
-            name = "a"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("a/Cargo.toml", &basic_manifest("a", "0.0.1"))
         .file("a/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build").arg("--release"), execs().with_status(0));
+    assert_that(p.cargo("build").arg("--release"), execs());
 
     assert_that(
         p.cargo("clean").arg("-p").arg("foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build").arg("--release"),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
 
     assert_that(
         p.cargo("clean").arg("-p").arg("foo").arg("--release"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build").arg("--release"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [FINISHED] release [optimized] target(s) in [..]
@@ -163,7 +133,7 @@ fn clean_release() {
 
 #[test]
 fn clean_doc() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -177,25 +147,17 @@ fn clean_doc() {
         "#,
         )
         .file("src/main.rs", "fn main() {}")
-        .file(
-            "a/Cargo.toml",
-            r#"
-            [package]
-            name = "a"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("a/Cargo.toml", &basic_manifest("a", "0.0.1"))
         .file("a/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("doc"), execs().with_status(0));
+    assert_that(p.cargo("doc"), execs());
 
     let doc_path = &p.build_dir().join("doc");
 
     assert_that(doc_path, existing_dir());
 
-    assert_that(p.cargo("clean").arg("--doc"), execs().with_status(0));
+    assert_that(p.cargo("clean").arg("--doc"), execs());
 
     assert_that(doc_path, is_not(existing_dir()));
     assert_that(p.build_dir(), existing_dir());
@@ -203,7 +165,7 @@ fn clean_doc() {
 
 #[test]
 fn build_script() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -234,19 +196,19 @@ fn build_script() {
         .file("a/src/lib.rs", "")
         .build();
 
-    assert_that(p.cargo("build").env("FIRST", "1"), execs().with_status(0));
+    assert_that(p.cargo("build").env("FIRST", "1"), execs());
     assert_that(
         p.cargo("clean").arg("-p").arg("foo"),
-        execs().with_status(0),
+        execs(),
     );
     assert_that(
         p.cargo("build").arg("-v"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [COMPILING] foo v0.0.1 ([..])
 [RUNNING] `rustc [..] build.rs [..]`
 [RUNNING] `[..]build-script-build`
-[RUNNING] `rustc [..] src[/]main.rs [..]`
+[RUNNING] `rustc [..] src/main.rs [..]`
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",
         ),
@@ -257,19 +219,11 @@ fn build_script() {
 fn clean_git() {
     let git = git::new("dep", |project| {
         project
-            .file(
-                "Cargo.toml",
-                r#"
-            [project]
-            name = "dep"
-            version = "0.5.0"
-            authors = []
-        "#,
-            )
+            .file("Cargo.toml", &basic_manifest("dep", "0.5.0"))
             .file("src/lib.rs", "")
     }).unwrap();
 
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             &format!(
@@ -288,17 +242,17 @@ fn clean_git() {
         .file("src/main.rs", "fn main() {}")
         .build();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(
         p.cargo("clean").arg("-p").arg("dep"),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
 fn registry() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -316,17 +270,17 @@ fn registry() {
 
     Package::new("bar", "0.1.0").publish();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(
         p.cargo("clean").arg("-p").arg("bar"),
-        execs().with_status(0).with_stdout(""),
+        execs().with_stdout(""),
     );
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }
 
 #[test]
 fn clean_verbose() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -343,15 +297,15 @@ fn clean_verbose() {
 
     Package::new("bar", "0.1.0").publish();
 
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
     assert_that(
         p.cargo("clean").arg("-p").arg("bar").arg("--verbose"),
-        execs().with_status(0).with_stderr(
+        execs().with_stderr(
             "\
 [REMOVING] [..]
 [REMOVING] [..]
 ",
         ),
     );
-    assert_that(p.cargo("build"), execs().with_status(0));
+    assert_that(p.cargo("build"), execs());
 }

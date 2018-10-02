@@ -1,10 +1,10 @@
-use cargotest::ChannelChanger;
-use cargotest::support::{basic_bin_manifest, execs, main_file, project};
-use hamcrest::{assert_that, existing_file, is_not};
+use support::ChannelChanger;
+use support::{basic_manifest, basic_bin_manifest, execs, main_file, project};
+use support::hamcrest::{assert_that, existing_file, is_not};
 
 #[test]
 fn cargo_build_plan_simple() {
-    let p = project("foo")
+    let p = project()
         .file("Cargo.toml", &basic_bin_manifest("foo"))
         .file("src/foo.rs", &main_file(r#""i am foo""#, &[]))
         .build();
@@ -14,16 +14,16 @@ fn cargo_build_plan_simple() {
             .masquerade_as_nightly_cargo()
             .arg("--build-plan")
             .arg("-Zunstable-options"),
-        execs().with_status(0).with_json(
+        execs().with_json(
             r#"
     {
         "inputs": [
-            "[..][/]foo[/]Cargo.toml"
+            "[..]/foo/Cargo.toml"
         ],
         "invocations": [
             {
                 "args": "{...}",
-                "cwd": "[..][/]cit[/][..][/]foo",
+                "cwd": "[..]/cit/[..]/foo",
                 "deps": [],
                 "env": "{...}",
                 "kind": "Host",
@@ -44,7 +44,7 @@ fn cargo_build_plan_simple() {
 
 #[test]
 fn cargo_build_plan_single_dep() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -67,15 +67,7 @@ fn cargo_build_plan_single_dep() {
             fn test() { foo(); }
         "#,
         )
-        .file(
-            "bar/Cargo.toml",
-            r#"
-            [package]
-            name = "bar"
-            version = "0.0.1"
-            authors = []
-        "#,
-        )
+        .file("bar/Cargo.toml", &basic_manifest("bar", "0.0.1"))
         .file("bar/src/lib.rs", "pub fn bar() {}")
         .build();
     assert_that(
@@ -83,23 +75,23 @@ fn cargo_build_plan_single_dep() {
             .masquerade_as_nightly_cargo()
             .arg("--build-plan")
             .arg("-Zunstable-options"),
-        execs().with_status(0).with_json(
+        execs().with_json(
             r#"
     {
         "inputs": [
-            "[..][/]foo[/]Cargo.toml",
-            "[..][/]foo[/]bar[/]Cargo.toml"
+            "[..]/foo/Cargo.toml",
+            "[..]/foo/bar/Cargo.toml"
         ],
         "invocations": [
             {
                 "args": "{...}",
-                "cwd": "[..][/]cit[/][..][/]foo",
+                "cwd": "[..]/cit/[..]/foo",
                 "deps": [],
                 "env": "{...}",
                 "kind": "Host",
                 "links": "{...}",
                 "outputs": [
-                    "[..][/]foo[/]target[/]debug[/]deps[/]libbar-[..].rlib"
+                    "[..]/foo/target/debug/deps/libbar-[..].rlib"
                 ],
                 "package_name": "bar",
                 "package_version": "0.0.1",
@@ -108,13 +100,13 @@ fn cargo_build_plan_single_dep() {
             },
             {
                 "args": "{...}",
-                "cwd": "[..][/]cit[/][..][/]foo",
+                "cwd": "[..]/cit/[..]/foo",
                 "deps": [0],
                 "env": "{...}",
                 "kind": "Host",
                 "links": "{...}",
                 "outputs": [
-                    "[..][/]foo[/]target[/]debug[/]deps[/]libfoo-[..].rlib"
+                    "[..]/foo/target/debug/deps/libfoo-[..].rlib"
                 ],
                 "package_name": "foo",
                 "package_version": "0.5.0",
@@ -130,7 +122,7 @@ fn cargo_build_plan_single_dep() {
 
 #[test]
 fn cargo_build_plan_build_script() {
-    let p = project("foo")
+    let p = project()
         .file(
             "Cargo.toml",
             r#"
@@ -151,22 +143,22 @@ fn cargo_build_plan_build_script() {
             .masquerade_as_nightly_cargo()
             .arg("--build-plan")
             .arg("-Zunstable-options"),
-        execs().with_status(0).with_json(
+        execs().with_json(
             r#"
     {
         "inputs": [
-            "[..][/]foo[/]Cargo.toml"
+            "[..]/foo/Cargo.toml"
         ],
         "invocations": [
             {
                 "args": "{...}",
-                "cwd": "[..][/]cit[/][..][/]foo",
+                "cwd": "[..]/cit/[..]/foo",
                 "deps": [],
                 "env": "{...}",
                 "kind": "Host",
                 "links": "{...}",
                 "outputs": [
-                    "[..][/]foo[/]target[/]debug[/]build[/][..][/]build_script_build-[..]"
+                    "[..]/foo/target/debug/build/[..]/build_script_build-[..]"
                 ],
                 "package_name": "foo",
                 "package_version": "0.5.0",
@@ -175,7 +167,7 @@ fn cargo_build_plan_build_script() {
             },
             {
                 "args": "{...}",
-                "cwd": "[..][/]cit[/][..][/]foo",
+                "cwd": "[..]/cit/[..]/foo",
                 "deps": [0],
                 "env": "{...}",
                 "kind": "Host",
@@ -183,12 +175,12 @@ fn cargo_build_plan_build_script() {
                 "outputs": [],
                 "package_name": "foo",
                 "package_version": "0.5.0",
-                "program": "[..][/]build-script-build",
+                "program": "[..]/build-script-build",
                 "target_kind": ["custom-build"]
             },
             {
                 "args": "{...}",
-                "cwd": "[..][/]cit[/][..][/]foo",
+                "cwd": "[..]/cit/[..]/foo",
                 "deps": [1],
                 "env": "{...}",
                 "kind": "Host",

@@ -1,4 +1,4 @@
-use serde::ser::{self, Serialize};
+use serde::ser;
 
 use core::resolver::Resolve;
 use core::{Package, PackageId, Workspace};
@@ -45,7 +45,7 @@ fn metadata_no_deps(ws: &Workspace, _opt: &OutputMetadataOptions) -> CargoResult
 }
 
 fn metadata_full(ws: &Workspace, opt: &OutputMetadataOptions) -> CargoResult<ExportInfo> {
-    let specs = Packages::All.into_package_id_specs(ws)?;
+    let specs = Packages::All.to_package_id_specs(ws)?;
     let deps = ops::resolve_ws_precisely(
         ws,
         None,
@@ -105,13 +105,11 @@ where
         features: Vec<&'a str>,
     }
 
-    resolve
+    s.collect_seq(resolve
         .iter()
         .map(|id| Node {
             id,
             dependencies: resolve.deps(id).map(|p| p.0).collect(),
             features: resolve.features_sorted(id),
-        })
-        .collect::<Vec<_>>()
-        .serialize(s)
+        }))
 }

@@ -139,7 +139,7 @@ impl<'cfg> PathSource<'cfg> {
             .collect::<Result<Vec<_>, _>>()?;
 
         let glob_should_package = |relative_path: &Path| -> bool {
-            fn glob_match(patterns: &Vec<Pattern>, relative_path: &Path) -> bool {
+            fn glob_match(patterns: &[Pattern], relative_path: &Path) -> bool {
                 patterns
                     .iter()
                     .any(|pattern| pattern.matches_path(relative_path))
@@ -277,7 +277,7 @@ impl<'cfg> PathSource<'cfg> {
                     };
                     let path = util::without_prefix(root, cur).unwrap().join("Cargo.toml");
                     if index.get_path(&path, 0).is_some() {
-                        return Some(self.list_files_git(pkg, repo, filter));
+                        return Some(self.list_files_git(pkg, &repo, filter));
                     }
                 }
             }
@@ -296,7 +296,7 @@ impl<'cfg> PathSource<'cfg> {
     fn list_files_git(
         &self,
         pkg: &Package,
-        repo: git2::Repository,
+        repo: &git2::Repository,
         filter: &mut FnMut(&Path) -> CargoResult<bool>,
     ) -> CargoResult<Vec<PathBuf>> {
         warn!("list_files_git {}", pkg.package_id());
@@ -380,7 +380,7 @@ impl<'cfg> PathSource<'cfg> {
                 let rel = rel.replace(r"\", "/");
                 match repo.find_submodule(&rel).and_then(|s| s.open()) {
                     Ok(repo) => {
-                        let files = self.list_files_git(pkg, repo, filter)?;
+                        let files = self.list_files_git(pkg, &repo, filter)?;
                         ret.extend(files.into_iter());
                     }
                     Err(..) => {
@@ -447,10 +447,9 @@ impl<'cfg> PathSource<'cfg> {
         // TODO: Drop collect and sort after transition period and dropping warning tests.
         // See <https://github.com/rust-lang/cargo/issues/4268>
         // and <https://github.com/rust-lang/cargo/pull/4270>
-        let mut entries: Vec<fs::DirEntry> = fs::read_dir(path)?.map(|e| e.unwrap()).collect();
-        entries.sort_by(|a, b| a.path().as_os_str().cmp(b.path().as_os_str()));
-        for entry in entries {
-            let path = entry.path();
+        let mut entries: Vec<PathBuf> = fs::read_dir(path)?.map(|e| e.unwrap().path()).collect();
+        entries.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
+        for path in entries {
             let name = path.file_name().and_then(|s| s.to_str());
             // Skip dotfile directories
             if name.map(|s| s.starts_with('.')) == Some(true) {
@@ -481,7 +480,7 @@ impl<'cfg> PathSource<'cfg> {
             // condition where this path was rm'ed - either way,
             // we can ignore the error and treat the path's mtime
             // as 0.
-            let mtime = paths::mtime(&file).unwrap_or(FileTime::zero());
+            let mtime = paths::mtime(&file).unwrap_or_else(|_| FileTime::zero());
             if mtime > max {
                 max = mtime;
                 max_path = file;
@@ -504,6 +503,13 @@ impl<'cfg> Source for PathSource<'cfg> {
             if dep.matches(s) {
                 f(s.clone())
             }
+        }
+        Ok(())
+    }
+
+    fn fuzzy_query(&mut self, _dep: &Dependency, f: &mut FnMut(Summary)) -> CargoResult<()> {
+        for s in self.packages.iter().map(|p| p.summary()) {
+            f(s.clone())
         }
         Ok(())
     }

@@ -13,7 +13,7 @@ use toml;
 use url::Url;
 
 use core::dependency::{Kind, Platform};
-use core::manifest::{LibKind, ManifestMetadata};
+use core::manifest::{LibKind, ManifestMetadata, Warnings};
 use core::profiles::Profiles;
 use core::{Dependency, Manifest, PackageId, Summary, Target};
 use core::{Edition, EitherManifest, Feature, Features, VirtualManifest};
@@ -63,14 +63,20 @@ fn do_read_manifest(
         stringify(&mut key, &path);
         unused.insert(key);
     })?;
+    let add_unused = |warnings: &mut Warnings| {
+        for key in unused {
+            warnings.add_warning(format!("unused manifest key: {}", key));
+            if key == "profile.debug" || key == "profiles.debug" {
+                warnings.add_warning("use `[profile.dev]` to configure debug builds".to_string());
+            }
+        }
+    };
 
     let manifest = Rc::new(manifest);
     return if manifest.project.is_some() || manifest.package.is_some() {
         let (mut manifest, paths) =
             TomlManifest::to_real_manifest(&manifest, source_id, package_root, config)?;
-        for key in unused {
-            manifest.add_warning(format!("unused manifest key: {}", key));
-        }
+        add_unused(manifest.warnings_mut());
         if !manifest.targets().iter().any(|t| !t.is_custom_build()) {
             bail!(
                 "no targets specified in the manifest\n  \
@@ -80,8 +86,9 @@ fn do_read_manifest(
         }
         Ok((EitherManifest::Real(manifest), paths))
     } else {
-        let (m, paths) =
+        let (mut m, paths) =
             TomlManifest::to_virtual_manifest(&manifest, source_id, package_root, config)?;
+        add_unused(m.warnings_mut());
         Ok((EitherManifest::Virtual(m), paths))
     };
 
@@ -413,7 +420,7 @@ impl<'de> de::Deserialize<'de> for ProfilePackageSpec {
         } else {
             PackageIdSpec::parse(&string)
                 .map_err(de::Error::custom)
-                .map(|s| ProfilePackageSpec::Spec(s))
+                .map(ProfilePackageSpec::Spec)
         }
     }
 }
@@ -582,6 +589,8 @@ pub struct TomlProject {
     autobenches: Option<bool>,
     #[serde(rename = "namespaced-features")]
     namespaced_features: Option<bool>,
+    #[serde(rename = "default-run")]
+    default_run: Option<String>,
 
     // package metadata
     description: Option<String>,
@@ -626,7 +635,8 @@ struct Context<'a, 'b> {
 
 impl TomlManifest {
     pub fn prepare_for_publish(&self, config: &Config) -> CargoResult<TomlManifest> {
-        let mut package = self.package
+        let mut package = self
+            .package
             .as_ref()
             .or_else(|| self.project.as_ref())
             .unwrap()
@@ -703,7 +713,8 @@ impl TomlManifest {
                 Some(deps) => deps,
                 None => return Ok(None),
             };
-            let deps = deps.iter()
+            let deps = deps
+                .iter()
                 .map(|(k, v)| Ok((k.clone(), map_dependency(config, v)?)))
                 .collect::<CargoResult<BTreeMap<_, _>>>()?;
             Ok(Some(deps))
@@ -771,6 +782,7 @@ impl TomlManifest {
         // If we have a lib with a path, we're done
         // If we have a lib with no path, use the inferred lib or_else package name
         let targets = targets(
+            &features,
             me,
             package_name,
             package_root,
@@ -828,11 +840,13 @@ impl TomlManifest {
 
             // Collect the deps
             process_dependencies(&mut cx, me.dependencies.as_ref(), None)?;
-            let dev_deps = me.dev_dependencies
+            let dev_deps = me
+                .dev_dependencies
                 .as_ref()
                 .or_else(|| me.dev_dependencies2.as_ref());
             process_dependencies(&mut cx, dev_deps, Some(Kind::Development))?;
-            let build_deps = me.build_dependencies
+            let build_deps = me
+                .build_dependencies
                 .as_ref()
                 .or_else(|| me.build_dependencies2.as_ref());
             process_dependencies(&mut cx, build_deps, Some(Kind::Build))?;
@@ -859,7 +873,7 @@ impl TomlManifest {
         {
             let mut names_sources = BTreeMap::new();
             for dep in &deps {
-                let name = dep.rename().unwrap_or(dep.name().as_str());
+                let name = dep.name_in_toml();
                 let prev = names_sources.insert(name.to_string(), dep.source_id());
                 if prev.is_some() && prev != Some(dep.source_id()) {
                     bail!(
@@ -881,8 +895,15 @@ impl TomlManifest {
         let summary = Summary::new(
             pkgid,
             deps,
-            me.features.clone().unwrap_or_else(BTreeMap::new),
-            project.links.clone(),
+            &me.features
+                .as_ref()
+                .map(|x| {
+                    x.iter()
+                        .map(|(k, v)| (k.as_str(), v.iter().collect()))
+                        .collect()
+                })
+                .unwrap_or_else(BTreeMap::new),
+            project.links.as_ref().map(|x| x.as_str()),
             project.namespaced_features.unwrap_or(false),
         )?;
         let metadata = ManifestMetadata {
@@ -955,20 +976,21 @@ impl TomlManifest {
             features,
             edition,
             project.im_a_teapot,
+            project.default_run.clone(),
             Rc::clone(me),
         );
         if project.license_file.is_some() && project.license.is_some() {
-            manifest.add_warning(
+            manifest.warnings_mut().add_warning(
                 "only one of `license` or \
                  `license-file` is necessary"
                     .to_string(),
             );
         }
         for warning in warnings {
-            manifest.add_warning(warning);
+            manifest.warnings_mut().add_warning(warning);
         }
         for error in errors {
-            manifest.add_critical_warning(error);
+            manifest.warnings_mut().add_critical_warning(error);
         }
 
         manifest.feature_gate()?;
@@ -1113,13 +1135,13 @@ impl TomlManifest {
         let build_rs = package_root.join("build.rs");
         match *build {
             Some(StringOrBool::Bool(false)) => None, // explicitly no build script
-            Some(StringOrBool::Bool(true)) => Some(build_rs.into()),
+            Some(StringOrBool::Bool(true)) => Some(build_rs),
             Some(StringOrBool::String(ref s)) => Some(PathBuf::from(s)),
             None => {
                 match fs::metadata(&build_rs) {
                     // If there is a build.rs file next to the Cargo.toml, assume it is
                     // a build script
-                    Ok(ref e) if e.is_file() => Some(build_rs.into()),
+                    Ok(ref e) if e.is_file() => Some(build_rs),
                     Ok(_) | Err(_) => None,
                 }
             }
@@ -1247,7 +1269,8 @@ impl DetailedTomlDependency {
                     cx.warnings.push(msg)
                 }
 
-                let reference = self.branch
+                let reference = self
+                    .branch
                     .clone()
                     .map(GitReference::Branch)
                     .or_else(|| self.tag.clone().map(GitReference::Tag))
@@ -1292,7 +1315,7 @@ impl DetailedTomlDependency {
             Some(id) => Dependency::parse(pkg_name, version, &new_source_id, id, cx.config)?,
             None => Dependency::parse_no_deprecated(name, version, &new_source_id)?,
         };
-        dep.set_features(self.features.clone().unwrap_or_default())
+        dep.set_features(self.features.iter().flat_map(|x| x))
             .set_default_features(
                 self.default_features
                     .or(self.default_features2)
@@ -1336,6 +1359,7 @@ struct TomlTarget {
     harness: Option<bool>,
     #[serde(rename = "required-features")]
     required_features: Option<Vec<String>>,
+    edition: Option<String>,
 }
 
 #[derive(Clone)]

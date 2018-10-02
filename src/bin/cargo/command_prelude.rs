@@ -224,7 +224,7 @@ pub trait ArgMatchesExt {
             if !path.ends_with("Cargo.toml") {
                 bail!("the manifest-path must be a path to a Cargo.toml file")
             }
-            if !fs::metadata(&path).is_ok() {
+            if fs::metadata(&path).is_err() {
                 bail!(
                     "manifest path `{}` does not exist",
                     self._value_of("manifest-path").unwrap()
@@ -347,7 +347,7 @@ pub trait ArgMatchesExt {
                     return Err(format_err!(
                         "registry option is an unstable feature and \
                          requires -Zunstable-options to use."
-                    ).into());
+                    ));
                 }
                 Ok(Some(registry.to_string()))
             }
@@ -410,4 +410,19 @@ pub fn values(args: &ArgMatches, name: &str) -> Vec<String> {
         .unwrap_or_default()
         .map(|s| s.to_string())
         .collect()
+}
+
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
+pub enum CommandInfo {
+    BuiltIn { name: String, about: Option<String>, },
+    External { name: String, path: PathBuf },
+}
+
+impl CommandInfo {
+    pub fn name(&self) -> String {
+        match self {
+            CommandInfo::BuiltIn { name, .. } => name.to_string(),
+            CommandInfo::External { name, .. } => name.to_string(),
+        }
+    }
 }
