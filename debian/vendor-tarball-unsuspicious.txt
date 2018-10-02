@@ -8,6 +8,13 @@ term-*/tests/data/
 toml-*/tests/
 num-*/ci/
 openssl-*/test/
+openssl-src-*/openssl/test/
+openssl-src-*/openssl/fuzz/
+openssl-src-*/openssl/doc/
+openssl-src-*/openssl/apps/
+openssl-src-*/openssl/.travis.yml
+openssl-src-*/openssl/demos/
+openssl-src-*/openssl/Configurations/
 
 # misc support data
 hamcrest-*/LICENSE-*
@@ -53,6 +60,7 @@ rustc-demangle-*/src/lib.rs
 cloudabi-*/cloudabi.rs
 failure-*/book/src/bail-and-ensure.md
 synstructure-*/LICENSE
+stable_deref_trait-*/src/lib.rs
 
 # test data for schanel
 schannel-*/test/*
