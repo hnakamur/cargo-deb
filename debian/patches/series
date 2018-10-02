@@ -4,4 +4,3 @@
 2002_disable-net-tests.patch
 2003_force-use-system-libssh2.patch
 2005_disable_fetch_cross_tests.patch
-1001_failure_deprecated_fix.patch
