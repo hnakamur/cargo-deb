@@ -5,7 +5,7 @@ Last-Update: 2018-08-07
 
 --- a/src/cargo/core/profiles.rs
 +++ b/src/cargo/core/profiles.rs
-@@ -386,6 +386,9 @@
+@@ -458,6 +458,9 @@
              debuginfo: Some(2),
              debug_assertions: true,
              overflow_checks: true,
@@ -17,27 +17,27 @@ Last-Update: 2018-08-07
          }
 --- a/tests/testsuite/build.rs
 +++ b/tests/testsuite/build.rs
-@@ -45,6 +45,7 @@
+@@ -44,6 +44,7 @@
  
  /// Check that the `CARGO_INCREMENTAL` environment variable results in
  /// `rustc` getting `-Zincremental` passed to it.
 +#[cfg(not(target_arch = "sparc64"))]
  #[test]
  fn cargo_compile_incremental() {
-     let p = project("foo")
-@@ -71,6 +72,7 @@
+     let p = project()
+@@ -66,6 +67,7 @@
      );
  }
  
 +#[cfg(not(target_arch = "sparc64"))]
  #[test]
  fn incremental_profile() {
-     let p = project("foo")
-@@ -127,6 +129,7 @@
+     let p = project()
+@@ -114,6 +116,7 @@
      );
  }
  
 +#[cfg(not(target_arch = "sparc64"))]
  #[test]
  fn incremental_config() {
-     let p = project("foo")
+     let p = project()

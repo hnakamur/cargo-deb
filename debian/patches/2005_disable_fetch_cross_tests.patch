@@ -6,8 +6,8 @@ Last-Update: 2018-08-05
 
 --- a/tests/testsuite/fetch.rs
 +++ b/tests/testsuite/fetch.rs
-@@ -27,8 +27,8 @@
-     assert_that(p.cargo("fetch"), execs().with_status(0).with_stdout(""));
+@@ -13,8 +13,8 @@
+     assert_that(p.cargo("fetch"), execs().with_stdout(""));
  }
  
 -#[test]
@@ -15,9 +15,9 @@ Last-Update: 2018-08-05
 +#[allow(dead_code)]
 +fn _fetch_all_platform_dependencies_when_no_target_is_given() {
      Package::new("d1", "1.2.3")
-         .file(
-             "Cargo.toml",
-@@ -87,8 +87,8 @@
+         .file("Cargo.toml", &basic_manifest("d1", "1.2.3"))
+         .file("src/lib.rs", "")
+@@ -58,8 +58,8 @@
      );
  }
  
@@ -26,5 +26,5 @@ Last-Update: 2018-08-05
 +#[allow(dead_code)]
 +fn _fetch_platform_specific_dependencies() {
      Package::new("d1", "1.2.3")
-         .file(
-             "Cargo.toml",
+         .file("Cargo.toml", &basic_manifest("d1", "1.2.3"))
+         .file("src/lib.rs", "")
