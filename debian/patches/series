@@ -1,4 +1,3 @@
-0774e97da3894f07ed5b6f7db175027a9bc4718b.patch
 2007_sparc64_disable_incremental_build.patch
 2004_clean-cargo-deps.patch
 2001_use-system-libgit2.patch
