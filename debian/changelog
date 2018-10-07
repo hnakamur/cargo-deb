@@ -1,4 +1,4 @@
-cargo (0.30.0-1~exp1) UNRELEASED; urgency=medium
+cargo (0.30.0-1~exp1) experimental; urgency=medium
 
   [ upstream ]
   * Cargo can silently fix some bad lockfiles You can use --locked to
@@ -19,8 +19,15 @@ cargo (0.30.0-1~exp1) UNRELEASED; urgency=medium
     + Drop patch 1001 which is merged upstream.
     + Refresh patch 2005 and 2007 to remove fuzz.
     + Refresh patch 2002 with newer release.
+  * debian/control:
+    + Mark package compliance with Debian policy 4.2.1.
+  * Update copyright information for new release.
+  * debian/rules:
+    + Use DEB_BUILD_OPTIONS to disable tests on powerpc and powerpcspe
+      architecture.
+      Closes: bug#908961, Thanks to Helmut Grohne.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Tue, 02 Oct 2018 22:16:27 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 07 Oct 2018 10:39:49 +0530
 
 cargo (0.29.0-1) unstable; urgency=medium
 
