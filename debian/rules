@@ -36,11 +36,11 @@ endif
 # cbmuser requested this and will fix the errors later
 # TODO: once powerpc powerpcspe test failures are fixed drop this
 ifeq ($(DEB_HOST_ARCH), powerpc)
-	DEB_BUILD_PROFILES = nocheck
+	DEB_BUILD_OPTIONS = nocheck
 endif
 
 ifeq ($(DEB_HOST_ARCH), powerpcspe)
-	DEB_BUILD_PROFILES = nocheck
+	DEB_BUILD_OPTIONS = nocheck
 endif
 
 %:
