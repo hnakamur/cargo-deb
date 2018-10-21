@@ -1,3 +1,9 @@
+cargo (0.30.0-1) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 21 Oct 2018 11:59:11 +0530
+
 cargo (0.30.0-1~exp1) experimental; urgency=medium
 
   [ upstream ]
