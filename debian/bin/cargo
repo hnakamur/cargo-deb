@@ -3,9 +3,8 @@
 Wrapper around cargo to have it build using Debian settings.
 
 Usage:
-
     export CARGO_HOME=debian/cargo_home
-    cargo prepare-debian /path/to/registry
+    cargo prepare-debian /path/to/local/registry
     cargo build
     cargo test
     cargo install
@@ -15,21 +14,28 @@ See cargo:d/rules and dh-cargo:cargo.pm for more examples.
 Make sure you add "Build-Depends: python3:native" if you use this directly.
 OTOH, you only need "Build-Depends: dh-cargo" if you use that.
 
-Environment variables this is affected by:
-- CARGO_HOME
-- CFLAGS, LDFLAGS, etc
-- DEB_BUILD_OPTIONS
-- DEB_BUILD_PROFILES
-- DEB_HOST_GNU_TYPE
-- DEB_HOST_RUST_TYPE
-- DEB_CARGO_CRATE
-- DEB_CARGO_PACKAGE
-- DEB_CARGO_PACKAGE_IN_REGISTRY
+If CARGO_HOME doesn't end with debian/cargo_home, then this script does nothing
+and passes through directly to cargo.
 
+Otherwise, you *must* set the following environment variables:
+
+- DEB_CARGO_CRATE
+  ${crate}_${version} of whatever you're building.
+
+- DEB_CARGO_PACKAGE
+  Debian binary package that the result is to be installed into.
+
+- DEB_CARGO_CRATE_IN_REGISTRY
+  Whether the crate is in the local-registry or the cwd.
+
+- CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
+- DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE
+- (optional) DEB_BUILD_OPTIONS DEB_BUILD_PROFILES
 """
 
 import os
 import os.path
+import shutil
 import subprocess
 import sys
 
@@ -37,15 +43,14 @@ FLAGS = "CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS"
 ARCHES = "DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE"
 
 def log(*args):
-    if os.getenv("DH_VERBOSE", "") == "1":
-        print("debian cargo wrapper:", *args, file=sys.stderr)
+    print("debian cargo wrapper:", *args, file=sys.stderr)
 
 def logrun(*args, **kwargs):
     log("running subprocess", args, kwargs)
     return subprocess.run(*args, **kwargs)
 
-def sourcepath(p):
-    return os.path.join(os.getcwd(), p)
+def sourcepath(p=None):
+    return os.path.join(os.getcwd(), p) if p else os.getcwd()
 
 def prepare_debian(cargo_home, registry, cratespec, host_gnu_type, ldflags):
     if not os.path.exists(sourcepath(registry)):
@@ -56,7 +61,7 @@ def prepare_debian(cargo_home, registry, cratespec, host_gnu_type, ldflags):
     for f in ldflags:
         rustflags.extend(["-C", "link-arg=%s" % f])
     rustflags.extend(["--remap-path-prefix",
-        "%s=/usr/share/cargo/registry/%s" % (os.getcwd(), cratespec.replace("_", "-"))])
+        "%s=/usr/share/cargo/registry/%s" % (sourcepath(), cratespec.replace("_", "-"))])
 
     # TODO: we cannot enable this until dh_shlibdeps works correctly; atm we get:
     # dpkg-shlibdeps: warning: can't extract name and version from library name 'libstd-XXXXXXXX.so'
@@ -78,7 +83,7 @@ rustflags = {1}
 
     return 0
 
-def install(binpkg, cratespec, host_rust_type, in_registry, *args):
+def install(binpkg, cratespec, host_rust_type, crate_in_registry, *args):
     crate, version = cratespec.rsplit("_", 1)
     install_target = sourcepath("debian/%s/usr" % binpkg)
     logrun(["env", "RUST_BACKTRACE=1",
@@ -86,7 +91,7 @@ def install(binpkg, cratespec, host_rust_type, in_registry, *args):
         # normally `cargo install` deletes them when it exits
         "CARGO_TARGET_DIR=" + sourcepath("target"),
         "/usr/bin/cargo"] + list(args) +
-        ([crate, "--vers", version] if in_registry else []) +
+        ([crate, "--vers", version] if crate_in_registry else []) +
         ["--root", install_target], check=True)
     logrun(["rm", "-f", "%s/.crates.toml" % install_target])
 
@@ -102,7 +107,7 @@ def install(binpkg, cratespec, host_rust_type, in_registry, *args):
 def main(*args):
     cargo_home = os.getenv("CARGO_HOME", "")
     if not cargo_home.endswith("/debian/cargo_home"):
-        return logrun(["/usr/bin/cargo"] + list(args)).returncode
+        os.execv("/usr/bin/cargo", ["cargo"] + list(args))
 
     if any(f not in os.environ for f in FLAGS.split()):
         raise ValueError("not all of %s set; did you call dpkg-buildflags?" % FLAGS)
@@ -120,19 +125,18 @@ def main(*args):
     nodoc = "nodoc" in build_options or "nodoc" in build_profiles
     nocheck = "nocheck" in build_options or "nocheck" in build_profiles
 
+    # note this is actually the "build target" type, see rustc's README.Debian
+    # for full details of the messed-up terminology here
     host_rust_type = os.getenv("DEB_HOST_RUST_TYPE", "")
     host_gnu_type = os.getenv("DEB_HOST_GNU_TYPE", "")
 
-    log(build_options, build_profiles, parallel)
+    log("options, profiles, parallel:", build_options, build_profiles, parallel)
+    log("rust_type, gnu_type:", host_rust_type, host_gnu_type)
 
     if args[0] == "prepare-debian":
         registry = args[1]
         return prepare_debian(cargo_home, registry,
             os.environ["DEB_CARGO_CRATE"], host_gnu_type, os.getenv("LDFLAGS", "").split())
-
-    cargo_config = "%s/config" % cargo_home
-    if not os.path.exists(cargo_config):
-        raise ValueError("does not exist: %s, did you run `cargo prepare-debian <registry>`?" % cargo_config)
 
     newargs = []
     subcmd = None
@@ -152,14 +156,23 @@ def main(*args):
     if nocheck and subcmd in ("test", "bench"):
         return 0
 
+    if subcmd == "clean":
+        logrun(["env", "RUST_BACKTRACE=1", "/usr/bin/cargo"] + list(newargs), check=True)
+        if os.path.exists(cargo_home):
+            shutil.rmtree(cargo_home)
+        return 0
+
+    cargo_config = "%s/config" % cargo_home
+    if not os.path.exists(cargo_config):
+        raise ValueError("does not exist: %s, did you run `cargo prepare-debian <registry>`?" % cargo_config)
+
     if subcmd == "install":
         return install(os.environ["DEB_CARGO_PACKAGE"],
             os.environ["DEB_CARGO_CRATE"],
             host_rust_type,
-            os.getenv("DEB_CARGO_PACKAGE_IN_REGISTRY", "") == "1",
+            os.getenv("DEB_CARGO_CRATE_IN_REGISTRY", "") == "1",
             *newargs)
     else:
-        log(newargs)
         return logrun(["env", "RUST_BACKTRACE=1", "/usr/bin/cargo"] + list(newargs)).returncode
 
 if __name__ == "__main__":
