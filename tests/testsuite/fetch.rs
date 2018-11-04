@@ -1,7 +1,6 @@
-use support::rustc_host;
 use support::registry::Package;
-use support::{basic_manifest, cross_compile, execs, project};
-use support::hamcrest::assert_that;
+use support::rustc_host;
+use support::{basic_manifest, cross_compile, project};
 
 #[test]
 fn no_deps() {
@@ -10,11 +9,15 @@ fn no_deps() {
         .file("src/a.rs", "")
         .build();
 
-    assert_that(p.cargo("fetch"), execs().with_stdout(""));
+    p.cargo("fetch").with_stdout("").run();
 }
 
 #[test]
 fn fetch_all_platform_dependencies_when_no_target_is_given() {
+    if cross_compile::disabled() {
+        return;
+    }
+
     Package::new("d1", "1.2.3")
         .file("Cargo.toml", &basic_manifest("d1", "1.2.3"))
         .file("src/lib.rs", "")
@@ -46,20 +49,21 @@ fn fetch_all_platform_dependencies_when_no_target_is_given() {
                 host = host,
                 target = target
             ),
-        )
-        .file("src/lib.rs", "")
+        ).file("src/lib.rs", "")
         .build();
 
-    assert_that(
-        p.cargo("fetch"),
-        execs()
-            .with_stderr_contains("[..] Downloading d1 v1.2.3 [..]")
-            .with_stderr_contains("[..] Downloading d2 v0.1.2 [..]"),
-    );
+    p.cargo("fetch")
+        .with_stderr_contains("[..] Downloading d1 v1.2.3 [..]")
+        .with_stderr_contains("[..] Downloading d2 v0.1.2 [..]")
+        .run();
 }
 
 #[test]
 fn fetch_platform_specific_dependencies() {
+    if cross_compile::disabled() {
+        return;
+    }
+
     Package::new("d1", "1.2.3")
         .file("Cargo.toml", &basic_manifest("d1", "1.2.3"))
         .file("src/lib.rs", "")
@@ -91,21 +95,18 @@ fn fetch_platform_specific_dependencies() {
                 host = host,
                 target = target
             ),
-        )
-        .file("src/lib.rs", "")
+        ).file("src/lib.rs", "")
         .build();
 
-    assert_that(
-        p.cargo("fetch").arg("--target").arg(&host),
-        execs()
-            .with_stderr_contains("[..] Downloading d1 v1.2.3 [..]")
-            .with_stderr_does_not_contain("[..] Downloading d2 v0.1.2 [..]"),
-    );
+    p.cargo("fetch --target")
+        .arg(&host)
+        .with_stderr_contains("[..] Downloading d1 v1.2.3 [..]")
+        .with_stderr_does_not_contain("[..] Downloading d2 v0.1.2 [..]")
+        .run();
 
-    assert_that(
-        p.cargo("fetch").arg("--target").arg(&target),
-        execs()
-            .with_stderr_contains("[..] Downloading d2 v0.1.2[..]")
-            .with_stderr_does_not_contain("[..] Downloading d1 v1.2.3 [..]"),
-    );
+    p.cargo("fetch --target")
+        .arg(&target)
+        .with_stderr_contains("[..] Downloading d2 v0.1.2[..]")
+        .with_stderr_does_not_contain("[..] Downloading d1 v1.2.3 [..]")
+        .run();
 }

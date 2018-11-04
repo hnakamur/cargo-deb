@@ -8,12 +8,12 @@ use std::sync::Arc;
 use same_file::is_same_file;
 use serde_json;
 
+use core::manifest::TargetSourcePath;
 use core::profiles::{Lto, Profile};
-use core::shell::ColorChoice;
 use core::{PackageId, Target};
 use util::errors::{CargoResult, CargoResultExt, Internal};
 use util::paths;
-use util::{self, machine_message, Freshness, ProcessBuilder};
+use util::{self, machine_message, Freshness, ProcessBuilder, process};
 use util::{internal, join_paths, profile};
 
 use self::build_plan::BuildPlan;
@@ -72,6 +72,18 @@ pub trait Executor: Send + Sync + 'static {
         Ok(())
     }
 
+    fn exec_and_capture_output(
+        &self,
+        cmd: ProcessBuilder,
+        id: &PackageId,
+        target: &Target,
+        mode: CompileMode,
+        _state: &job_queue::JobState<'_>,
+    ) -> CargoResult<()> {
+        // we forward to exec() to keep RLS working.
+        self.exec(cmd, id, target, mode)
+    }
+
     fn exec_json(
         &self,
         cmd: ProcessBuilder,
@@ -97,7 +109,18 @@ pub trait Executor: Send + Sync + 'static {
 #[derive(Copy, Clone)]
 pub struct DefaultExecutor;
 
-impl Executor for DefaultExecutor {}
+impl Executor for DefaultExecutor {
+    fn exec_and_capture_output(
+        &self,
+        cmd: ProcessBuilder,
+        _id: &PackageId,
+        _target: &Target,
+        _mode: CompileMode,
+        state: &job_queue::JobState<'_>,
+    ) -> CargoResult<()> {
+        state.capture_output(&cmd, false).map(drop)
+    }
+}
 
 fn compile<'a, 'cfg: 'a>(
     cx: &mut Context<'a, 'cfg>,
@@ -105,6 +128,7 @@ fn compile<'a, 'cfg: 'a>(
     plan: &mut BuildPlan,
     unit: &Unit<'a>,
     exec: &Arc<Executor>,
+    force_rebuild: bool,
 ) -> CargoResult<()> {
     let bcx = cx.bcx;
     let build_plan = bcx.build_config.build_plan;
@@ -140,7 +164,7 @@ fn compile<'a, 'cfg: 'a>(
         let dirty = work.then(link_targets(cx, unit, false)?).then(dirty);
         let fresh = link_targets(cx, unit, true)?.then(fresh);
 
-        if exec.force_rebuild(unit) {
+        if exec.force_rebuild(unit) || force_rebuild {
             freshness = Freshness::Dirty;
         }
 
@@ -151,7 +175,7 @@ fn compile<'a, 'cfg: 'a>(
 
     // Be sure to compile all dependencies of this target as well.
     for unit in cx.dep_targets(unit).iter() {
-        compile(cx, jobs, plan, unit, exec)?;
+        compile(cx, jobs, plan, unit, exec, false)?;
     }
     if build_plan {
         plan.add(cx, unit)?;
@@ -258,40 +282,14 @@ fn rustc<'a, 'cfg>(
                 &package_id,
                 &target,
                 mode,
-                &mut |line| {
-                    if !line.is_empty() {
-                        Err(internal(&format!(
-                            "compiler stdout is not empty: `{}`",
-                            line
-                        )))
-                    } else {
-                        Ok(())
-                    }
-                },
-                &mut |line| {
-                    // stderr from rustc can have a mix of JSON and non-JSON output
-                    if line.starts_with('{') {
-                        // Handle JSON lines
-                        let compiler_message = serde_json::from_str(line).map_err(|_| {
-                            internal(&format!("compiler produced invalid json: `{}`", line))
-                        })?;
-
-                        machine_message::emit(&machine_message::FromCompiler {
-                            package_id: &package_id,
-                            target: &target,
-                            message: compiler_message,
-                        });
-                    } else {
-                        // Forward non-JSON to stderr
-                        writeln!(io::stderr(), "{}", line)?;
-                    }
-                    Ok(())
-                },
-            ).map_err(Internal::new).chain_err(|| format!("Could not compile `{}`.", name))?;
+                &mut assert_is_empty,
+                &mut |line| json_stderr(line, &package_id, &target),
+            ).map_err(Internal::new)
+            .chain_err(|| format!("Could not compile `{}`.", name))?;
         } else if build_plan {
             state.build_plan(buildkey, rustc.clone(), outputs.clone());
         } else {
-            exec.exec(rustc, &package_id, &target, mode)
+            exec.exec_and_capture_output(rustc, &package_id, &target, mode, state)
                 .map_err(Internal::new)
                 .chain_err(|| format!("Could not compile `{}`.", name))?;
         }
@@ -386,7 +384,6 @@ fn link_targets<'a, 'cfg>(
     let outputs = cx.outputs(unit)?;
     let export_dir = cx.files().export_dir();
     let package_id = unit.pkg.package_id().clone();
-    let target = unit.target.clone();
     let profile = unit.profile;
     let unit_mode = unit.mode;
     let features = bcx.resolve
@@ -395,6 +392,12 @@ fn link_targets<'a, 'cfg>(
         .map(|s| s.to_owned())
         .collect();
     let json_messages = bcx.build_config.json_messages();
+    let mut target = unit.target.clone();
+    if let TargetSourcePath::Metabuild = target.src_path() {
+        // Give it something to serialize.
+        let path = unit.pkg.manifest().metabuild_path(cx.bcx.ws.target_dir());
+        target.set_src_path(TargetSourcePath::Path(path));
+    }
 
     Ok(Work::new(move |_| {
         // If we're a "root crate", e.g. the target of this compilation, then we
@@ -581,6 +584,12 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
     add_path_args(bcx, unit, &mut rustdoc);
     add_cap_lints(bcx, unit, &mut rustdoc);
 
+    let mut can_add_color_process = process(&*bcx.config.rustdoc()?);
+    can_add_color_process.args(&["--color", "never", "-V"]);
+    if bcx.rustc.cached_success(&can_add_color_process)? {
+        add_color(bcx, &mut rustdoc);
+    }
+
     if unit.kind != Kind::Host {
         if let Some(ref target) = bcx.build_config.requested_target {
             rustdoc.arg("--target").arg(target);
@@ -600,6 +609,8 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
         rustdoc.arg("--cfg").arg(&format!("feature=\"{}\"", feat));
     }
 
+    add_error_format(bcx, &mut rustdoc);
+
     if let Some(ref args) = bcx.extra_args_for(unit) {
         rustdoc.args(args);
     }
@@ -611,6 +622,9 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
     let name = unit.pkg.name().to_string();
     let build_state = cx.build_state.clone();
     let key = (unit.pkg.package_id().clone(), unit.kind);
+    let json_messages = bcx.build_config.json_messages();
+    let package_id = unit.pkg.package_id().clone();
+    let target = unit.target.clone();
 
     Ok(Work::new(move |state| {
         if let Some(output) = build_state.outputs.lock().unwrap().get(&key) {
@@ -622,9 +636,18 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
             }
         }
         state.running(&rustdoc);
-        rustdoc
-            .exec()
-            .chain_err(|| format!("Could not document `{}`.", name))?;
+
+        let exec_result = if json_messages {
+            rustdoc
+                .exec_with_streaming(
+                    &mut assert_is_empty,
+                    &mut |line| json_stderr(line, &package_id, &target),
+                    false,
+                ).map(drop)
+        } else {
+            state.capture_output(&rustdoc, false).map(drop)
+        };
+        exec_result.chain_err(|| format!("Could not document `{}`.", name))?;
         Ok(())
     }))
 }
@@ -645,12 +668,18 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
 // second is the cwd that rustc should operate in.
 fn path_args(bcx: &BuildContext, unit: &Unit) -> (PathBuf, PathBuf) {
     let ws_root = bcx.ws.root();
-    let src = unit.target.src_path();
+    let src = if unit.target.is_custom_build() && unit.pkg.manifest().metabuild().is_some() {
+        unit.pkg.manifest().metabuild_path(bcx.ws.target_dir())
+    } else {
+        unit.target.src_path().path().to_path_buf()
+    };
     assert!(src.is_absolute());
-    match src.strip_prefix(ws_root) {
-        Ok(path) => (path.to_path_buf(), ws_root.to_path_buf()),
-        Err(_) => (src.to_path_buf(), unit.pkg.root().to_path_buf()),
+    if unit.pkg.package_id().source_id().is_path() {
+        if let Ok(path) = src.strip_prefix(ws_root) {
+            return (path.to_path_buf(), ws_root.to_path_buf());
+        }
     }
+    (src, unit.pkg.root().to_path_buf())
 }
 
 fn add_path_args(bcx: &BuildContext, unit: &Unit, cmd: &mut ProcessBuilder) {
@@ -669,6 +698,20 @@ fn add_cap_lints(bcx: &BuildContext, unit: &Unit, cmd: &mut ProcessBuilder) {
     // don't fail compilation.
     } else if !unit.pkg.package_id().source_id().is_path() {
         cmd.arg("--cap-lints").arg("warn");
+    }
+}
+
+fn add_color(bcx: &BuildContext, cmd: &mut ProcessBuilder) {
+    let shell = bcx.config.shell();
+    let color = if shell.supports_color() { "always" } else { "never" };
+    cmd.args(&["--color", color]);
+}
+
+fn add_error_format(bcx: &BuildContext, cmd: &mut ProcessBuilder) {
+    match bcx.build_config.message_format {
+        MessageFormat::Human => (),
+        MessageFormat::Json => { cmd.arg("--error-format").arg("json"); },
+        MessageFormat::Short => { cmd.arg("--error-format").arg("short"); },
     }
 }
 
@@ -696,21 +739,9 @@ fn build_base_args<'a, 'cfg>(
 
     cmd.arg("--crate-name").arg(&unit.target.crate_name());
 
-    add_path_args(&cx.bcx, unit, cmd);
-
-    match bcx.config.shell().color_choice() {
-        ColorChoice::Always => {
-            cmd.arg("--color").arg("always");
-        }
-        ColorChoice::Never => {
-            cmd.arg("--color").arg("never");
-        }
-        ColorChoice::CargoAuto => {}
-    }
-
-    if bcx.build_config.json_messages() {
-        cmd.arg("--error-format").arg("json");
-    }
+    add_path_args(bcx, unit, cmd);
+    add_color(bcx, cmd);
+    add_error_format(bcx, cmd);
 
     if !test {
         for crate_type in crate_types.iter() {
@@ -961,4 +992,34 @@ impl Kind {
             Kind::Target => Kind::Target,
         }
     }
+}
+
+fn assert_is_empty(line: &str) -> CargoResult<()> {
+    if !line.is_empty() {
+        Err(internal(&format!(
+            "compiler stdout is not empty: `{}`",
+            line
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn json_stderr(line: &str, package_id: &PackageId, target: &Target) -> CargoResult<()> {
+    // stderr from rustc/rustdoc can have a mix of JSON and non-JSON output
+    if line.starts_with('{') {
+        // Handle JSON lines
+        let compiler_message = serde_json::from_str(line)
+            .map_err(|_| internal(&format!("compiler produced invalid json: `{}`", line)))?;
+
+        machine_message::emit(&machine_message::FromCompiler {
+            package_id,
+            target,
+            message: compiler_message,
+        });
+    } else {
+        // Forward non-JSON to stderr
+        writeln!(io::stderr(), "{}", line)?;
+    }
+    Ok(())
 }

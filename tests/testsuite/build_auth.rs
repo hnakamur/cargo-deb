@@ -4,11 +4,10 @@ use std::io::prelude::*;
 use std::net::TcpListener;
 use std::thread;
 
-use git2;
 use bufstream::BufStream;
+use git2;
 use support::paths;
-use support::{basic_manifest, execs, project};
-use support::hamcrest::assert_that;
+use support::{basic_manifest, project};
 
 // Test that HTTP auth is offered from `credential.helper`
 #[test]
@@ -17,7 +16,7 @@ fn http_auth_offered() {
     let addr = server.local_addr().unwrap();
 
     fn headers(rdr: &mut BufRead) -> HashSet<String> {
-        let valid = ["GET", "Authorization", "Accept", "User-Agent"];
+        let valid = ["GET", "Authorization", "Accept"];
         rdr.lines()
             .map(|s| s.unwrap())
             .take_while(|s| s.len() > 2)
@@ -29,7 +28,6 @@ fn http_auth_offered() {
     let t = thread::spawn(move || {
         let mut conn = BufStream::new(server.accept().unwrap().0);
         let req = headers(&mut conn);
-        let user_agent = "User-Agent: git/2.0 (libgit2 0.27.0)";
         conn.write_all(
             b"\
             HTTP/1.1 401 Unauthorized\r\n\
@@ -42,10 +40,9 @@ fn http_auth_offered() {
             vec![
                 "GET /foo/bar/info/refs?service=git-upload-pack HTTP/1.1",
                 "Accept: */*",
-                user_agent,
             ].into_iter()
-                .map(|s| s.to_string())
-                .collect()
+            .map(|s| s.to_string())
+            .collect()
         );
         drop(conn);
 
@@ -64,14 +61,14 @@ fn http_auth_offered() {
                 "GET /foo/bar/info/refs?service=git-upload-pack HTTP/1.1",
                 "Authorization: Basic Zm9vOmJhcg==",
                 "Accept: */*",
-                user_agent,
             ].into_iter()
-                .map(|s| s.to_string())
-                .collect()
+            .map(|s| s.to_string())
+            .collect()
         );
     });
 
-    let script = project().at("script")
+    let script = project()
+        .at("script")
         .file("Cargo.toml", &basic_manifest("script", "0.1.0"))
         .file(
             "src/main.rs",
@@ -81,10 +78,9 @@ fn http_auth_offered() {
                 println!("password=bar");
             }
         "#,
-        )
-        .build();
+        ).build();
 
-    assert_that(script.cargo("build").arg("-v"), execs());
+    script.cargo("build -v").run();
     let script = script.bin("script");
 
     let config = paths::home().join(".gitconfig");
@@ -108,22 +104,20 @@ fn http_auth_offered() {
         "#,
                 addr.port()
             ),
-        )
-        .file("src/main.rs", "")
+        ).file("src/main.rs", "")
         .file(
             ".cargo/config",
             "\
         [net]
         retry = 0
         ",
-        )
-        .build();
+        ).build();
 
     // This is a "contains" check because the last error differs by platform,
     // may span multiple lines, and isn't relevant to this test.
-    assert_that(
-        p.cargo("build"),
-        execs().with_status(101).with_stderr_contains(&format!(
+    p.cargo("build")
+        .with_status(101)
+        .with_stderr_contains(&format!(
             "\
 [UPDATING] git repository `http://{addr}/foo/bar`
 [ERROR] failed to load source for a dependency on `bar`
@@ -141,8 +135,7 @@ attempted to find username/password via `credential.helper`, but [..]
 Caused by:
 ",
             addr = addr
-        )),
-    );
+        )).run();
 
     t.join().ok().unwrap();
 }
@@ -174,42 +167,36 @@ fn https_something_happens() {
         "#,
                 addr.port()
             ),
-        )
-        .file("src/main.rs", "")
+        ).file("src/main.rs", "")
         .file(
             ".cargo/config",
             "\
         [net]
         retry = 0
         ",
-        )
-        .build();
+        ).build();
 
-    assert_that(
-        p.cargo("build").arg("-v"),
-        execs()
-            .with_status(101)
-            .with_stderr_contains(&format!(
-                "[UPDATING] git repository `https://{addr}/foo/bar`",
-                addr = addr
-            ))
-            .with_stderr_contains(&format!(
-                "\
+    p.cargo("build -v")
+        .with_status(101)
+        .with_stderr_contains(&format!(
+            "[UPDATING] git repository `https://{addr}/foo/bar`",
+            addr = addr
+        )).with_stderr_contains(&format!(
+            "\
 Caused by:
   {errmsg}
 ",
-                errmsg = if cfg!(windows) {
-                    "[..]failed to send request: [..]"
-                } else if cfg!(target_os = "macos") {
-                    // OSX is difficult to tests as some builds may use
-                    // Security.framework and others may use OpenSSL. In that case let's
-                    // just not verify the error message here.
-                    "[..]"
-                } else {
-                    "[..]SSL error: [..]"
-                }
-            )),
-    );
+            errmsg = if cfg!(windows) {
+                "[..]failed to send request: [..]"
+            } else if cfg!(target_os = "macos") {
+                // OSX is difficult to tests as some builds may use
+                // Security.framework and others may use OpenSSL. In that case let's
+                // just not verify the error message here.
+                "[..]"
+            } else {
+                "[..]SSL error: [..]"
+            }
+        )).run();
 
     t.join().ok().unwrap();
 }
@@ -238,24 +225,19 @@ fn ssh_something_happens() {
         "#,
                 addr.port()
             ),
-        )
-        .file("src/main.rs", "")
+        ).file("src/main.rs", "")
         .build();
 
-    assert_that(
-        p.cargo("build").arg("-v"),
-        execs()
-            .with_status(101)
-            .with_stderr_contains(&format!(
-                "[UPDATING] git repository `ssh://{addr}/foo/bar`",
-                addr = addr
-            ))
-            .with_stderr_contains(
-                "\
+    p.cargo("build -v")
+        .with_status(101)
+        .with_stderr_contains(&format!(
+            "[UPDATING] git repository `ssh://{addr}/foo/bar`",
+            addr = addr
+        )).with_stderr_contains(
+            "\
 Caused by:
   [..]failed to start SSH session: Failed getting banner[..]
 ",
-            ),
-    );
+        ).run();
     t.join().ok().unwrap();
 }

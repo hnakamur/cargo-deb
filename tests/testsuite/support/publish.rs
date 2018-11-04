@@ -1,9 +1,9 @@
-use std::path::PathBuf;
-use std::io::prelude::*;
 use std::fs::{self, File};
+use std::io::prelude::*;
+use std::path::PathBuf;
 
-use support::paths;
 use support::git::{repo, Repository};
+use support::paths;
 
 use url::Url;
 
@@ -44,11 +44,10 @@ pub fn setup() -> Repository {
         }}"#,
                 upload()
             ),
-        )
-        .build()
+        ).build()
 }
 
-fn registry_path() -> PathBuf {
+pub fn registry_path() -> PathBuf {
     paths::root().join("registry")
 }
 pub fn registry() -> Url {

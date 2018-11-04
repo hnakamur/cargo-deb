@@ -199,30 +199,6 @@ cargo +nightly build --out-dir=out -Z unstable-options
 ```
 
 
-### Edition
-* Tracking Issue: [rust-lang/rust#44581](https://github.com/rust-lang/rust/issues/44581)
-* RFC: [#2052](https://github.com/rust-lang/rfcs/blob/master/text/2052-epochs.md)
-
-You can opt in to a specific Rust Edition for your package with the `edition`
-key in `Cargo.toml`.  If you don't specify the edition, it will default to
-2015.  You need to include the appropriate `cargo-features`.
-
-You can also specify `edition` on a per-target level, where it will otherwise
-default to the package `edition`.
-
-```toml
-cargo-features = ["edition"]
-
-[package]
-...
-edition = "2018"
-
-[[bin]]
-...
-edition = "2015"
-```
-
-
 ### Profile Overrides
 * Tracking Issue: [rust-lang/rust#48683](https://github.com/rust-lang/rust/issues/48683)
 * RFC: [#2282](https://github.com/rust-lang/rfcs/blob/master/text/2282-profile-dependencies.md)
@@ -318,22 +294,6 @@ Example:
 cargo +nightly build --build-plan -Z unstable-options
 ```
 
-### Compile progress
-* Tracking Issue: [rust-lang/cargo#2536](https://github.com/rust-lang/cargo/issues/2536)
-
-The `-Z compile-progress` flag enables a progress bar while compiling.
-
-```console
-$ cargo +nightly build -Z compile-progress
-   Compiling libc v0.2.41
-   Compiling void v1.0.2
-   Compiling lazy_static v1.0.1
-   Compiling regex v1.0.0
-   Compiling ucd-util v0.1.1
-   Compiling utf8-ranges v1.0.0
-    Building [=======>                                                  ] 2/14: libc, regex, uc...
-```
-
 ### default-run
 * Original issue: [#2200](https://github.com/rust-lang/cargo/issues/2200)
 
@@ -345,3 +305,36 @@ both `src/bin/a.rs` and `src/bin/b.rs`:
 [project]
 default-run = "a"
 ```
+
+### Metabuild
+* Tracking Issue: [rust-lang/rust#49803](https://github.com/rust-lang/rust/issues/49803)
+* RFC: [#2196](https://github.com/rust-lang/rfcs/blob/master/text/2196-metabuild.md)
+
+Metabuild is a feature to have declarative build scripts.  Instead of writing
+a `build.rs` script, you specify a list of build dependencies in the
+`metabuild` key in `Cargo.toml`.  A build script is automatically generated
+that runs each build dependency in order.  Metabuild packages can then read
+metadata from `Cargo.toml` to specify their behavior.
+
+Include `cargo-features` at the top of `Cargo.toml`, a `metadata` key in the
+`package`, list the dependencies in `build-dependencies`, and add any metadata
+that the metabuild packages require.  Example:
+
+```toml
+cargo-features = ["metabuild"]
+
+[package]
+name = "mypackage"
+version = "0.0.1"
+metabuild = ["foo", "bar"]
+
+[build-dependencies]
+foo = "1.0"
+bar = "1.0"
+
+[package.metadata.foo]
+extra-info = "qwerty"
+```
+
+Metabuild packages should have a public function called `metabuild` that
+performs the same actions as a regular `build.rs` script would perform.

@@ -1,18 +1,15 @@
-use support::{basic_lib_manifest, is_nightly, execs, project};
-use support::ChannelChanger;
-use support::hamcrest::assert_that;
+use support::{basic_lib_manifest, is_nightly, project};
 
 #[test]
 fn edition_works_for_build_script() {
     if !is_nightly() {
-        return
+        return;
     }
 
     let p = project()
         .file(
             "Cargo.toml",
             r#"
-                cargo-features = ['edition']
                 [package]
                 name = 'foo'
                 version = '0.1.0'
@@ -21,8 +18,7 @@ fn edition_works_for_build_script() {
                 [build-dependencies]
                 a = { path = 'a' }
             "#,
-        )
-        .file("src/lib.rs", "")
+        ).file("src/lib.rs", "")
         .file(
             "build.rs",
             r#"
@@ -30,13 +26,12 @@ fn edition_works_for_build_script() {
                     a::foo();
                 }
             "#,
-        )
-        .file("a/Cargo.toml", &basic_lib_manifest("a"))
+        ).file("a/Cargo.toml", &basic_lib_manifest("a"))
         .file("a/src/lib.rs", "pub fn foo() {}")
         .build();
 
-    assert_that(
-        p.cargo("build -v").masquerade_as_nightly_cargo(),
-        execs().with_status(0),
-    );
+    p.cargo("build -v")
+        .masquerade_as_nightly_cargo()
+        .with_status(0)
+        .run();
 }

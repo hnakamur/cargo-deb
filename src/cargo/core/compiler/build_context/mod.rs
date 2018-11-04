@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::str::{self, FromStr};
+use std::str;
 
 use core::profiles::Profiles;
 use core::{Dependency, Workspace};
@@ -24,12 +24,8 @@ pub struct BuildContext<'a, 'cfg: 'a> {
     pub resolve: &'a Resolve,
     pub profiles: &'a Profiles,
     pub build_config: &'a BuildConfig,
-    /// This is a workaround to carry the extra compiler args for either
-    /// `rustc` or `rustdoc` given on the command-line for the commands `cargo
-    /// rustc` and `cargo rustdoc`.  These commands only support one target,
-    /// but we don't want the args passed to any dependencies, so we include
-    /// the `Unit` corresponding to the top-level target.
-    pub extra_compiler_args: Option<(Unit<'a>, Vec<String>)>,
+    /// Extra compiler args for either `rustc` or `rustdoc`.
+    pub extra_compiler_args: HashMap<Unit<'a>, Vec<String>>,
     pub packages: &'a PackageSet<'cfg>,
 
     /// Information about the compiler
@@ -51,7 +47,7 @@ impl<'a, 'cfg> BuildContext<'a, 'cfg> {
         config: &'cfg Config,
         build_config: &'a BuildConfig,
         profiles: &'a Profiles,
-        extra_compiler_args: Option<(Unit<'a>, Vec<String>)>,
+        extra_compiler_args: HashMap<Unit<'a>, Vec<String>>,
     ) -> CargoResult<BuildContext<'a, 'cfg>> {
         let incremental_env = match env::var("CARGO_INCREMENTAL") {
             Ok(v) => Some(v == "1"),
@@ -92,29 +88,7 @@ impl<'a, 'cfg> BuildContext<'a, 'cfg> {
     }
 
     pub fn extern_crate_name(&self, unit: &Unit<'a>, dep: &Unit<'a>) -> CargoResult<String> {
-        let deps = {
-            let a = unit.pkg.package_id();
-            let b = dep.pkg.package_id();
-            if a == b {
-                &[]
-            } else {
-                self.resolve.dependencies_listed(a, b)
-            }
-        };
-
-        let crate_name = dep.target.crate_name();
-        let mut names = deps.iter()
-            .map(|d| d.rename().map(|s| s.as_str()).unwrap_or(&crate_name));
-        let name = names.next().unwrap_or(&crate_name);
-        for n in names {
-            if n == name {
-                continue
-            }
-            bail!("multiple dependencies listed for the same crate must \
-                   all have the same name, but the dependency on `{}` \
-                   is listed as having different names", dep.pkg.package_id());
-        }
-        Ok(name.to_string())
+        self.resolve.extern_crate_name(unit.pkg.package_id(), dep.pkg.package_id(), dep.target)
     }
 
     /// Whether a dependency should be compiled for the host or target platform,
@@ -222,12 +196,7 @@ impl<'a, 'cfg> BuildContext<'a, 'cfg> {
     }
 
     pub fn extra_args_for(&self, unit: &Unit<'a>) -> Option<&Vec<String>> {
-        if let Some((ref args_unit, ref args)) = self.extra_compiler_args {
-            if args_unit == unit {
-                return Some(args);
-            }
-        }
-        None
+        self.extra_compiler_args.get(unit)
     }
 
     /// Return the list of filenames read by cargo to generate the BuildContext
@@ -415,16 +384,9 @@ fn env_args(
     // ...including target.'cfg(...)'.rustflags
     if let Some(target_cfg) = target_cfg {
         if let Some(table) = config.get_table("target")? {
-            let cfgs = table.val.keys().filter_map(|t| {
-                if t.starts_with("cfg(") && t.ends_with(')') {
-                    let cfg = &t[4..t.len() - 1];
-                    CfgExpr::from_str(cfg).ok().and_then(|c| {
-                        if c.matches(target_cfg) {
-                            Some(t)
-                        } else {
-                            None
-                        }
-                    })
+            let cfgs = table.val.keys().filter_map(|key| {
+                if CfgExpr::matches_key(key, target_cfg) {
+                    Some(key)
                 } else {
                     None
                 }
