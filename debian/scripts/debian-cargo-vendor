@@ -115,4 +115,4 @@ rm -rf debian/vendor-patches && mkdir -p debian/vendor-patches
 ( cd vendor && find . -name patches -exec cp -a --parents '{}' ../debian/vendor-patches \; )
 
 echo >&2 "$0: cleaning up..."
-rm -rf .cargo debcargo-conf Cargo.lock.orig
+rm -rf .cargo debcargo-conf Cargo.lock.orig Cargo.lock

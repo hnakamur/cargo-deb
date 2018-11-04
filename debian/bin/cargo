@@ -26,7 +26,7 @@ Otherwise, you *must* set the following environment variables:
   Debian binary package that the result is to be installed into.
 
 - DEB_CARGO_CRATE_IN_REGISTRY
-  Whether the crate is in the local-registry or the cwd.
+  Whether the crate is in the local-registry (1) or the cwd (0, empty).
 
 - CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 - DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE

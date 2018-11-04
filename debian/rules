@@ -5,17 +5,18 @@ include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/buildflags.mk
 include /usr/share/rustc/architecture.mk
 
-export DEB_HOST_RUST_TYPE DEB_HOST_GNU_TYPE
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
+export DEB_HOST_RUST_TYPE DEB_HOST_GNU_TYPE
+
+CARGO = $(CURDIR)/debian/bin/cargo
 
 export CARGO_HOME = $(CURDIR)/debian/cargo_home
-CARGO = $(CURDIR)/debian/bin/cargo
-export DEB_CARGO_PACKAGE=cargo
 export DEB_CARGO_CRATE=cargo_$(DEB_VERSION_UPSTREAM)
+export DEB_CARGO_PACKAGE=cargo
 
 # To run a specific test, run something like:
 #   $ debian/rules override_dh_auto_test-arch \
-#     CARGO_TEST_FLAGS="TESTNAME -- args ..."
+#     CARGO_TEST_FLAGS="package::include -- <args ...>"
 # See `cargo test --help` for more options.
 CARGO_TEST_FLAGS =
 
