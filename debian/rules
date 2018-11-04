@@ -13,12 +13,11 @@ CARGO = $(CURDIR)/debian/bin/cargo
 export DEB_CARGO_PACKAGE=cargo
 export DEB_CARGO_CRATE=cargo_$(DEB_VERSION_UPSTREAM)
 
-# Disable tests on powerpc and powerpcspe for now.
-# cbmuser requested this and will fix the errors later
-# TODO: once powerpc powerpcspe test failures are fixed drop this
-ifneq (,$(filter $(DEB_BUILD_ARCH), powerpc powerpcspe))
-	POST_TEST = || true
-endif
+# To run a specific test, run something like:
+#   $ debian/rules override_dh_auto_test-arch \
+#     CARGO_TEST_FLAGS="TESTNAME -- args ..."
+# See `cargo test --help` for more options.
+CARGO_TEST_FLAGS =
 
 %:
 	dh $@ --with bash-completion
@@ -32,8 +31,11 @@ override_dh_auto_build-arch:
 override_dh_auto_build-indep:
 	$(CARGO) doc
 
-override_dh_auto_test:
-	CFG_DISABLE_CROSS_TESTS=1 $(CARGO) test $(POST_TEST)
+override_dh_auto_test-arch:
+	CFG_DISABLE_CROSS_TESTS=1 $(CARGO) test $(CARGO_TEST_FLAGS)
+
+override_dh_auto_test-indep:
+	# no arch-indep tests
 
 override_dh_auto_install:
 	$(CARGO) install

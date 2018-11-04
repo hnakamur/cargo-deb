@@ -130,6 +130,10 @@ def main(*args):
         return prepare_debian(cargo_home, registry,
             os.environ["DEB_CARGO_CRATE"], host_gnu_type, os.getenv("LDFLAGS", "").split())
 
+    cargo_config = "%s/config" % cargo_home
+    if not os.path.exists(cargo_config):
+        raise ValueError("does not exist: %s, did you run `cargo prepare-debian <registry>`?" % cargo_config)
+
     newargs = []
     subcmd = None
     for a in args:
