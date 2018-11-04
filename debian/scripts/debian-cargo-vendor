@@ -52,6 +52,7 @@ for i in *; do
 	cd $i
 	# if there is a d/rules then don't mess with it, it's too custom for this
 	# script to deal with - just use the upstream version. example: backtrace-sys
+	# TODO: deal with those better, especially backtrace-sys
 	if [ -d ../../debcargo-conf/src/$i/debian/patches -a ! -e ../../debcargo-conf/src/$i/debian/rules ]; then
 		echo >&2 "$0: patching $i"
 		mkdir -p debian

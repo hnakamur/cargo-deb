@@ -9,12 +9,7 @@ Priority: optional
 # :native annotations are to support cross-compiling, see README.Debian of rustc
 Build-Depends: debhelper (>= 9.20141010),
                dpkg-dev (>= 1.17.14),
-               python-dulwich           <pkg.cargo.mkstage0>,
-               python-pytoml            <pkg.cargo.mkstage0>,
-# TODO: related to https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=839145
-# the non-native lines can be deleted after all versions in unstable are M-A: allowed
-               cargo           (>= 0.17.0) <!pkg.cargo.mkstage0> |
-               cargo:native    (>= 0.17.0) <!pkg.cargo.mkstage0>,
+               cargo:native    (>= 0.17.0),
                rustc:native    (>= 1.16),
                libstd-rust-dev (>= 1.16),
                pkg-config,
@@ -59,7 +54,7 @@ Package: cargo-doc
 Section: doc
 Architecture: all
 Build-Profiles: <!nodoc>
-Depends: ${misc:Depends}, libjs-jquery
+Depends: ${misc:Depends}
 Description: Rust package manager, documentation
  Cargo is a tool that allows Rust projects to declare their various
  dependencies, and ensure that you'll always get a repeatable build.

@@ -1,2 +1,3 @@
 target/*/release/cargo                  usr/bin
 debian/scripts/*                        usr/share/cargo
+debian/bin/cargo                        usr/share/cargo/bin
