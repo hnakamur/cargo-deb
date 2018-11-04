@@ -1,3 +1,9 @@
+cargo (0.31.0-2) UNRELEASED; urgency=medium
+
+  * Fix test failure on some architectures due to hash ordering.
+
+ -- Ximin Luo <infinity0@debian.org>  Sun, 04 Nov 2018 10:48:10 -0800
+
 cargo (0.31.0-1) unstable; urgency=medium
 
   * Don't run tests when doing arch-indep build.

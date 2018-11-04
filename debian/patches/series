@@ -1,4 +1,5 @@
 1001_fix_inc_exc_tests.patch
+1002_fix_doc_tests_order_hash.patch
 2007_sparc64_disable_incremental_build.patch
 2002_disable-net-tests.patch
 2005_disable_fetch_cross_tests.patch
