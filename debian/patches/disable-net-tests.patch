@@ -1,0 +1,44 @@
+Description: Disable network tests
+Author: Ximin Luo <infinity0@debian.org>
+Forwarded: TODO
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/tests/testsuite/build_auth.rs
++++ b/tests/testsuite/build_auth.rs
+@@ -10,7 +10,7 @@
+ use support::{basic_manifest, project};
+ 
+ // Test that HTTP auth is offered from `credential.helper`
+-#[test]
++#[allow(dead_code)]
+ fn http_auth_offered() {
+     let server = TcpListener::bind("127.0.0.1:0").unwrap();
+     let addr = server.local_addr().unwrap();
+@@ -141,7 +141,7 @@
+ }
+ 
+ // Boy, sure would be nice to have a TLS implementation in rust!
+-#[test]
++#[allow(dead_code)]
+ fn https_something_happens() {
+     let server = TcpListener::bind("127.0.0.1:0").unwrap();
+     let addr = server.local_addr().unwrap();
+--- a/tests/testsuite/net_config.rs
++++ b/tests/testsuite/net_config.rs
+@@ -1,6 +1,6 @@
+ use support::project;
+ 
+-#[test]
++#[allow(dead_code)]
+ fn net_retry_loads_from_config() {
+     let p = project()
+         .file(
+@@ -33,7 +33,7 @@
+         ).run();
+ }
+ 
+-#[test]
++#[allow(dead_code)]
+ fn net_retry_git_outputs_warning() {
+     let p = project()
+         .file(

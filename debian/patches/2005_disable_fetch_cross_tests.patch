@@ -6,25 +6,25 @@ Last-Update: 2018-08-05
 
 --- a/tests/testsuite/fetch.rs
 +++ b/tests/testsuite/fetch.rs
-@@ -13,8 +13,8 @@
-     assert_that(p.cargo("fetch"), execs().with_stdout(""));
+@@ -12,8 +12,8 @@
+     p.cargo("fetch").with_stdout("").run();
  }
  
 -#[test]
 -fn fetch_all_platform_dependencies_when_no_target_is_given() {
 +#[allow(dead_code)]
 +fn _fetch_all_platform_dependencies_when_no_target_is_given() {
-     Package::new("d1", "1.2.3")
-         .file("Cargo.toml", &basic_manifest("d1", "1.2.3"))
-         .file("src/lib.rs", "")
+     if cross_compile::disabled() {
+         return;
+     }
 @@ -58,8 +58,8 @@
-     );
+         .run();
  }
  
 -#[test]
 -fn fetch_platform_specific_dependencies() {
 +#[allow(dead_code)]
 +fn _fetch_platform_specific_dependencies() {
-     Package::new("d1", "1.2.3")
-         .file("Cargo.toml", &basic_manifest("d1", "1.2.3"))
-         .file("src/lib.rs", "")
+     if cross_compile::disabled() {
+         return;
+     }

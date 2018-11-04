@@ -1,6 +1,3 @@
 2007_sparc64_disable_incremental_build.patch
-2004_clean-cargo-deps.patch
-2001_use-system-libgit2.patch
-2002_disable-net-tests.patch
-2003_force-use-system-libssh2.patch
+disable-net-tests.patch
 2005_disable_fetch_cross_tests.patch
