@@ -8,8 +8,10 @@ include /usr/share/rustc/architecture.mk
 export DEB_HOST_RUST_TYPE DEB_HOST_GNU_TYPE
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
 
-export CARGO_HOME = $(CURDIR)/debian/cargohome
+export CARGO_HOME = $(CURDIR)/debian/cargo_home
 CARGO = $(CURDIR)/debian/bin/cargo
+export DEB_CARGO_PACKAGE=cargo
+export DEB_CARGO_CRATE=cargo_$(DEB_VERSION_UPSTREAM)
 
 # Disable tests on powerpc and powerpcspe for now.
 # cbmuser requested this and will fix the errors later
