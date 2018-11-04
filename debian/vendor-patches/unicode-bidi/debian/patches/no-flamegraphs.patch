@@ -1,0 +1,26 @@
+Index: unicode-bidi/Cargo.toml
+===================================================================
+--- unicode-bidi.orig/Cargo.toml
++++ unicode-bidi/Cargo.toml
+@@ -23,13 +23,6 @@ repository = "https://github.com/servo/u
+ 
+ [lib]
+ name = "unicode_bidi"
+-[dependencies.flame]
+-version = "0.1"
+-optional = true
+-
+-[dependencies.flamer]
+-version = "0.1"
+-optional = true
+ 
+ [dependencies.serde]
+ version = ">=0.8, <2.0"
+@@ -43,7 +36,6 @@ version = ">=0.8, <2.0"
+ 
+ [features]
+ with_serde = ["serde"]
+-flame_it = ["flame", "flamer"]
+ unstable = []
+ default = []
+ bench_it = []

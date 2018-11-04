@@ -1,0 +1,20 @@
+Index: openssl-sys/Cargo.toml
+===================================================================
+--- openssl-sys.orig/Cargo.toml
++++ openssl-sys/Cargo.toml
+@@ -28,14 +28,11 @@ version = "0.2"
+ [build-dependencies.cc]
+ version = "1.0"
+ 
+-[build-dependencies.openssl-src]
+-version = "111.0.1"
+-optional = true
+-
+ [build-dependencies.pkg-config]
+ version = "0.3.9"
+ 
+ [features]
+ vendored = ["openssl-src"]
++openssl-src = []
+ [target."cfg(target_env = \"msvc\")".build-dependencies.vcpkg]
+ version = "0.2"
