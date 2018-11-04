@@ -16,24 +16,24 @@ License: MIT or Apache-2.0
 Comment: please do not add * to the above paragraph, so we can use lintian to
          help us update this file properly
 
-Files: vendor/bitflags-*
-       vendor/bufstream-*
-       vendor/crossbeam-*
-       vendor/env_logger-*
-       vendor/flate2-*
-       vendor/fs2-0*
-       vendor/glob-0*
-       vendor/libc-0*
-       vendor/log-0*
-       vendor/rand-0*
-       vendor/regex-1*
-       vendor/regex-syntax-*
-       vendor/semver-*
-       vendor/shell-escape-*
-       vendor/vec_map-*
-       vendor/unicode-width-*
-       vendor/rand_core-*
-Copyright: 2014-2016 The Rust Project Developers
+Files: vendor/bitflags/*
+       vendor/bufstream/*
+       vendor/env_logger/*
+       vendor/flate2/*
+       vendor/fs2/*
+       vendor/glob/*
+       vendor/libc/*
+       vendor/log/*
+       vendor/rand/*
+       vendor/regex/*
+       vendor/regex-syntax/*
+       vendor/semver/*
+       vendor/shell-escape/*
+       vendor/vec_map/*
+       vendor/unicode-width/*
+       vendor/rand_core/*
+       vendor/rand_core-0*/*
+Copyright: 2014-2018 The Rust Project Developers
 License: MIT or Apache-2.0
 Comment:
  This is a collection of external crates embedded here to bootstrap cargo.
@@ -41,38 +41,41 @@ Comment:
  same MIT/Apache-2.0 dual-license. See https://github.com/rust-lang.
  Exceptions are noted below.
 
-Files: vendor/backtrace-0*
-       vendor/backtrace-sys-0*
-       vendor/cfg-if-0*
-       vendor/filetime-*
-       vendor/git2-0*
-       vendor/git2-curl-*
-       vendor/jobserver-0*
-       vendor/libz-sys-*
-       vendor/libgit2-sys-*
-       vendor/libssh2-sys-*
-       vendor/miniz-sys-*
-       vendor/openssl-probe-*
-       vendor/pkg-config-*
-       vendor/rustc-demangle-0*
-       vendor/tar-0*
-       vendor/toml-0*
-       vendor/socket2-*
-Copyright: 2014-2017 Alex Crichton <alex@alexcrichton.com>
-           2014-2017 The Rust Project Developers
+Files: vendor/backtrace/*
+       vendor/backtrace-sys/*
+       vendor/cfg-if/*
+       vendor/filetime/*
+       vendor/git2/*
+       vendor/git2-curl/*
+       vendor/jobserver/*
+       vendor/libz-sys/*
+       vendor/libgit2-sys/*
+       vendor/libssh2-sys/*
+       vendor/miniz-sys/*
+       vendor/miow/*
+       vendor/openssl-probe/*
+       vendor/pkg-config/*
+       vendor/rustc-demangle/*
+       vendor/tar/*
+       vendor/toml/*
+       vendor/socket2/*
+Copyright: 2014-2018 Alex Crichton <alex@alexcrichton.com>
+           2014-2018 The Rust Project Developers
 License: MIT or Apache-2.0
 Comment: see https://github.com/alexcrichton/
 
-Files: vendor/aho-corasick-*
-       vendor/memchr-*
-       vendor/utf8-ranges-*
-       vendor/wincolor-*
-       vendor/termcolor-*
-       vendor/globset-*
-       vendor/ignore-*
-       vendor/same-file-*
-       vendor/walkdir-*
-Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
+Files:
+ vendor/aho-corasick/*
+ vendor/memchr/*
+ vendor/utf8-ranges/*
+ vendor/wincolor/*
+ vendor/termcolor/*
+ vendor/globset/*
+ vendor/ignore/*
+ vendor/same-file/*
+ vendor/walkdir/*
+ vendor/winapi-util/*
+Copyright: 2015-2018 Andrew Gallant <jamslam@gmail.com>
 License: MIT or Unlicense
 Comment: see upstream projects,
  * https://github.com/docopt/docopt.rs
@@ -85,150 +88,179 @@ Comment: see upstream projects,
  * https://github.com/BurntSushi/ripgrep/tree/master/ignore
  * https://github.com/BurntSushi/same-file
  * https://github.com/BurntSushi/walkdir
+ * https://github.com/BurntSushi/winapi-util
 
-Files: vendor/ucd-util-*
+Files:
+ vendor/crossbeam-channel/*
+ vendor/crossbeam-deque/*
+ vendor/crossbeam-epoch/*
+ vendor/crossbeam-utils/*
+Copyright: 2017-2018 The Crossbeam Project Developers
+License: MIT or Apache-2.0
+Comment: see https://github.com/crossbeam-rs/crossbeam-deque
+
+Files: vendor/ucd-util/*
 Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/BurntSushi/rucd
 
-Files: vendor/kernel32-*
-       vendor/winapi-*
+Files: vendor/kernel32/*
+       vendor/winapi/*
 Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
            2014-2017 winapi-rs developers
 License: MIT
 Comment: see https://github.com/retep998/winapi-rs
 
+Files: vendor/winapi-*-pc-windows-gnu/*
+Copyright: 2014-2018 Peter Atashian <retep998@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/retep998/winapi-rs
 
-Files: vendor/curl-0*
-       vendor/curl-sys-0*
+Files: vendor/curl/*
+       vendor/curl-sys/*
 Copyright: 2014-2016 Carl Lerche <me@carllerche.com>
            2014-2016 Alex Crichton <alex@alexcrichton.com>
 License: MIT
 Comment: see https://github.com/sfackler/rust-openssl
 
-Files: vendor/itoa-0*
-       vendor/quote-0*
+Files: vendor/itoa/*
+       vendor/quote/*
 Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/dtolnay
 
-Files: vendor/foreign-types-0*
-       vendor/foreign-types-shared-*
+Files: vendor/foreign-types/*
+       vendor/foreign-types-shared/*
 Copyright: 2017-2017 Steven Fackler <sfackler@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/sfackler/foreign-types
 
-Files: vendor/idna-0*
+Files: vendor/fwdansi/*
+Copyright: 2018-2018 kennytm <kennytm@gmail.com>
+License: MIT
+Comment: see https://github.com/kennytm/fwdansi
+
+Files: vendor/idna/*
 Copyright: 2013 Simon Sapin <simon.sapin@exyr.org>
            2013-2014 Valentin Gosu
            1991-2015 Unicode, Inc
 License: MIT or Apache-2.0
 
-Files: vendor/lazycell-*
+Files: vendor/lazycell/*
 Copyright: 20014, The Rust Project Developers
            2016-2017, Nikita Pekin and lazycell contributors
 License: MIT or Apache-2.0
 
-Files: vendor/idna-0*/src/IdnaMappingTable.txt
-       vendor/idna-0*/tests/IdnaTest.txt
+Files: vendor/idna/*/src/IdnaMappingTable.txt
+       vendor/idna/*/tests/IdnaTest.txt
 Copyright: 1991-2017 Unicode, Inc
 License: Unicode-terms
 
-Files: vendor/lazy_static-1*
- vendor/owning_ref-*
- vendor/rustc_version-*
+Files: vendor/lazy_static/*
+ vendor/owning_ref/*
+ vendor/rustc_version/*
 Copyright: 2014-2016 Marvin Löbel <loebel.marvin@gmail.com>
 License: MIT or Apache-2.0
 
-Files: vendor/matches-*
+Files: vendor/matches/*
 Copyright: 2015 Simon Sapin <simon.sapin@exyr.org>
 License: MIT
 Comment: see https://github.com/SimonSapin/rust-std-candidates
 
-Files: vendor/smallvec-*
+Files: vendor/smallvec/*
 Copyright: 2018 Simon Sapin <simon.sapin@exyr.org>
 License: MIT or Apache-2.0
 
-Files: vendor/miniz-sys-*/miniz.c
+Files: vendor/miniz-sys/*/miniz.c
 Copyright: Rich Geldreich <richgel99@gmail.com>
 License: Unlicense
 
-Files: vendor/num_cpus-*
+Files: vendor/num_cpus/*
 Copyright: 2015 Sean McArthur <sean.monstar@gmail.com>
 License: MIT
 Comment: see https://github.com/seanmonstar/num_cpus
 
-Files: vendor/openssl-*
+Files: vendor/opener/*
+Copyright: 2018 Brian Bowman <seeker14491@gmail.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/Seeker14491/opener
+
+Files: vendor/openssl/*
 Copyright: 2013-2015 Steven Fackler <sfackler@gmail.com>
            2013 Jack Lloyd
            2011 Google Inc.
 License: Apache-2.0
 
-Files: vendor/openssl-sys-*
+Files: vendor/openssl-sys/*
 Copyright: 2015 Steven Fackler <sfackler@gmail.com>
            2015 Alex Crichton <alex@alexcrichton.com>
 License: MIT
 Comment: see https://github.com/sfackler/rust-openssl
 
-Files: vendor/serde-1.*
-       vendor/serde_derive-1.*
-       vendor/serde_ignored-0*
-       vendor/serde_json-1.*
+Files: vendor/semver-parser/*
+Copyright: 2016-2018 Steve Klabnik <steve@steveklabnik.com>
+License: MIT or Apache-2.0
+Comment: see https://github.com/steveklabnik/semver-parser
+
+Files: vendor/serde/*
+       vendor/serde_derive/*
+       vendor/serde_ignored/*
+       vendor/serde_json/*
 Copyright: 2014-2017 Erick Tryzelaar <erick.tryzelaar@gmail.com>
            2014-2017 David Tolnay <dtolnay@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/serde-rs
          see https://github.com/dtolnay/serde-ignored
 
-Files: vendor/strsim-*
+Files: vendor/strsim/*
 Copyright: 2015 Danny Guo <dannyguo91@gmail.com>
 License: MIT
 Comment: see https://github.com/dguo/strsim-rs
 
-Files: vendor/syn-0*
+Files: vendor/syn/*
 Copyright: 2016-2017 David Tolnay <dtolnay@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/dtolnay/syn
 
-Files: vendor/ryu-*
+Files: vendor/ryu/*
 Copyright: David Tolnay <dtolnay@gmail.com>
 License: BSL-1.0 or Apache-2.0
 
-Files: vendor/thread_local-0*
- vendor/lock_api-*
- vendor/parking_lot-*
- vendor/parking_lot_core-*
+Files: vendor/thread_local/*
+ vendor/lock_api/*
+ vendor/parking_lot/*
+ vendor/parking_lot_core/*
 Copyright: 2016 Amanieu d'Antras <amanieu@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/Amanieu/thread_local-rs
 
-Files: vendor/unicode-bidi-*
+Files: vendor/unicode-bidi/*
 Copyright: 2015 The Servo Project Developers
 License: MIT or Apache-2.0
 Comment: see https://github.com/servo/unicode-bidi
 
-Files: vendor/core-foundation-*
-       vendor/core-foundation-sys-*
+Files: vendor/core-foundation/*
+       vendor/core-foundation-sys/*
 Copyright: 2012-2013, The Servo Project Developers,
  2012-2013, Mozilla Foundation
 License: MIT or Apache-2.0
 Comment: see https://github.com/servo/core-foundation-rs
 
-Files: vendor/unicode-xid-0*
+Files: vendor/unicode-xid/*
 Copyright: 2015-2017 erick.tryzelaar <erick.tryzelaar@gmail.com>
            2015-2017 kwantam <kwantam@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/unicode-rs/unicode-xid
 
-Files: vendor/unicode-normalization-0*/scripts/unicode.py
-       vendor/unicode-xid-0*/scripts/unicode.py
+Files: vendor/unicode-normalization/*/scripts/unicode.py
+       vendor/unicode-xid/*/scripts/unicode.py
 Copyright: 2011-2015 The Rust Project Developers
            2015 The Servo Project Developers
 License: MIT or Apache-2.0
 
-Files: vendor/unicode-bidi-0*/src/char_data/tables.rs
-       vendor/unicode-normalization-0*/src/tables.rs
-       vendor/unicode-xid-0*/src/tables.rs
+Files: vendor/unicode-bidi/*/src/char_data/tables.rs
+       vendor/unicode-normalization/*/src/tables.rs
+       vendor/unicode-xid/*/src/tables.rs
 Copyright: 2011-2015 The Rust Project Developers
            2015 The Servo Project Developers
 License: MIT or Apache-2.0, and Unicode-terms
@@ -237,7 +269,7 @@ Comment:
  Unicode data files which are licensed under the Unicode-terms. In Debian these
  data files are available in the unicode-data package.
  .
- $ git grep -i generated --  vendor/unicode-* ':(exclude)*LICENSE*'
+ $ git grep -i generated --  vendor/unicode/* ':(exclude)*LICENSE*'
  vendor/unicode-bidi-0.3.4/src/char_data/tables.rs:// The following code was generated by "tools/generate.py". do not edit directly
  vendor/unicode-normalization-0.1.5/scripts/unicode.py:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
  vendor/unicode-normalization-0.1.5/src/tables.rs:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
@@ -245,38 +277,38 @@ Comment:
  vendor/unicode-xid-0.0.4/scripts/unicode.py:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
  vendor/unicode-xid-0.0.4/src/tables.rs:// NOTE: The following code was generated by "scripts/unicode.py", do not edit directly
 
-Files: vendor/unreachable-*
-       vendor/void-1.*
+Files: vendor/unreachable/*
+       vendor/void/*
 Copyright: 2015-2017 Jonathan Reem <jonathan.reem@gmail.com>
 License: MIT
 Comment: see https://github.com/reem/
 
-Files: vendor/unicode-normalization-*
+Files: vendor/unicode-normalization/*
 Copyright: 2016 kwantam <kwantam@gmail.com>
 License: MIT or Apache-2.0
 
-Files: vendor/url-1.*
-       vendor/percent-encoding-*
+Files: vendor/url/*
+       vendor/percent-encoding/*
 Copyright: 2015-2016 Simon Sapin <simon.sapin@exyr.org>
            2013-2016 The rust-url developers
 License: MIT or Apache-2.0
 Comment: see https://github.com/servo/rust-url
          see https://github.com/servo/rust-url/tree/master/percent_encoding
 
-Files: vendor/hex-*
+Files: vendor/hex/*
 Copyright: 2015, rust-hex Developers
 License: MIT or Apache-2.0
 Comment: see https://github.com/KokaKiwi/rust-hex
 
-Files: vendor/atty-*
+Files: vendor/atty/*
 Copyright: 2015-2016, Doug Tangren
 License: MIT
 Comment: see https://github.com/softprops/atty
 
-Files: vendor/fnv-*
- vendor/cc-*
- vendor/proc-macro2-*
- vendor/rustc-workspace-hack-*
+Files: vendor/fnv/*
+ vendor/cc/*
+ vendor/proc-macro2/*
+ vendor/rustc-workspace-hack/*
 Copyright: 2017-2018, Alex Crichton <alex@alexcrichton.com>
 License: MIT or Apache-2.0
 Comment:
@@ -284,13 +316,13 @@ Comment:
  see https://github.com/alexcrichton/proc-macro
 
 
-Files: vendor/home-*
+Files: vendor/home/*
 Copyright: Brian Anderson <andersb@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/brson/home
 
-Files: vendor/fuchsia-zircon-*
-       vendor/fuchsia-zircon-sys-*
+Files: vendor/fuchsia-zircon/*
+       vendor/fuchsia-zircon-sys/*
 Copyright: Raph Levien <raph@google.com>
            2016, The Fuchsia Authors
 License: BSD-3-Clause
@@ -298,19 +330,20 @@ Comment:
  * see https://fuchsia.googlesource.com/magenta-rs/
  * see https://fuchsia.googlesource.com/garnet/
 
-Files: vendor/scopeguard-*
+Files: vendor/scopeguard/*
 Copyright: 2015, The Rust Project Developers
            bluss
 License: MIT or Apache-2.0
 Comment: see https://github.com/bluss/scopeguard
 
-Files: vendor/vcpkg-0*
+Files: vendor/vcpkg/*
 Copyright: 2017-2017 Jim McGrath <jimmc2@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/mcgoo/vcpkg-rs
 
-Files: vendor/commoncrypto-*
-       vendor/crypto-hash-*
+Files: vendor/commoncrypto/*
+       vendor/commoncrypto-sys/*
+       vendor/crypto-hash/*
 Copyright: 2016, Mark Lee
  2015-2016, Mark Lee
 License: MIT
@@ -318,50 +351,50 @@ Comment:
  * see https://github.com/malept/rust-commoncrypto
  * see https://github.com/malept/crypto-hash
 
-Files: vendor/redox_syscall-*
-       vendor/redox_termios-*
+Files: vendor/redox_syscall/*
+       vendor/redox_termios/*
 Copyright: 2017, Redox OS Developers
 License: MIT
 
-Files: vendor/ansi_term-*
+Files: vendor/ansi_term/*
 Copyright: 2014, Benjamin Sago <ogham@bsago.me>
            Ryan Scheel (Havvy) <ryan.havvy@gmail.com>
            Josh Triplett <josh@joshtriplett.org>
 License: MIT
 
-Files: vendor/quick-error-*
+Files: vendor/quick-error/*
 Copyright: 2015, The quick-error developers
 License: MIT or Apache-2.0
 
-Files: vendor/termion-*
+Files: vendor/termion/*
 Copyright: 2016, Ticki
 License: MIT
 Comment: see https://github.com/ticki/termion/
 
-Files: vendor/failure-*
-       vendor/failure_derive-*
+Files: vendor/failure/*
+       vendor/failure_derive/*
 Copyright: Without Boats <boats@mozilla.com>
 License: MIT or Apache-2.0
 Comment:
  * see https://github.com/withoutboats/failure
  * see https://github.com/withoutboats/failure_derive
 
-Files: vendor/remove_dir_all-*
+Files: vendor/remove_dir_all/*
 Copyright: 2017, Aaron Power <theaaronepower@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/Aaronepower/remove_dir_all
 
-Files: vendor/synstructure-*
+Files: vendor/synstructure/*
 Copyright: Michael Layzell <michael@thelayzells.com>
 License: MIT
 Comment: see https://github.com/mystor/synstructure
 
-Files: vendor/schannel-*
+Files: vendor/schannel/*
 Copyright: 2015, Steffen Butzer <steffen.butzer@outlook.com>
 License: MIT
 Comment: see https://github.com/steffengy/schannel-rs/
 
-Files: vendor/humantime-*
+Files: vendor/humantime/*
 Copyright: 2016, The humantime Developers
 License: MIT or Apache-2.0
 Comment:
@@ -370,41 +403,41 @@ Comment:
  .
  See https://github.com/tailhook/humantime
 
-Files: vendor/textwrap-*
+Files: vendor/textwrap/*
 Copyright: 2016, Martin Geisler <martin@geisler.net>
 License: MIT
 
-Files: vendor/clap-*
+Files: vendor/clap/*
 Copyright: 2015-2016, Kevin B. Knapp <kbknapp@gmail.com>
 License: MIT
 
-Files: vendor/tempfile-*
+Files: vendor/tempfile/*
 Copyright: 2015, Steven Allen
 License: MIT or Apache-2.0
 
-Files: vendor/cloudabi-*
+Files: vendor/cloudabi/*
 Copyright: Nuxi and contributors
 License: BSD-2-clause
 Comment: See https://github.com/nuxinl/cloudabi
 
-Files: vendor/arrayvec-*
- vendor/nodrop-*
+Files: vendor/arrayvec/*
+ vendor/nodrop/*
 Copyright: 2015-2017, Ulrik Sverdrup "bluss"
 License: MIT or Apache-2.0
 
-Files: vendor/memoffset-*
+Files: vendor/memoffset/*
 Copyright: 2017, Gilad Naamn
 License: MIT
 
-Files: vendor/version_check-*
+Files: vendor/version_check/*
 Copyright: 2017-2018, Sergio Benitez
 License: MIT or Apache-2.0
 
-Files: vendor/stable_deref_trait-*
+Files: vendor/stable_deref_trait/*
 Copyright: 2017, Robert Grosse
 License: MIT or Apache-2.0
 
-Files: vendor/rustfix-*
+Files: vendor/rustfix/*
 Copyright: 2016, Pascal Hertleif
            2016, Oliver Schneider
 License: MIT or Apache-2.0
