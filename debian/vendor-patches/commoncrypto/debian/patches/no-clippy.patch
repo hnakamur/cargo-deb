@@ -1,8 +1,6 @@
-Index: commoncrypto/Cargo.toml
-===================================================================
---- commoncrypto.orig/Cargo.toml
-+++ commoncrypto/Cargo.toml
-@@ -8,13 +8,8 @@ repository = "https://github.com/malept/
+--- a/Cargo.toml	2017-01-24 06:56:51.000000000 +0000
++++ b/Cargo.toml	2018-09-15 17:37:01.354423224 +0000
+@@ -8,13 +8,8 @@
  keywords = ["crypto", "hash", "digest", "osx", "commoncrypto"]
  license = "MIT"
  

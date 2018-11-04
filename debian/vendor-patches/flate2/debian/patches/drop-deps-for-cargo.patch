@@ -1,5 +1,5 @@
---- a/Cargo.toml
-+++ b/Cargo.toml
+--- flate2.orig/Cargo.toml
++++ flate2/Cargo.toml
 @@ -33,11 +33,6 @@
  version = "1.0"
  optional = true

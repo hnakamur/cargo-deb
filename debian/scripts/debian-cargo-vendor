@@ -62,10 +62,10 @@ for i in *; do
 		if [ ! -d debian/patches ]; then
 			cp -a -n ../../debcargo-conf/src/$i/debian/patches debian/
 		fi
-		QUILT_PATCHES=debian/patches quilt push -a --refresh
+		QUILT_PATCHES=debian/patches quilt push -a
 		case $? in
 		0|2) true;;
-		*) echo >&2 "$0: patching $i failed"; x=false;;
+		*) echo >&2 "$0: patching $i failed <<<<<<<<<<<<<<<<<<<<<<<<"; x=false;;
 		esac
 	fi
 	cd ..
@@ -74,6 +74,11 @@ done; $x ); do
 	echo >&2 "$0: You are now in a sub-shell!"
 	echo >&2 "$0: Fix the failed patches, then exit the sub-shell by pressing ctrl-D ONCE."
 	echo >&2 "$0: If you need to abort this process, press ctrl-D then quickly ctrl-C."
+	if [ -d debian/vendor-patches ]; then
+		echo >&2 "$0: Previous patches exist, to view the diff between these and debcargo-conf run:"
+		echo >&2 "  $ diff --color=always -ru vendor/ debian/vendor-patches/ | grep -v 'Only in vendor'"
+		echo >&2 "$0: Note that this is a 2-way diff not a 3-way diff, and so may be misleading."
+	fi
 	echo >&2 "================================================================================"
 	bash || true
 	echo >&2 "$0: trying patches again..."
