@@ -1,9 +1,9 @@
-cargo (0.31.0-1~exp2) UNRELEASED; urgency=medium
+cargo (0.31.0-1) unstable; urgency=medium
 
   * Don't run tests when doing arch-indep build.
   * Fix package include/exclude tests.
 
- -- Ximin Luo <infinity0@debian.org>  Sun, 04 Nov 2018 08:29:00 -0800
+ -- Ximin Luo <infinity0@debian.org>  Sun, 04 Nov 2018 10:10:24 -0800
 
 cargo (0.31.0-1~exp1) experimental; urgency=medium
 
