@@ -36,21 +36,16 @@ mkdir cargo
 tar -xaf "${TMPDIR}/cargo_${CARGO_VER}.orig.tar.gz" -C cargo --strip-components=1
 cd cargo
 
-# Trim the list of dependencies
-echo ""
-echo "Applying 2004_clean-cargo-deps.patch... If this fails, remember to refresh the patch first!"
-patch -p1 < ${WORKDIR}/debian/patches/2004_clean-cargo-deps.patch
-
 # Download build-deps via cargo-vendor
 export GIT_AUTHOR_NAME="deb-build"
 export GIT_AUTHOR_EMAIL="<>"
 export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
 export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
-cargo vendor --explicit-version --verbose
+
+${WORKDIR}/debian/scripts/debian-cargo-vendor
 
 # Clean embedded libs and update checksums
 grep -v '^#' ${VENDOR_FILTER} | xargs  -I% sh -c 'rm -rf vendor/%'
-for i in vendor/*; do ${WORKDIR}/debian/scripts/prune-checksums "$i"; done
 
 # Report any suspicious files
 cp -R vendor vendor-scan
@@ -62,7 +57,7 @@ find vendor-scan -type f -and -not -name '.cargo-checksum.json' -exec file '{}' 
   grep -v '\b\(text\|empty\)\b' || true
 echo "The above files (if any) seem suspicious, please audit them."
 echo "If good, add them to ${VENDOR_SUS_WHITELIST}."
-echo "If bad, add them to ${VENDOR_FILTER}."
+echo "If bad, add them to ${VENDOR_FILTER} and/or the relevant debcargo.toml in debcargo-conf.git"
 rm -rf vendor-scan
 
 # Pack it up, reproducibly
