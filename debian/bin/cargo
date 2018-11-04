@@ -2,6 +2,16 @@
 """
 Wrapper around cargo to have it build using Debian settings.
 
+Usage:
+
+    export CARGO_HOME=debian/cargo_home
+    cargo prepare-debian /path/to/registry
+    cargo build
+    cargo test
+    cargo install
+
+See cargo:d/rules and dh-cargo:cargo.pm for more examples.
+
 Make sure you add "Build-Depends: python3:native" if you use this directly.
 OTOH, you only need "Build-Depends: dh-cargo" if you use that.
 
@@ -12,8 +22,9 @@ Environment variables this is affected by:
 - DEB_BUILD_PROFILES
 - DEB_HOST_GNU_TYPE
 - DEB_HOST_RUST_TYPE
-- DEB_CARGO_PACKAGE
 - DEB_CARGO_CRATE
+- DEB_CARGO_PACKAGE
+- DEB_CARGO_PACKAGE_IN_REGISTRY
 
 """
 
@@ -36,7 +47,7 @@ def logrun(*args, **kwargs):
 def sourcepath(p):
     return os.path.join(os.getcwd(), p)
 
-def prepare_debian(cargo_home, host_gnu_type, ldflags, cratespec, registry):
+def prepare_debian(cargo_home, registry, cratespec, host_gnu_type, ldflags):
     if not os.path.exists(sourcepath(registry)):
         raise ValueError("non-existent registry: %s" % registry)
 
@@ -53,6 +64,7 @@ def prepare_debian(cargo_home, host_gnu_type, ldflags, cratespec, registry):
     # We probably need to add override_dh_makeshlibs to d/rules of rustc
     #rustflags.extend(["-C", "prefer-dynamic"])
 
+    os.makedirs(cargo_home, exist_ok=True)
     with open("%s/config" % cargo_home, "w") as fp:
         fp.write("""[source.crates-io]
 replace-with = "dh-cargo-registry"
@@ -66,7 +78,7 @@ rustflags = {1}
 
     return 0
 
-def install(binpkg, cratespec, host_rust_type, *args):
+def install(binpkg, cratespec, host_rust_type, in_registry, *args):
     crate, version = cratespec.rsplit("_", 1)
     install_target = sourcepath("debian/%s/usr" % binpkg)
     logrun(["env", "RUST_BACKTRACE=1",
@@ -74,7 +86,8 @@ def install(binpkg, cratespec, host_rust_type, *args):
         # normally `cargo install` deletes them when it exits
         "CARGO_TARGET_DIR=" + sourcepath("target"),
         "/usr/bin/cargo"] + list(args) +
-        [crate, "--vers", version, "--root", install_target], check=True)
+        ([crate, "--vers", version] if in_registry else []) +
+        ["--root", install_target], check=True)
     logrun(["rm", "-f", "%s/.crates.toml" % install_target])
 
     # if there was a custom build output, symlink it to debian/cargo_out_dir
@@ -84,10 +97,6 @@ def install(binpkg, cratespec, host_rust_type, *args):
     r = r.decode("utf-8").rstrip()
     if r:
         logrun(["ln", "-sfT", "../%s" % r, "debian/cargo_out_dir"], check=True)
-
-    # generate Built-Using fields
-    #subprocess.run(["/usr/share/cargo/cargo-built-using", binpkg], check=True)
-
     return 0
 
 def main(*args):
@@ -118,8 +127,8 @@ def main(*args):
 
     if args[0] == "prepare-debian":
         registry = args[1]
-        return prepare_debian(cargo_home, host_gnu_type,
-            os.getenv("LDFLAGS", "").split(), os.environ["DEB_CARGO_CRATE"], registry)
+        return prepare_debian(cargo_home, registry,
+            os.environ["DEB_CARGO_CRATE"], host_gnu_type, os.getenv("LDFLAGS", "").split())
 
     newargs = []
     subcmd = None
@@ -140,7 +149,11 @@ def main(*args):
         return 0
 
     if subcmd == "install":
-        return install(os.environ["DEB_CARGO_PACKAGE"], os.environ["DEB_CARGO_CRATE"], host_rust_type, *newargs)
+        return install(os.environ["DEB_CARGO_PACKAGE"],
+            os.environ["DEB_CARGO_CRATE"],
+            host_rust_type,
+            os.getenv("DEB_CARGO_PACKAGE_IN_REGISTRY", "") == "1",
+            *newargs)
     else:
         log(newargs)
         return logrun(["env", "RUST_BACKTRACE=1", "/usr/bin/cargo"] + list(newargs)).returncode

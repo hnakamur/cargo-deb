@@ -16,7 +16,7 @@ export DEB_CARGO_CRATE=cargo_$(DEB_VERSION_UPSTREAM)
 # Disable tests on powerpc and powerpcspe for now.
 # cbmuser requested this and will fix the errors later
 # TODO: once powerpc powerpcspe test failures are fixed drop this
-ifneq (,filter($(DEB_HOST_ARCH), powerpc powerpcspe))
+ifneq (,$(filter $(DEB_BUILD_ARCH), powerpc powerpcspe))
 	POST_TEST = || true
 endif
 

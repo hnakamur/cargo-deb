@@ -78,6 +78,7 @@ done; $x ); do
 	bash || true
 	echo >&2 "$0: trying patches again..."
 done
+find vendor/*/debian/patches -name '*~' -delete || true
 cargo update
 pruned_paths | while read x; do echo >&2 "$0: removing, because debcargo-conf patches makes it obsolete: $x"; rm -rf "$x"; done
 
@@ -107,7 +108,6 @@ echo >&2 "$0: backing up patches to debian/vendor-patches/*"
 echo >&2 "$0: if you updated any of those, you should backport them back to debcargo-conf.git"
 rm -rf debian/vendor-patches && mkdir -p debian/vendor-patches
 ( cd vendor && find . -name patches -exec cp -a --parents '{}' ../debian/vendor-patches \; )
-find debian/vendor-patches -name '*~' -delete
 
 echo >&2 "$0: cleaning up..."
 rm -rf .cargo debcargo-conf Cargo.lock.orig
