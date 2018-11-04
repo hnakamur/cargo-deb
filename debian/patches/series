@@ -1,3 +1,4 @@
+1001_fix_inc_exc_tests.patch
 2007_sparc64_disable_incremental_build.patch
-disable-net-tests.patch
+2002_disable-net-tests.patch
 2005_disable_fetch_cross_tests.patch
