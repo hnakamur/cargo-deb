@@ -1,0 +1,30 @@
+Index: flate2/Cargo.toml
+===================================================================
+--- flate2.orig/Cargo.toml
++++ flate2/Cargo.toml
+@@ -33,11 +33,6 @@ version = "0.2"
+ version = "1.0"
+ optional = true
+ 
+-[dependencies.miniz_oxide_c_api]
+-version = "0.2"
+-features = ["no_c_export"]
+-optional = true
+-
+ [dependencies.tokio-io]
+ version = "0.1"
+ optional = true
+@@ -54,12 +49,9 @@ version = "0.1"
+ [features]
+ default = ["zlib"]
+ miniz-sys = ["zlib"]
+-rust_backend = ["miniz_oxide_c_api"]
++rust_backend = ["zlib"]
+ tokio = ["tokio-io", "futures"]
+ zlib = ["libz-sys"]
+-[target."cfg(all(target_arch = \"wasm32\", not(target_os = \"emscripten\")))".dependencies.miniz_oxide_c_api]
+-version = "0.2"
+-features = ["no_c_export"]
+ [badges.appveyor]
+ repository = "alexcrichton/flate2-rs"
+ 

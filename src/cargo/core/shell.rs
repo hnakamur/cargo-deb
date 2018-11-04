@@ -231,6 +231,27 @@ impl Shell {
             ShellOut::Write(_) => ColorChoice::Never,
         }
     }
+
+    /// Whether the shell supports color.
+    pub fn supports_color(&self) -> bool {
+        match &self.err {
+            ShellOut::Write(_) => false,
+            ShellOut::Stream { stream, .. } => stream.supports_color(),
+        }
+    }
+
+    /// Prints a message and translates ANSI escape code into console colors.
+    pub fn print_ansi(&mut self, message: &[u8]) -> CargoResult<()> {
+        #[cfg(windows)]
+        {
+            if let ShellOut::Stream { stream, .. } = &mut self.err {
+                ::fwdansi::write_ansi(stream, message)?;
+                return Ok(());
+            }
+        }
+        self.err().write_all(message)?;
+        Ok(())
+    }
 }
 
 impl Default for Shell {
@@ -338,18 +359,51 @@ mod imp {
     extern crate winapi;
 
     use std::mem;
+    use std::ptr;
+    use self::winapi::um::fileapi::*;
+    use self::winapi::um::handleapi::*;
     use self::winapi::um::processenv::*;
     use self::winapi::um::winbase::*;
     use self::winapi::um::wincon::*;
+    use self::winapi::um::winnt::*;
 
     pub fn stderr_width() -> Option<usize> {
         unsafe {
             let stdout = GetStdHandle(STD_ERROR_HANDLE);
             let mut csbi: CONSOLE_SCREEN_BUFFER_INFO = mem::zeroed();
-            if GetConsoleScreenBufferInfo(stdout, &mut csbi) == 0 {
+            if GetConsoleScreenBufferInfo(stdout, &mut csbi) != 0 {
+                return Some((csbi.srWindow.Right - csbi.srWindow.Left) as usize)
+            }
+
+            // On mintty/msys/cygwin based terminals, the above fails with
+            // INVALID_HANDLE_VALUE. Use an alternate method which works
+            // in that case as well.
+            let h = CreateFileA("CONOUT$\0".as_ptr() as *const CHAR,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                ptr::null_mut(),
+                OPEN_EXISTING,
+                0,
+                ptr::null_mut()
+            );
+            if h == INVALID_HANDLE_VALUE {
                 return None;
             }
-            Some((csbi.srWindow.Right - csbi.srWindow.Left) as usize)
+
+            let mut csbi: CONSOLE_SCREEN_BUFFER_INFO = mem::zeroed();
+            let rc = GetConsoleScreenBufferInfo(h, &mut csbi);
+            CloseHandle(h);
+            if rc != 0 {
+                let width = (csbi.srWindow.Right - csbi.srWindow.Left) as usize;
+                // Some terminals, such as mintty, always return 79 instead of
+                // the actual width. In that case, use a conservative value.
+                if width == 79 {
+                    return Some(60);
+                } else {
+                    return Some(width);
+                }
+            }
+            return None;
         }
     }
 }

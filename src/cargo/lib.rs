@@ -4,8 +4,8 @@
 #![cfg_attr(feature = "cargo-clippy", allow(boxed_local))]             // bug rust-lang-nursery/rust-clippy#1123
 #![cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]   // large project
 #![cfg_attr(feature = "cargo-clippy", allow(derive_hash_xor_eq))]      // there's an intentional incoherence
-#![cfg_attr(feature = "cargo-clippy", allow(explicit_into_iter_loop))] // (unclear why)
-#![cfg_attr(feature = "cargo-clippy", allow(explicit_iter_loop))]      // (unclear why)
+#![cfg_attr(feature = "cargo-clippy", allow(explicit_into_iter_loop))] // explicit loops are clearer
+#![cfg_attr(feature = "cargo-clippy", allow(explicit_iter_loop))]      // explicit loops are clearer
 #![cfg_attr(feature = "cargo-clippy", allow(identity_op))]             // used for vertical alignment
 #![cfg_attr(feature = "cargo-clippy", allow(implicit_hasher))]         // large project
 #![cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]      // large project
@@ -26,6 +26,8 @@ extern crate failure;
 extern crate filetime;
 extern crate flate2;
 extern crate fs2;
+#[cfg(windows)]
+extern crate fwdansi;
 extern crate git2;
 extern crate glob;
 extern crate hex;
@@ -40,6 +42,7 @@ extern crate libgit2_sys;
 #[macro_use]
 extern crate log;
 extern crate num_cpus;
+extern crate opener;
 extern crate rustfix;
 extern crate same_file;
 extern crate semver;
@@ -108,7 +111,7 @@ impl fmt::Display for VersionInfo {
         if let Some(channel) = self.cfg_info.as_ref().map(|ci| &ci.release_channel) {
             if channel != "stable" {
                 write!(f, "-{}", channel)?;
-                let empty = String::from("");
+                let empty = String::new();
                 write!(f, "{}", self.pre_release.as_ref().unwrap_or(&empty))?;
             }
         };

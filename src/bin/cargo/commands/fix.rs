@@ -66,9 +66,14 @@ pub fn cli() -> App {
                 .long("allow-dirty")
                 .help("Fix code even if the working directory is dirty"),
         )
+        .arg(
+            Arg::with_name("allow-staged")
+                .long("allow-staged")
+                .help("Fix code even if the working directory has staged changes"),
+        )
         .after_help(
             "\
-This Cargo subcommmand will automatically take rustc's suggestions from
+This Cargo subcommand will automatically take rustc's suggestions from
 diagnostics like warnings and apply them to your source code. This is intended
 to help automate tasks that rustc itself already knows how to tell you to fix!
 The `cargo fix` subcommand is also being developed for the Rust 2018 edition
@@ -135,6 +140,7 @@ pub fn exec(config: &mut Config, args: &ArgMatches) -> CliResult {
         compile_opts: opts,
         allow_dirty: args.is_present("allow-dirty"),
         allow_no_vcs: args.is_present("allow-no-vcs"),
+        allow_staged: args.is_present("allow-staged"),
         broken_code: args.is_present("broken-code"),
     })?;
     Ok(())

@@ -13,7 +13,7 @@ use toml;
 use url::Url;
 
 use core::dependency::{Kind, Platform};
-use core::manifest::{LibKind, ManifestMetadata, Warnings};
+use core::manifest::{LibKind, ManifestMetadata, TargetSourcePath, Warnings};
 use core::profiles::Profiles;
 use core::{Dependency, Manifest, PackageId, Summary, Target};
 use core::{Edition, EitherManifest, Feature, Features, VirtualManifest};
@@ -488,6 +488,44 @@ impl TomlProfile {
 }
 
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
+pub struct StringOrVec(Vec<String>);
+
+impl<'de> de::Deserialize<'de> for StringOrVec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = StringOrVec;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("string or list of strings")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StringOrVec(vec![s.to_string()]))
+            }
+
+            fn visit_seq<V>(self, v: V) -> Result<Self::Value, V::Error>
+            where
+                V: de::SeqAccess<'de>,
+            {
+                let seq = de::value::SeqAccessDeserializer::new(v);
+                Vec::deserialize(seq).map(StringOrVec)
+
+            }
+        }
+
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum StringOrBool {
     String(String),
@@ -568,12 +606,20 @@ impl<'de> de::Deserialize<'de> for VecStringOrBool {
     }
 }
 
+/// Represents the `package`/`project` sections of a `Cargo.toml`.
+///
+/// Note that the order of the fields matters, since this is the order they
+/// are serialized to a TOML file.  For example, you cannot have values after
+/// the field `metadata`, since it is a table and values cannot appear after
+/// tables.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct TomlProject {
+    edition: Option<String>,
     name: String,
     version: semver::Version,
     authors: Option<Vec<String>>,
     build: Option<StringOrBool>,
+    metabuild: Option<StringOrVec>,
     links: Option<String>,
     exclude: Option<Vec<String>>,
     include: Option<Vec<String>>,
@@ -604,7 +650,6 @@ pub struct TomlProject {
     license_file: Option<String>,
     repository: Option<String>,
     metadata: Option<toml::Value>,
-    edition: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -765,6 +810,16 @@ impl TomlManifest {
             bail!("package name cannot be an empty string")
         }
 
+        for c in package_name.chars() {
+            if c.is_alphanumeric() {
+                continue;
+            }
+            if c == '_' || c == '-' {
+                continue;
+            }
+            bail!("Invalid character `{}` in package name: `{}`", c, package_name)
+        }
+
         let pkgid = project.to_package_id(source_id)?;
 
         let edition = if let Some(ref edition) = project.edition {
@@ -778,6 +833,10 @@ impl TomlManifest {
             Edition::Edition2015
         };
 
+        if project.metabuild.is_some() {
+            features.require(Feature::metabuild())?;
+        }
+
         // If we have no lib at all, use the inferred lib if available
         // If we have a lib with a path, we're done
         // If we have a lib with no path, use the inferred lib or_else package name
@@ -788,6 +847,7 @@ impl TomlManifest {
             package_root,
             edition,
             &project.build,
+            &project.metabuild,
             &mut warnings,
             &mut errors,
         )?;
@@ -978,6 +1038,7 @@ impl TomlManifest {
             project.im_a_teapot,
             project.default_run.clone(),
             Rc::clone(me),
+            project.metabuild.clone().map(|sov| sov.0),
         );
         if project.license_file.is_some() && project.license.is_some() {
             manifest.warnings_mut().add_warning(
@@ -1157,9 +1218,12 @@ impl TomlManifest {
 /// If not, the name of the offending build target is returned.
 fn unique_build_targets(targets: &[Target], package_root: &Path) -> Result<(), String> {
     let mut seen = HashSet::new();
-    for v in targets.iter().map(|e| package_root.join(e.src_path())) {
-        if !seen.insert(v.clone()) {
-            return Err(v.display().to_string());
+    for target in targets {
+        if let TargetSourcePath::Path(path) = target.src_path() {
+            let full = package_root.join(path);
+            if !seen.insert(full.clone()) {
+                return Err(full.display().to_string());
+            }
         }
     }
     Ok(())

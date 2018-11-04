@@ -127,7 +127,7 @@ pub trait AppExt: Sized {
             opt("message-format", "Error format")
                 .value_name("FMT")
                 .case_insensitive(true)
-                .possible_values(&["human", "json"])
+                .possible_values(&["human", "json", "short"])
                 .default_value("human"),
         )
     }
@@ -147,7 +147,8 @@ pub trait AppExt: Sized {
                  a global configuration.",
             ).value_name("VCS")
                 .possible_values(&["git", "hg", "pijul", "fossil", "none"]),
-        )._arg(opt("bin", "Use a binary (application) template [default]"))
+        )
+            ._arg(opt("bin", "Use a binary (application) template [default]"))
             ._arg(opt("lib", "Use a library template"))
             ._arg(
                 opt(
@@ -270,6 +271,8 @@ pub trait ArgMatchesExt {
                     MessageFormat::Json
                 } else if f.eq_ignore_ascii_case("human") {
                     MessageFormat::Human
+                } else if f.eq_ignore_ascii_case("short") {
+                    MessageFormat::Short
                 } else {
                     panic!("Impossible message format: {:?}", f)
                 }
@@ -307,6 +310,7 @@ pub trait ArgMatchesExt {
             ),
             target_rustdoc_args: None,
             target_rustc_args: None,
+            local_rustdoc_args: None,
             export_dir: None,
         };
         Ok(opts)
