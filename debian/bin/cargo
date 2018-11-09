@@ -28,7 +28,7 @@ Otherwise, you *must* set the following environment variables:
 - DEB_CARGO_CRATE_IN_REGISTRY
   Whether the crate is in the local-registry (1) or the cwd (0, empty).
 
-- CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS
+- CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
 - DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE
 - (optional) DEB_BUILD_OPTIONS DEB_BUILD_PROFILES
 """
@@ -39,7 +39,7 @@ import shutil
 import subprocess
 import sys
 
-FLAGS = "CFLAGS CXXFLAGS CPPFLAGS LDFLAGS RUSTFLAGS"
+FLAGS = "CFLAGS CXXFLAGS CPPFLAGS LDFLAGS"
 ARCHES = "DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE"
 
 def log(*args):
@@ -91,7 +91,7 @@ def install(binpkg, cratespec, host_rust_type, crate_in_registry, *args):
         # normally `cargo install` deletes them when it exits
         "CARGO_TARGET_DIR=" + sourcepath("target"),
         "/usr/bin/cargo"] + list(args) +
-        ([crate, "--vers", version] if crate_in_registry else []) +
+        ([crate, "--vers", version] if crate_in_registry else ["--path", sourcepath()]) +
         ["--root", install_target], check=True)
     logrun(["rm", "-f", "%s/.crates.toml" % install_target])
 
@@ -131,7 +131,7 @@ def main(*args):
     host_gnu_type = os.getenv("DEB_HOST_GNU_TYPE", "")
 
     log("options, profiles, parallel:", build_options, build_profiles, parallel)
-    log("rust_type, gnu_type:", host_rust_type, host_gnu_type)
+    log("rust_type, gnu_type:", ", ".join([host_rust_type, host_gnu_type]))
 
     if args[0] == "prepare-debian":
         registry = args[1]
