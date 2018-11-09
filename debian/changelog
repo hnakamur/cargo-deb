@@ -1,8 +1,8 @@
-cargo (0.31.0-3) UNRELEASED; urgency=medium
+cargo (0.31.0-3) unstable; urgency=medium
 
   * Tweak the cargo wrapper script to be more robust.
 
- -- Ximin Luo <infinity0@debian.org>  Fri, 09 Nov 2018 02:43:06 -0800
+ -- Ximin Luo <infinity0@debian.org>  Fri, 09 Nov 2018 02:56:54 -0800
 
 cargo (0.31.0-2) unstable; urgency=medium
 
