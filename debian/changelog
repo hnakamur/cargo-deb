@@ -1,3 +1,9 @@
+cargo (0.31.0-4) UNRELEASED; urgency=medium
+
+  * Don't set RUSTFLAGS in d/rules. (Closes: #914110)
+
+ -- Ximin Luo <infinity0@debian.org>  Mon, 19 Nov 2018 22:49:08 -0800
+
 cargo (0.31.0-3) unstable; urgency=medium
 
   * Tweak the cargo wrapper script to be more robust.

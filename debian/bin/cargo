@@ -31,6 +31,9 @@ Otherwise, you *must* set the following environment variables:
 - CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
 - DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE
 - (optional) DEB_BUILD_OPTIONS DEB_BUILD_PROFILES
+
+Due to https://github.com/rust-lang/cargo/issues/6338 you should probably
+*unset* RUSTFLAGS.
 """
 
 import os
@@ -132,6 +135,10 @@ def main(*args):
 
     log("options, profiles, parallel:", build_options, build_profiles, parallel)
     log("rust_type, gnu_type:", ", ".join([host_rust_type, host_gnu_type]))
+
+    if "RUSTFLAGS" in os.environ:
+        log("\033[33;1mWARNING: RUSTFLAGS is set; this will probably override all Debian rust settings.\033[0m")
+        log("\033[33;1mWARNING: It is highly recommended to unset it; please see https://github.com/rust-lang/cargo/issues/6338 for details.\033[0m")
 
     if args[0] == "prepare-debian":
         registry = args[1]
