@@ -54,13 +54,15 @@ for i in *; do
 	# script to deal with - just use the upstream version. example: backtrace-sys
 	# TODO: deal with those better, especially backtrace-sys
 	if [ -e ../../debcargo-conf/src/$i/debian/rules ]; then
+		echo >&2 "$0: not patching $i because its debcargo-conf has a custom rules file"
+		echo >&2 "$0: you may want to examine this situation more closely"
 		continue
 	fi
 	if [ -d ../../debcargo-conf/src/$i/debian/patches ]; then
 		echo >&2 "$0: patching $i"
 		mkdir -p debian
 		if [ ! -d debian/patches ]; then
-			cp -a -n ../../debcargo-conf/src/$i/debian/patches debian/
+			cp -a -n "../../debcargo-conf/src/$i/debian/patches" debian/
 		fi
 		QUILT_PATCHES=debian/patches quilt push -a
 		case $? in
@@ -74,10 +76,9 @@ done; $x ); do
 	echo >&2 "$0: You are now in a sub-shell!"
 	echo >&2 "$0: Fix the failed patches, then exit the sub-shell by pressing ctrl-D ONCE."
 	echo >&2 "$0: If you need to abort this process, press ctrl-D then quickly ctrl-C."
-	if [ -d debian/vendor-patches ]; then
-		echo >&2 "$0: Previous patches exist, to view the diff between these and debcargo-conf run:"
-		echo >&2 "  $ diff --color=always -ru vendor/ debian/vendor-patches/ | grep -v 'Only in vendor'"
-		echo >&2 "$0: Note that this is a 2-way diff not a 3-way diff, and so may be misleading."
+	if [ -f debian/debcargo-conf.patch ]; then
+		echo >&2 "$0: Previous patch changes exist, to apply them run:"
+		echo >&2 "  $ patch -d vendor -p2 < debian/debcargo-conf.patch"
 	fi
 	echo >&2 "================================================================================"
 	bash || true
@@ -109,10 +110,22 @@ rm -rf vendor/winapi-*-pc-windows-gnu/lib/*.a
 echo >&2 "$0: pruning all checksums.."
 for i in vendor/*; do ${SCRIPTDIR}/prune-checksums "$i"; done
 
-echo >&2 "$0: backing up patches to debian/vendor-patches/*"
-echo >&2 "$0: if you updated any of those, you should backport them back to debcargo-conf.git"
-rm -rf debian/vendor-patches && mkdir -p debian/vendor-patches
-( cd vendor && find . -name patches -exec cp -a --parents '{}' ../debian/vendor-patches \; )
+( cd vendor
+for i in *; do (
+	cd $i
+	if [ -d debian/patches ]; then
+		cp -a debian/patches "../../debcargo-conf/src/$i/debian/"
+	fi
+); done; )
+( cd debcargo-conf
+git add .
+if ! git diff --cached --quiet; then
+	git commit -m "Manual changes from debian-cargo-vendor"
+	git diff @~ > ../debian/debcargo-conf.patch || true
+	echo >&2 "$0: backed up patch changes to debian/debcargo-conf.patch"
+	echo >&2 "$0: you should backport/merge them back into debcargo-conf.git"
+fi
+)
 
 echo >&2 "$0: cleaning up..."
-rm -rf .cargo debcargo-conf Cargo.lock.orig Cargo.lock
+rm -rf .cargo Cargo.lock.orig Cargo.lock debcargo-conf
