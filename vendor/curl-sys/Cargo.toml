@@ -12,7 +12,7 @@
 
 [package]
 name = "curl-sys"
-version = "0.4.13"
+version = "0.4.15"
 authors = ["Carl Lerche <me@carllerche.com>", "Alex Crichton <alex@alexcrichton.com>"]
 build = "build.rs"
 links = "curl"
@@ -42,7 +42,9 @@ version = "0.3.3"
 
 [features]
 default = ["ssl"]
+force-system-lib-on-osx = []
 http2 = ["libnghttp2-sys"]
+spnego = []
 ssl = ["openssl-sys"]
 static-curl = []
 static-ssl = ["openssl-sys/vendored"]

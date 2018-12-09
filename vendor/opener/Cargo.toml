@@ -12,7 +12,7 @@
 
 [package]
 name = "opener"
-version = "0.3.0"
+version = "0.3.2"
 authors = ["Brian Bowman <seeker14491@gmail.com>"]
 description = "Open a file or link using the system default program."
 readme = "../README.md"

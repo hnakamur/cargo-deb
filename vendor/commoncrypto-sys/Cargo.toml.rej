@@ -1,0 +1,17 @@
+--- Cargo.toml	2017-01-24 06:56:51.000000000 +0000
++++ Cargo.toml	2018-09-15 15:37:47.602333479 +0000
+@@ -19,14 +19,8 @@
+ keywords = ["crypto", "hash", "digest", "osx", "commoncrypto"]
+ license = "MIT"
+ repository = "https://github.com/malept/rust-commoncrypto"
+-[dependencies.clippy]
+-version = "0.0"
+-optional = true
+ 
+ [dependencies.libc]
+ version = "0.2"
+ [dev-dependencies.hex]
+ version = "0.2"
+-
+-[features]
+-lint = ["clippy"]

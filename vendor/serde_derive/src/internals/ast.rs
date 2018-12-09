@@ -1,11 +1,3 @@
-// Copyright 2017 Serde Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! A Serde ast, parsed from the Syn ast and ready to generate Rust code.
 
 use internals::attr;
@@ -25,6 +17,8 @@ pub struct Container<'a> {
     pub data: Data<'a>,
     /// Any generics on the struct or enum.
     pub generics: &'a syn::Generics,
+    /// Original input.
+    pub original: &'a syn::DeriveInput,
 }
 
 /// The fields of a struct or enum.
@@ -41,6 +35,7 @@ pub struct Variant<'a> {
     pub attrs: attr::Variant,
     pub style: Style,
     pub fields: Vec<Field<'a>>,
+    pub original: &'a syn::Variant,
 }
 
 /// A field of a struct.
@@ -65,7 +60,7 @@ pub enum Style {
 
 impl<'a> Container<'a> {
     /// Convert the raw Syn ast into a parsed container object, collecting errors in `cx`.
-    pub fn from_ast(cx: &Ctxt, item: &'a syn::DeriveInput, derive: Derive) -> Container<'a> {
+    pub fn from_ast(cx: &Ctxt, item: &'a syn::DeriveInput, derive: Derive) -> Option<Container<'a>> {
         let mut attrs = attr::Container::from_ast(cx, item);
 
         let mut data = match item.data {
@@ -77,27 +72,32 @@ impl<'a> Container<'a> {
                 Data::Struct(style, fields)
             }
             syn::Data::Union(_) => {
-                panic!("Serde does not support derive for unions");
+                cx.error_spanned_by(item, "Serde does not support derive for unions");
+                return None;
             }
         };
 
         let mut has_flatten = false;
         match data {
-            Data::Enum(ref mut variants) => for variant in variants {
-                variant.attrs.rename_by_rule(attrs.rename_all());
-                for field in &mut variant.fields {
+            Data::Enum(ref mut variants) => {
+                for variant in variants {
+                    variant.attrs.rename_by_rule(attrs.rename_all());
+                    for field in &mut variant.fields {
+                        if field.attrs.flatten() {
+                            has_flatten = true;
+                        }
+                        field.attrs.rename_by_rule(variant.attrs.rename_all());
+                    }
+                }
+            }
+            Data::Struct(_, ref mut fields) => {
+                for field in fields {
                     if field.attrs.flatten() {
                         has_flatten = true;
                     }
-                    field.attrs.rename_by_rule(variant.attrs.rename_all());
+                    field.attrs.rename_by_rule(attrs.rename_all());
                 }
-            },
-            Data::Struct(_, ref mut fields) => for field in fields {
-                if field.attrs.flatten() {
-                    has_flatten = true;
-                }
-                field.attrs.rename_by_rule(attrs.rename_all());
-            },
+            }
         }
 
         if has_flatten {
@@ -109,9 +109,10 @@ impl<'a> Container<'a> {
             attrs: attrs,
             data: data,
             generics: &item.generics,
+            original: item,
         };
         check::check(cx, &mut item, derive);
-        item
+        Some(item)
     }
 }
 
@@ -146,8 +147,10 @@ fn enum_from_ast<'a>(
                 attrs: attrs,
                 style: style,
                 fields: fields,
+                original: variant,
             }
-        }).collect()
+        })
+        .collect()
 }
 
 fn struct_from_ast<'a>(
@@ -190,5 +193,6 @@ fn fields_from_ast<'a>(
             attrs: attr::Field::from_ast(cx, i, field, attrs, container_default),
             ty: &field.ty,
             original: field,
-        }).collect()
+        })
+        .collect()
 }

@@ -14,7 +14,7 @@
 //!
 //! ## Platform Implementation Details
 //! On Windows the `ShellExecuteW` Windows API function is used. On Mac the system `open` command is
-//! used. On other platforms, the `xdg-open` script is used. The system `xdg-open` is not used;
+//! used. On other platforms, the system `xdg-open` script is used.
 //! instead a version is embedded within this library.
 extern crate failure;
 #[macro_use]
@@ -154,14 +154,12 @@ fn open_sys(path: &OsStr) -> Result<(), OpenError> {
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn open_sys(path: &OsStr) -> Result<(), OpenError> {
-    const XDG_OPEN_SCRIPT: &[u8] = include_bytes!("xdg-open");
-
     open_not_windows(
-        "sh",
+        "xdg-open",
         path,
-        &["-s"],
-        Some(XDG_OPEN_SCRIPT),
-        "xdg-open (internal)",
+        &[],
+        None,
+        "xdg-open",
     )
 }
 

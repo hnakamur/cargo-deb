@@ -12,12 +12,21 @@ fn main() {
     let target = env::var("TARGET").unwrap();
     let windows = target.contains("windows");
 
+    // This feature trumps all others, and is largely set by rustbuild to force
+    // usage of the system library to ensure that we're always building an
+    // ABI-compatible Cargo.
+    if cfg!(feature = "force-system-lib-on-osx") && target.contains("apple") {
+        return println!("cargo:rustc-flags=-l curl");
+    }
+
     // If the static-curl feature is disabled, probe for a system-wide libcurl.
     if !cfg!(feature = "static-curl") {
         // OSX and Haiku ships libcurl by default, so we just use that version
-        // unconditionally.
+        // so long as it has the right features enabled.
         if target.contains("apple") || target.contains("haiku") {
-            return println!("cargo:rustc-flags=-l curl");
+            if !cfg!(feature = "http2") || curl_config_reports_http2() {
+                return println!("cargo:rustc-flags=-l curl");
+            }
         }
 
         // Next, fall back and try to use pkg-config if its available.
@@ -179,6 +188,12 @@ fn main() {
         cfg.include(path);
     }
 
+    if cfg!(feature = "spnego") {
+        cfg.define("USE_SPNEGO", None)
+            .file("curl/lib/http_negotiate.c")
+            .file("curl/lib/vauth/vauth.c");
+    }
+
     if windows {
         cfg.define("USE_THREADS_WIN32", None)
             .define("HAVE_IOCTLSOCKET_FIONBIO", None)
@@ -193,6 +208,10 @@ fn main() {
                 .file("curl/lib/socks_sspi.c")
                 .file("curl/lib/vtls/schannel.c")
                 .file("curl/lib/vtls/schannel_verify.c");
+        }
+
+        if cfg!(feature = "spnego") {
+            cfg.file("curl/lib/vauth/spnego_sspi.c");
         }
     } else {
         cfg.define("RECV_TYPE_ARG1", "int")
@@ -232,6 +251,7 @@ fn main() {
         if cfg!(feature = "ssl") {
             if target.contains("-apple-") {
                 cfg.define("USE_DARWINSSL", None)
+                    .define("HAVE_BUILTIN_AVAILABLE", "1")
                     .file("curl/lib/vtls/darwinssl.c");
             } else {
                 cfg.define("USE_OPENSSL", None)
@@ -241,6 +261,17 @@ fn main() {
                     cfg.include(path);
                 }
             }
+        }
+
+        if cfg!(feature = "spnego") {
+            cfg.define("HAVE_GSSAPI", None)
+                .file("curl/lib/curl_gssapi.c")
+                .file("curl/lib/socks_gssapi.c")
+                .file("curl/lib/vauth/spnego_gssapi.c");
+
+            // Link against the MIT gssapi library. It might be desirable to add support for
+            // choosing between MIT and Heimdal libraries in the future.
+            println!("cargo:rustc-link-lib=gssapi_krb5");
         }
 
         let width = env::var("CARGO_CFG_TARGET_POINTER_WIDTH")
@@ -338,27 +369,8 @@ fn try_pkg_config() -> bool {
 
     // Not all system builds of libcurl have http2 features enabled, so if we've
     // got a http2-requested build then we may fall back to a build from source.
-    if cfg!(feature = "http2") {
-        let output = Command::new("curl-config")
-            .arg("--features")
-            .output();
-        let output = match output {
-            Ok(out) => out,
-            Err(e) => {
-                println!("failed to run curl-config ({}), building from source", e);
-                return false
-            }
-        };
-        if !output.status.success() {
-            println!("curl-config failed: {}", output.status);
-            return false
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if !stdout.contains("HTTP2") {
-            println!("failed to find http-2 feature enabled in pkg-config-found \
-                      libcurl, building from source");
-            return false
-        }
+    if cfg!(feature = "http2") && !curl_config_reports_http2() {
+        return false
     }
 
     // Re-find the library to print cargo's metadata, then print some extra
@@ -369,5 +381,30 @@ fn try_pkg_config() -> bool {
     for path in lib.include_paths.iter() {
         println!("cargo:include={}", path.display());
     }
+    return true
+}
+
+fn curl_config_reports_http2() -> bool {
+    let output = Command::new("curl-config")
+        .arg("--features")
+        .output();
+    let output = match output {
+        Ok(out) => out,
+        Err(e) => {
+            println!("failed to run curl-config ({}), building from source", e);
+            return false
+        }
+    };
+    if !output.status.success() {
+        println!("curl-config failed: {}", output.status);
+        return false
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.contains("HTTP2") {
+        println!("failed to find http-2 feature enabled in pkg-config-found \
+                  libcurl, building from source");
+        return false
+    }
+
     return true
 }

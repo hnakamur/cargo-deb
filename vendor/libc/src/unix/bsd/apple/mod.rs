@@ -245,7 +245,7 @@ s! {
         pub f_reserved: [::uint32_t; 8],
     }
 
-    #[cfg_attr(feature = "stdbuild", repr(packed(4)))]
+    #[cfg_attr(feature = "rustc-dep-of-std", repr(packed(4)))]
     pub struct kevent {
         pub ident: ::uintptr_t,
         pub filter: ::int16_t,
@@ -535,7 +535,7 @@ s! {
         pub _key: ::key_t,
     }
 
-    #[cfg_attr(feature = "stdbuild", repr(packed(4)))]
+    #[cfg_attr(feature = "rustc-dep-of-std", repr(packed(4)))]
     pub struct shmid_ds {
         pub shm_perm: ipc_perm,
         pub shm_segsz: ::size_t,
@@ -747,6 +747,26 @@ pub const PROT_READ: ::c_int = 1;
 pub const PROT_WRITE: ::c_int = 2;
 pub const PROT_EXEC: ::c_int = 4;
 
+pub const PT_TRACE_ME: ::c_int = 0;
+pub const PT_READ_I: ::c_int = 1;
+pub const PT_READ_D: ::c_int = 2;
+pub const PT_READ_U: ::c_int = 3;
+pub const PT_WRITE_I: ::c_int = 4;
+pub const PT_WRITE_D: ::c_int = 5;
+pub const PT_WRITE_U: ::c_int = 6;
+pub const PT_CONTINUE: ::c_int = 7;
+pub const PT_KILL: ::c_int = 8;
+pub const PT_STEP: ::c_int = 9;
+pub const PT_ATTACH: ::c_int = 10;
+pub const PT_DETACH: ::c_int = 11;
+pub const PT_SIGEXC: ::c_int = 12;
+pub const PT_THUPDATE: ::c_int = 13;
+pub const PT_ATTACHEXC: ::c_int = 14;
+
+pub const PT_FORCEQUOTA: ::c_int = 30;
+pub const PT_DENY_ATTACH: ::c_int = 31;
+pub const PT_FIRSTMACH: ::c_int = 32;
+
 pub const MAP_FILE: ::c_int = 0x0000;
 pub const MAP_SHARED: ::c_int = 0x0001;
 pub const MAP_PRIVATE: ::c_int = 0x0002;
@@ -765,8 +785,8 @@ pub const VM_FLAGS_SUPERPAGE_MASK: ::c_int = 0x70000;
 pub const VM_FLAGS_RETURN_DATA_ADDR: ::c_int = 0x100000;
 pub const VM_FLAGS_RETURN_4K_DATA_ADDR: ::c_int = 0x800000;
 pub const VM_FLAGS_ALIAS_MASK: ::c_int = 0xFF000000;
-pub const VM_FLAGS_USER_ALLOCATE: ::c_int = 0xff07401b;
-pub const VM_FLAGS_USER_MAP: ::c_int = 0xff97401b;
+pub const VM_FLAGS_USER_ALLOCATE: ::c_int = 0xff07401f;
+pub const VM_FLAGS_USER_MAP: ::c_int = 0xff97401f;
 pub const VM_FLAGS_USER_REMAP: ::c_int = VM_FLAGS_FIXED | VM_FLAGS_ANYWHERE |
                                         VM_FLAGS_RANDOM_ADDR |
                                         VM_FLAGS_OVERWRITE |
@@ -2282,6 +2302,20 @@ pub const SHMLBA: ::c_int = 4096;
 pub const SHM_R: ::c_int = IPC_R;
 pub const SHM_W: ::c_int = IPC_W;
 
+// Flags for chflags(2)
+pub const UF_SETTABLE:      ::c_uint = 0x0000ffff;
+pub const UF_NODUMP:        ::c_uint = 0x00000001;
+pub const UF_IMMUTABLE:     ::c_uint = 0x00000002;
+pub const UF_APPEND:        ::c_uint = 0x00000004;
+pub const UF_OPAQUE:        ::c_uint = 0x00000008;
+pub const UF_COMPRESSED:    ::c_uint = 0x00000020;
+pub const UF_TRACKED:       ::c_uint = 0x00000040;
+pub const SF_SETTABLE:      ::c_uint = 0xffff0000;
+pub const SF_ARCHIVED:      ::c_uint = 0x00010000;
+pub const SF_IMMUTABLE:     ::c_uint = 0x00020000;
+pub const SF_APPEND:        ::c_uint = 0x00040000;
+pub const UF_HIDDEN:        ::c_uint = 0x00008000;
+
 f! {
     pub fn WSTOPSIG(status: ::c_int) -> ::c_int {
         status >> 8
@@ -2315,6 +2349,8 @@ extern {
     pub fn aio_suspend(aiocb_list: *const *const aiocb, nitems: ::c_int,
                        timeout: *const ::timespec) -> ::c_int;
     pub fn aio_cancel(fd: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
+    pub fn chflags(path: *const ::c_char, flags: ::c_uint) -> ::c_int;
+    pub fn fchflags(fd: ::c_int, flags: ::c_uint) -> ::c_int;
     pub fn clock_getres(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
     pub fn clock_gettime(clk_id: ::clockid_t, tp: *mut ::timespec) -> ::c_int;
     pub fn lio_listio(mode: ::c_int, aiocb_list: *const *mut aiocb,
@@ -2350,6 +2386,7 @@ extern {
     pub fn mprotect(addr: *mut ::c_void, len: ::size_t, prot: ::c_int)
                     -> ::c_int;
     pub fn shm_open(name: *const ::c_char, oflag: ::c_int, ...) -> ::c_int;
+    pub fn ftok(pathname : *const c_char, proj_id : ::c_int) -> key_t;
     pub fn shmat(shmid: ::c_int, shmaddr: *const ::c_void,
                  shmflg: ::c_int) -> *mut ::c_void;
     pub fn shmdt(shmaddr: *const ::c_void) -> ::c_int;
@@ -2427,6 +2464,9 @@ extern {
                     len: *mut ::off_t,
                     hdtr: *mut ::sf_hdtr,
                     flags: ::c_int) -> ::c_int;
+    pub fn futimens(fd: ::c_int, times: *const ::timespec) -> ::c_int;
+    pub fn utimensat(dirfd: ::c_int, path: *const ::c_char,
+                     times: *const ::timespec, flag: ::c_int) -> ::c_int;
     pub fn openpty(amaster: *mut ::c_int,
                    aslave: *mut ::c_int,
                    name: *mut ::c_char,

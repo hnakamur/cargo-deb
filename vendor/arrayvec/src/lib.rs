@@ -18,6 +18,9 @@
 //! - `serde-1`
 //!   - Optional
 //!   - Enable serialization for ArrayVec and ArrayString using serde 1.0
+//! - `array-sizes-33-128`, `array-sizes-129-255`
+//!   - Optional
+//!   - Enable more array sizes (see [Array] for more information)
 //!
 //! ## Rust Version
 //!
@@ -257,7 +260,8 @@ impl<A: Array> ArrayVec<A> {
     /// It is an error if the index is greater than the length or if the
     /// arrayvec is full.
     ///
-    /// ***Panics*** on errors. See `try_result` for fallible version.
+    /// ***Panics*** if the array is full or the `index` is out of bounds. See
+    /// `try_insert` for fallible version.
     ///
     /// ```
     /// use arrayvec::ArrayVec;
@@ -747,6 +751,30 @@ impl<A: Array> Drop for IntoIter<A> {
     }
 }
 
+impl<A: Array> Clone for IntoIter<A>
+where
+    A::Item: Clone,
+{
+    fn clone(&self) -> IntoIter<A> {
+        self.v[self.index.to_usize()..]
+            .iter()
+            .cloned()
+            .collect::<ArrayVec<A>>()
+            .into_iter()
+    }
+}
+
+impl<A: Array> fmt::Debug for IntoIter<A>
+where
+    A::Item: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_list()
+            .entries(&self.v[self.index.to_usize()..])
+            .finish()
+    }
+}
+
 /// A draining iterator for `ArrayVec`.
 pub struct Drain<'a, A> 
     where A: Array,
@@ -893,22 +921,16 @@ impl<A: Array> Clone for ArrayVec<A>
     fn clone_from(&mut self, rhs: &Self) {
         // recursive case for the common prefix
         let prefix = cmp::min(self.len(), rhs.len());
-        {
-            let a = &mut self[..prefix];
-            let b = &rhs[..prefix];
-            for i in 0..prefix {
-                a[i].clone_from(&b[i]);
-            }
-        }
+        self[..prefix].clone_from_slice(&rhs[..prefix]);
+
         if prefix < self.len() {
             // rhs was shorter
             for _ in 0..self.len() - prefix {
                 self.pop();
             }
         } else {
-            for elt in &rhs[self.len()..] {
-                self.push(elt.clone());
-            }
+            let rhs_elems = rhs[self.len()..].iter().cloned();
+            self.extend(rhs_elems);
         }
     }
 }

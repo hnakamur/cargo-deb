@@ -1,8 +1,6 @@
-Index: commoncrypto-sys/Cargo.toml
-===================================================================
---- commoncrypto-sys.orig/Cargo.toml
-+++ commoncrypto-sys/Cargo.toml
-@@ -8,13 +8,8 @@ repository = "https://github.com/malept/
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -8,13 +8,8 @@
  keywords = ["crypto", "hash", "digest", "osx", "commoncrypto"]
  license = "MIT"
  

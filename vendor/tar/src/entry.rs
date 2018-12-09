@@ -38,6 +38,7 @@ pub struct EntryFields<'a> {
     pub data: Vec<EntryIo<'a>>,
     pub unpack_xattrs: bool,
     pub preserve_permissions: bool,
+    pub preserve_mtime: bool,
 }
 
 pub enum EntryIo<'a> {
@@ -227,6 +228,14 @@ impl<'a, R: Read> Entry<'a, R> {
     pub fn set_preserve_permissions(&mut self, preserve: bool) {
         self.fields.preserve_permissions = preserve;
     }
+
+    /// Indicate whether access time information is preserved when unpacking
+    /// this entry.
+    ///
+    /// This flag is enabled by default.
+    pub fn set_preserve_mtime(&mut self, preserve: bool) {
+        self.fields.preserve_mtime = preserve;
+    }
 }
 
 impl<'a, R: Read> Read for Entry<'a, R> {
@@ -385,21 +394,27 @@ impl<'a> EntryFields<'a> {
         Ok(true)
     }
 
+    /// Unpack as destination directory `dst`.
+    fn unpack_dir(&mut self, dst: &Path) -> io::Result<()> {
+        // If the directory already exists just let it slide
+        let prev = fs::metadata(dst);
+        if prev.map(|m| m.is_dir()).unwrap_or(false) {
+            return Ok(());
+        }
+        return fs::create_dir(dst).map_err(|err| {
+            Error::new(
+                err.kind(),
+                format!("{} when creating dir {}", err, dst.display()),
+            )
+        });
+    }
+
     /// Returns access to the header of this entry in the archive.
     fn unpack(&mut self, target_base: Option<&Path>, dst: &Path) -> io::Result<()> {
         let kind = self.header.entry_type();
+
         if kind.is_dir() {
-            // If the directory already exists just let it slide
-            let prev = fs::metadata(&dst);
-            if prev.map(|m| m.is_dir()).unwrap_or(false) {
-                return Ok(());
-            }
-            return fs::create_dir(&dst).map_err(|err| {
-                Error::new(
-                    err.kind(),
-                    format!("{} when creating dir {}", err, dst.display()),
-                )
-            });
+            return self.unpack_dir(dst);
         } else if kind.is_hard_link() || kind.is_symlink() {
             let src = match self.link_name()? {
                 Some(name) => name,
@@ -480,6 +495,15 @@ impl<'a> EntryFields<'a> {
             return Ok(());
         };
 
+        // Old BSD-tar compatibility.
+        // Names that have a trailing slash should be treated as a directory.
+        // Only applies to old headers.
+        if self.header.as_ustar().is_none()
+            && self.path_bytes().ends_with(b"/")
+        {
+            return self.unpack_dir(dst);
+        }
+
         // Note the lack of `else` clause above. According to the FreeBSD
         // documentation:
         //
@@ -528,11 +552,13 @@ impl<'a> EntryFields<'a> {
             )
         })?;
 
-        if let Ok(mtime) = self.header.mtime() {
-            let mtime = FileTime::from_unix_time(mtime as i64, 0);
-            filetime::set_file_times(dst, mtime, mtime).map_err(|e| {
-                TarError::new(&format!("failed to set mtime for `{}`", dst.display()), e)
-            })?;
+        if self.preserve_mtime {
+            if let Ok(mtime) = self.header.mtime() {
+                let mtime = FileTime::from_unix_time(mtime as i64, 0);
+                filetime::set_file_times(dst, mtime, mtime).map_err(|e| {
+                    TarError::new(&format!("failed to set mtime for `{}`", dst.display()), e)
+                })?;
+            }
         }
         if let Ok(mode) = self.header.mode() {
             set_perms(dst, mode, self.preserve_permissions).map_err(|e| {

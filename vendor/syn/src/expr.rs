@@ -768,9 +768,6 @@ ast_enum_of_structs! {
     /// This type is a [syntax tree enum].
     ///
     /// [syntax tree enum]: enum.Expr.html#syntax-tree-enums
-    // Clippy false positive
-    // https://github.com/Manishearth/rust-clippy/issues/1241
-    #[cfg_attr(feature = "cargo-clippy", allow(enum_variant_names))]
     pub enum Pat {
         /// A pattern that matches any value: `_`.
         ///
@@ -2306,8 +2303,8 @@ pub mod parsing {
         /// #[macro_use]
         /// extern crate syn;
         ///
-        /// use syn::{token, Attribute, Block, Ident, Stmt};
-        /// use syn::parse::{Parse, ParseStream, Result};
+        /// use syn::{token, Attribute, Block, Ident, Result, Stmt};
+        /// use syn::parse::{Parse, ParseStream};
         ///
         /// // Parse a function with no generics or parameter list.
         /// //

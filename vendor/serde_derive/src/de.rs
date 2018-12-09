@@ -1,11 +1,3 @@
-// Copyright 2017 Serde Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use proc_macro2::{Literal, Span, TokenStream};
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
@@ -21,9 +13,12 @@ use try;
 
 use std::collections::BTreeSet;
 
-pub fn expand_derive_deserialize(input: &syn::DeriveInput) -> Result<TokenStream, String> {
+pub fn expand_derive_deserialize(input: &syn::DeriveInput) -> Result<TokenStream, Vec<syn::Error>> {
     let ctxt = Ctxt::new();
-    let cont = Container::from_ast(&ctxt, input, Derive::Deserialize);
+    let cont = match Container::from_ast(&ctxt, input, Derive::Deserialize) {
+        Some(cont) => cont,
+        None => return Err(ctxt.check().unwrap_err()),
+    };
     precondition(&ctxt, &cont);
     try!(ctxt.check());
 
@@ -94,7 +89,7 @@ fn precondition_sized(cx: &Ctxt, cont: &Container) {
     if let Data::Struct(_, ref fields) = cont.data {
         if let Some(last) = fields.last() {
             if let syn::Type::Slice(_) = *last.ty {
-                cx.error("cannot deserialize a dynamically sized struct");
+                cx.error_spanned_by(cont.original, "cannot deserialize a dynamically sized struct");
             }
         }
     }
@@ -104,7 +99,10 @@ fn precondition_no_de_lifetime(cx: &Ctxt, cont: &Container) {
     if let BorrowedLifetimes::Borrowed(_) = borrowed_lifetimes(cont) {
         for param in cont.generics.lifetimes() {
             if param.lifetime.to_string() == "'de" {
-                cx.error("cannot deserialize when there is a lifetime parameter called 'de");
+                cx.error_spanned_by(
+                    &param.lifetime,
+                    "cannot deserialize when there is a lifetime parameter called 'de",
+                );
                 return;
             }
         }
@@ -365,7 +363,10 @@ fn deserialize_transparent(cont: &Container, params: &Parameters) -> Fragment {
 
     let path = match transparent_field.attrs.deserialize_with() {
         Some(path) => quote!(#path),
-        None => quote!(_serde::Deserialize::deserialize),
+        None => {
+            let span = transparent_field.original.span();
+            quote_spanned!(span=> _serde::Deserialize::deserialize)
+        },
     };
 
     let assign = fields.iter().map(|field| {
@@ -805,8 +806,10 @@ fn deserialize_newtype_struct(
 
     let value = match field.attrs.deserialize_with() {
         None => {
+            let span = field.original.span();
+            let func = quote_spanned!(span=> <#field_ty as _serde::Deserialize>::deserialize);
             quote! {
-                try!(<#field_ty as _serde::Deserialize>::deserialize(__e))
+                try!(#func(__e))
             }
         }
         Some(path) => {
@@ -1369,7 +1372,8 @@ fn deserialize_adjacently_tagged_enum(
             quote! {
                 __Field::#variant_index => #block
             }
-        }).collect();
+        })
+        .collect();
 
     let expecting = format!("adjacently tagged enum {}", params.type_name());
     let type_name = cattrs.name().deserialize_name();
@@ -1810,10 +1814,10 @@ fn deserialize_externally_tagged_newtype_variant(
     match field.attrs.deserialize_with() {
         None => {
             let field_ty = field.ty;
+            let span = field.original.span();
+            let func = quote_spanned!(span=> _serde::de::VariantAccess::newtype_variant::<#field_ty>);
             quote_expr! {
-                _serde::export::Result::map(
-                    _serde::de::VariantAccess::newtype_variant::<#field_ty>(__variant),
-                    #this::#variant_ident)
+                _serde::export::Result::map(#func(__variant), #this::#variant_ident)
             }
         }
         Some(path) => {
@@ -1838,10 +1842,10 @@ fn deserialize_untagged_newtype_variant(
     let field_ty = field.ty;
     match field.attrs.deserialize_with() {
         None => {
+            let span = field.original.span();
+            let func = quote_spanned!(span=> <#field_ty as _serde::Deserialize>::deserialize);
             quote_expr! {
-                _serde::export::Result::map(
-                    <#field_ty as _serde::Deserialize>::deserialize(#deserializer),
-                    #this::#variant_ident)
+                _serde::export::Result::map(#func(#deserializer), #this::#variant_ident)
             }
         }
         Some(path) => {
@@ -1962,7 +1966,8 @@ fn deserialize_custom_identifier(
                 variant.attrs.name().deserialize_name(),
                 variant.ident.clone(),
             )
-        }).collect();
+        })
+        .collect();
 
     let names = names_idents.iter().map(|&(ref name, _)| name);
 
@@ -2447,7 +2452,10 @@ fn deserialize_map(
         .map(|&(field, ref name)| {
             let field_ty = field.ty;
             let func = match field.attrs.deserialize_with() {
-                None => quote!(_serde::de::Deserialize::deserialize),
+                None => {
+                    let span = field.original.span();
+                    quote_spanned!(span=> _serde::de::Deserialize::deserialize)
+                },
                 Some(path) => quote!(#path),
             };
             quote! {
@@ -2799,7 +2807,9 @@ fn wrap_deserialize_variant_with(
 fn expr_is_missing(field: &Field, cattrs: &attr::Container) -> Fragment {
     match *field.attrs.default() {
         attr::Default::Default => {
-            return quote_expr!(_serde::export::Default::default());
+            let span = field.original.span();
+            let func = quote_spanned!(span=> _serde::export::Default::default);
+            return quote_expr!(#func());
         }
         attr::Default::Path(ref path) => {
             return quote_expr!(#path());

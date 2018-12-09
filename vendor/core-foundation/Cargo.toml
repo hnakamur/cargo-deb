@@ -12,7 +12,7 @@
 
 [package]
 name = "core-foundation"
-version = "0.6.2"
+version = "0.6.3"
 authors = ["The Servo Project Developers"]
 description = "Bindings to Core Foundation for OS X"
 homepage = "https://github.com/servo/core-foundation-rs"

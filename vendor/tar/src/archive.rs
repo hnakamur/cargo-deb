@@ -21,7 +21,9 @@ pub struct ArchiveInner<R: ?Sized> {
     pos: Cell<u64>,
     unpack_xattrs: bool,
     preserve_permissions: bool,
-    obj: RefCell<::AlignHigher<R>>,
+    preserve_mtime: bool,
+    ignore_zeros: bool,
+    obj: RefCell<R>,
 }
 
 /// An iterator over the entries of an archive.
@@ -44,7 +46,9 @@ impl<R: Read> Archive<R> {
             inner: ArchiveInner {
                 unpack_xattrs: false,
                 preserve_permissions: false,
-                obj: RefCell::new(::AlignHigher(0, obj)),
+                preserve_mtime: true,
+                ignore_zeros: false,
+                obj: RefCell::new(obj),
                 pos: Cell::new(0),
             },
         }
@@ -52,7 +56,7 @@ impl<R: Read> Archive<R> {
 
     /// Unwrap this archive, returning the underlying object.
     pub fn into_inner(self) -> R {
-        self.inner.obj.into_inner().1
+        self.inner.obj.into_inner()
     }
 
     /// Construct an iterator over the entries in this archive.
@@ -111,6 +115,22 @@ impl<R: Read> Archive<R> {
     /// Unix.
     pub fn set_preserve_permissions(&mut self, preserve: bool) {
         self.inner.preserve_permissions = preserve;
+    }
+
+    /// Indicate whether access time information is preserved when unpacking
+    /// this entry.
+    ///
+    /// This flag is enabled by default.
+    pub fn set_preserve_mtime(&mut self, preserve: bool) {
+        self.inner.preserve_mtime = preserve;
+    }
+
+    /// Ignore zeroed headers, which would otherwise indicate to the archive that it has no more
+    /// entries.
+    ///
+    /// This can be used in case multiple tar archives have been concatenated together.
+    pub fn set_ignore_zeros(&mut self, ignore_zeros: bool) {
+        self.inner.ignore_zeros = ignore_zeros;
     }
 }
 
@@ -180,30 +200,33 @@ impl<'a, R: Read> Iterator for Entries<'a, R> {
 
 impl<'a> EntriesFields<'a> {
     fn next_entry_raw(&mut self) -> io::Result<Option<Entry<'a, io::Empty>>> {
-        // Seek to the start of the next header in the archive
-        let delta = self.next - self.archive.inner.pos.get();
-        self.archive.skip(delta)?;
-
-        let header_pos = self.next;
         let mut header = Header::new_old();
-        read_all(&mut &self.archive.inner, header.as_mut_bytes())?;
-        self.next += 512;
+        let mut header_pos = self.next;
 
-        // If we have an all 0 block, then this should be the start of the end
-        // of the archive. A block of 0s is never valid as a header (because of
-        // the checksum), so if it's all zero it must be the first of the two
-        // end blocks
-        if header.as_bytes().iter().all(|i| *i == 0) {
-            read_all(&mut &self.archive.inner, header.as_mut_bytes())?;
+        loop {
+            // Seek to the start of the next header in the archive
+            let delta = self.next - self.archive.inner.pos.get();
+            self.archive.skip(delta)?;
+
+            // EOF is an indicator that we are at the end of the archive.
+            if !try_read_all(&mut &self.archive.inner, header.as_mut_bytes())? {
+                return Ok(None);
+            }
+
+            // If a header is not all zeros, we have another valid header.
+            // Otherwise, check if we are ignoring zeros and continue, or break as if this is the
+            // end of the archive.
+            if !header.as_bytes().iter().all(|i| *i == 0) {
+                self.next += 512;
+                break;
+            }
+
+            if !self.archive.inner.ignore_zeros {
+                return Ok(None);
+            }
+
             self.next += 512;
-            return if header.as_bytes().iter().all(|i| *i == 0) {
-                Ok(None)
-            } else {
-                Err(other(
-                    "found block of 0s not followed by a second \
-                     block of 0s",
-                ))
-            };
+            header_pos = self.next;
         }
 
         // Make sure the checksum is ok
@@ -230,6 +253,7 @@ impl<'a> EntriesFields<'a> {
             pax_extensions: None,
             unpack_xattrs: self.archive.inner.unpack_xattrs,
             preserve_permissions: self.archive.inner.preserve_permissions,
+            preserve_mtime: self.archive.inner.preserve_mtime,
         };
 
         // Store where the next entry is, rounding up by 512 bytes (the size of
@@ -382,7 +406,10 @@ impl<'a> EntriesFields<'a> {
                 let mut ext = GnuExtSparseHeader::new();
                 ext.isextended[0] = 1;
                 while ext.is_extended() {
-                    read_all(&mut &self.archive.inner, ext.as_mut_bytes())?;
+                    if !try_read_all(&mut &self.archive.inner, ext.as_mut_bytes())? {
+                        return Err(other("failed to read extension"));
+                    }
+
                     self.next += 512;
                     for block in ext.sparse.iter() {
                         add_block(block)?;
@@ -438,13 +465,23 @@ impl<'a, R: ?Sized + Read> Read for &'a ArchiveInner<R> {
     }
 }
 
-fn read_all<R: Read>(r: &mut R, buf: &mut [u8]) -> io::Result<()> {
+/// Try to fill the buffer from the reader.
+///
+/// If the reader reaches its end before filling the buffer at all, returns `false`.
+/// Otherwise returns `true`.
+fn try_read_all<R: Read>(r: &mut R, buf: &mut [u8]) -> io::Result<bool> {
     let mut read = 0;
     while read < buf.len() {
         match r.read(&mut buf[read..])? {
-            0 => return Err(other("failed to read entire block")),
+            0 => {
+                if read == 0 {
+                    return Ok(false);
+                }
+
+                return Err(other("failed to read entire block"));
+            }
             n => read += n,
         }
     }
-    Ok(())
+    Ok(true)
 }

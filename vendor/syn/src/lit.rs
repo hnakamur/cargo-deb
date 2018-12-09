@@ -134,30 +134,21 @@ impl LitStr {
     /// # extern crate syn;
     /// #
     /// use proc_macro2::Span;
-    /// use syn::{Attribute, Ident, Lit, Meta, MetaNameValue, Path};
-    /// use syn::parse::{Error, Result};
+    /// use syn::{Attribute, Error, Ident, Lit, Meta, MetaNameValue, Path, Result};
     ///
     /// // Parses the path from an attribute that looks like:
     /// //
     /// //     #[path = "a::b::c"]
     /// //
-    /// // or returns the path `Self` as a default if the attribute is not of
-    /// // that form.
-    /// fn get_path(attr: &Attribute) -> Result<Path> {
-    ///     let default = || Path::from(Ident::new("Self", Span::call_site()));
-    ///
-    ///     let meta = match attr.interpret_meta() {
-    ///         Some(meta) => meta,
-    ///         None => return Ok(default()),
-    ///     };
-    ///
-    ///     if meta.name() != "path" {
-    ///         return Ok(default());
+    /// // or returns `None` if the input is some other attribute.
+    /// fn get_path(attr: &Attribute) -> Result<Option<Path>> {
+    ///     if !attr.path.is_ident("path") {
+    ///         return Ok(None);
     ///     }
     ///
-    ///     match meta {
+    ///     match attr.parse_meta()? {
     ///         Meta::NameValue(MetaNameValue { lit: Lit::Str(lit_str), .. }) => {
-    ///             lit_str.parse()
+    ///             lit_str.parse().map(Some)
     ///         }
     ///         _ => {
     ///             let error_span = attr.bracket_token.span;
