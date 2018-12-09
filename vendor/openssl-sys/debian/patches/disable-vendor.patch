@@ -1,8 +1,6 @@
-Index: openssl-sys/Cargo.toml
-===================================================================
---- openssl-sys.orig/Cargo.toml
-+++ openssl-sys/Cargo.toml
-@@ -28,14 +28,11 @@ version = "0.2"
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -28,14 +28,11 @@
  [build-dependencies.cc]
  version = "1.0"
  

@@ -1,0 +1,32 @@
+From: Wolfgang Silbermayr <ws@xell.at>
+Date: Thu, 20 Sep 2018 10:53:53 +0200
+Subject: Remove dependency to outdated serde
+
+---
+ Cargo.toml | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 804e4c3..e00d124 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -58,9 +58,6 @@ version = "1.0.0"
+ version = "0.3"
+ optional = true
+ 
+-[dependencies.serde]
+-version = ">=0.6.1, <0.9"
+-optional = true
+ [dev-dependencies.bencher]
+ version = "0.1"
+ 
+@@ -70,9 +67,6 @@ version = "0.3"
+ [dev-dependencies.rustc-test]
+ version = "0.3"
+ 
+-[dev-dependencies.serde_json]
+-version = ">=0.6.1, <0.9"
+-
+ [features]
+ heap_size = ["heapsize"]
+ query_encoding = ["encoding"]

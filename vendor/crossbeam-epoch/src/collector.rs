@@ -12,12 +12,11 @@
 ///
 /// handle.pin().flush();
 /// ```
-
 use alloc::sync::Arc;
 use core::fmt;
 
-use internal::{Global, Local};
 use guard::Guard;
+use internal::{Global, Local};
 
 /// An epoch-based garbage collector.
 pub struct Collector {
@@ -30,7 +29,9 @@ unsafe impl Sync for Collector {}
 impl Collector {
     /// Creates a new collector.
     pub fn new() -> Self {
-        Collector { global: Arc::new(Global::new()) }
+        Collector {
+            global: Arc::new(Global::new()),
+        }
     }
 
     /// Registers a new handle for the collector.
@@ -42,7 +43,9 @@ impl Collector {
 impl Clone for Collector {
     /// Creates another reference to the same garbage collector.
     fn clone(&self) -> Self {
-        Collector { global: self.global.clone() }
+        Collector {
+            global: self.global.clone(),
+        }
     }
 }
 
@@ -103,8 +106,8 @@ impl fmt::Debug for LocalHandle {
 #[cfg(test)]
 mod tests {
     use std::mem;
-    use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
     use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT};
 
     use crossbeam_utils::thread;
 
@@ -174,7 +177,7 @@ mod tests {
 
         thread::scope(|scope| {
             for _ in 0..NUM_THREADS {
-                scope.spawn(|| {
+                scope.spawn(|_| {
                     let handle = collector.register();
                     for _ in 0..500_000 {
                         let guard = &handle.pin();
@@ -187,7 +190,7 @@ mod tests {
                     }
                 });
             }
-        })
+        }).unwrap();
     }
 
     #[test]
@@ -342,7 +345,9 @@ mod tests {
 
         {
             let a = Owned::new(v).into_shared(&guard);
-            unsafe { guard.defer_destroy(a); }
+            unsafe {
+                guard.defer_destroy(a);
+            }
             guard.flush();
         }
 
@@ -405,7 +410,7 @@ mod tests {
 
         thread::scope(|scope| {
             for _ in 0..THREADS {
-                scope.spawn(|| {
+                scope.spawn(|_| {
                     let handle = collector.register();
                     for _ in 0..COUNT {
                         let guard = &handle.pin();
@@ -416,7 +421,7 @@ mod tests {
                     }
                 });
             }
-        });
+        }).unwrap();
 
         let handle = collector.register();
         while DROPS.load(Ordering::Relaxed) < COUNT * THREADS {

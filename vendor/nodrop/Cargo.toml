@@ -12,7 +12,7 @@
 
 [package]
 name = "nodrop"
-version = "0.1.12"
+version = "0.1.13"
 authors = ["bluss"]
 description = "A wrapper type to inhibit drop (destructor). Use std::mem::ManuallyDrop instead!"
 documentation = "https://docs.rs/nodrop/"
@@ -27,7 +27,7 @@ version = "0.1.8"
 optional = true
 
 [features]
-std = []
-use_union = ["nodrop-union"]
-use_needs_drop = []
 default = ["std"]
+std = []
+use_needs_drop = []
+use_union = ["nodrop-union"]

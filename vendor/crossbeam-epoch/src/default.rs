@@ -39,7 +39,9 @@ fn with_handle<F, R>(mut f: F) -> R
 where
     F: FnMut(&LocalHandle) -> R,
 {
-    HANDLE.try_with(|h| f(h)).unwrap_or_else(|_| f(&COLLECTOR.register()))
+    HANDLE
+        .try_with(|h| f(h))
+        .unwrap_or_else(|_| f(&COLLECTOR.register()))
 }
 
 #[cfg(test)]
@@ -62,12 +64,12 @@ mod tests {
         }
 
         thread::scope(|scope| {
-            scope.spawn(|| {
+            scope.spawn(|_| {
                 // Initialize `FOO` and then `HANDLE`.
                 FOO.with(|_| ());
                 super::pin();
                 // At thread exit, `HANDLE` gets dropped first and `FOO` second.
             });
-        });
+        }).unwrap();
     }
 }

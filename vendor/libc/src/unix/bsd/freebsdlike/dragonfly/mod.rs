@@ -429,6 +429,8 @@ pub const NOTE_CHILD: ::uint32_t = 0x00000004;
 pub const SO_SNDSPACE: ::c_int = 0x100a;
 pub const SO_CPUHINT: ::c_int = 0x1030;
 
+pub const PT_FIRSTMACH: ::c_int = 32;
+
 // https://github.com/DragonFlyBSD/DragonFlyBSD/blob/master/sys/net/if.h#L101
 pub const IFF_UP: ::c_int = 0x1; // interface is up
 pub const IFF_BROADCAST: ::c_int = 0x2; // broadcast address valid
@@ -764,6 +766,14 @@ pub const RTP_PRIO_REALTIME: ::c_ushort = 0;
 pub const RTP_PRIO_NORMAL: ::c_ushort = 1;
 pub const RTP_PRIO_IDLE: ::c_ushort = 2;
 pub const RTP_PRIO_THREAD: ::c_ushort = 3;
+
+// Flags for chflags(2)
+pub const UF_NOHISTORY: ::c_ulong = 0x00000040;
+pub const UF_CACHE:     ::c_ulong = 0x00000080;
+pub const UF_XLINK:     ::c_ulong = 0x00000100;
+pub const SF_NOHISTORY: ::c_ulong = 0x00400000;
+pub const SF_CACHE:     ::c_ulong = 0x00800000;
+pub const SF_XLINK:     ::c_ulong = 0x01000000;
 
 extern {
     pub fn mprotect(addr: *mut ::c_void, len: ::size_t, prot: ::c_int)

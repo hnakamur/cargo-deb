@@ -57,11 +57,11 @@ ast_struct! {
     ///    path  tts                   path         tts
     /// ```
     ///
-    /// Use the [`interpret_meta`] method to try parsing the tokens of an
-    /// attribute into the structured representation that is used by convention
-    /// across most Rust libraries.
+    /// Use the [`parse_meta`] method to try parsing the tokens of an attribute
+    /// into the structured representation that is used by convention across
+    /// most Rust libraries.
     ///
-    /// [`interpret_meta`]: #method.interpret_meta
+    /// [`parse_meta`]: #method.parse_meta
     ///
     /// # Parsing
     ///
@@ -81,8 +81,8 @@ ast_struct! {
     /// #[macro_use]
     /// extern crate syn;
     ///
-    /// use syn::{Attribute, Ident};
-    /// use syn::parse::{Parse, ParseStream, Result};
+    /// use syn::{Attribute, Ident, Result};
+    /// use syn::parse::{Parse, ParseStream};
     ///
     /// // Parses a unit struct with attributes.
     /// //
@@ -533,6 +533,7 @@ where
     type Ret = iter::Filter<T::IntoIter, fn(&&Attribute) -> bool>;
 
     fn outer(self) -> Self::Ret {
+        #[cfg_attr(feature = "cargo-clippy", allow(trivially_copy_pass_by_ref))]
         fn is_outer(attr: &&Attribute) -> bool {
             match attr.style {
                 AttrStyle::Outer => true,
@@ -543,6 +544,7 @@ where
     }
 
     fn inner(self) -> Self::Ret {
+        #[cfg_attr(feature = "cargo-clippy", allow(trivially_copy_pass_by_ref))]
         fn is_inner(attr: &&Attribute) -> bool {
             match attr.style {
                 AttrStyle::Inner(_) => true,

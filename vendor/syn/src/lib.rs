@@ -236,7 +236,7 @@
 //!   dynamic library libproc_macro from rustc toolchain.
 
 // Syn types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/syn/0.15.18")]
+#![doc(html_root_url = "https://docs.rs/syn/0.15.22")]
 #![cfg_attr(feature = "cargo-clippy", allow(renamed_and_removed_lints))]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy, clippy_pedantic))]
 // Ignored clippy lints.
@@ -246,15 +246,14 @@
         block_in_if_condition_stmt,
         const_static_lifetime,
         cyclomatic_complexity,
+        deprecated_cfg_attr,
         doc_markdown,
         eval_order_dependence,
         large_enum_variant,
-        match_bool,
-        never_loop,
-        redundant_closure,
         needless_pass_by_value,
+        never_loop,
         redundant_field_names,
-        trivially_copy_pass_by_ref
+        too_many_arguments,
     )
 )]
 // Ignored clippy_pedantic lints.
@@ -265,7 +264,6 @@
         cast_possible_wrap,
         empty_enum,
         if_not_else,
-        indexing_slicing,
         items_after_statements,
         shadow_unrelated,
         similar_names,
@@ -273,11 +271,9 @@
         stutter,
         unseparated_literal_suffix,
         use_self,
-        used_underscore_binding
+        used_underscore_binding,
     )
 )]
-// False positive: https://github.com/rust-lang-nursery/rust-clippy/issues/3274
-#![cfg_attr(feature = "cargo-clippy", allow(map_clone))]
 
 #[cfg(all(
     not(all(target_arch = "wasm32", target_os = "unknown")),
@@ -569,6 +565,8 @@ mod span;
 #[cfg(all(any(feature = "full", feature = "derive"), feature = "printing"))]
 mod print;
 
+mod thread;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(any(feature = "parsing", feature = "full", feature = "derive"))]
@@ -577,10 +575,8 @@ struct private;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[cfg(feature = "parsing")]
 mod error;
-#[cfg(feature = "parsing")]
-use error::Error;
+pub use error::{Error, Result};
 
 /// Parse tokens of source code into the chosen syntax tree node.
 ///
@@ -633,7 +629,7 @@ use error::Error;
     feature = "parsing",
     feature = "proc-macro"
 ))]
-pub fn parse<T: parse::Parse>(tokens: proc_macro::TokenStream) -> Result<T, Error> {
+pub fn parse<T: parse::Parse>(tokens: proc_macro::TokenStream) -> Result<T> {
     parse::Parser::parse(T::parse, tokens)
 }
 
@@ -650,7 +646,7 @@ pub fn parse<T: parse::Parse>(tokens: proc_macro::TokenStream) -> Result<T, Erro
 ///
 /// *This function is available if Syn is built with the `"parsing"` feature.*
 #[cfg(feature = "parsing")]
-pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T, Error> {
+pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T> {
     parse::Parser::parse2(T::parse, tokens)
 }
 
@@ -668,8 +664,7 @@ pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T, Er
 /// ```rust
 /// # extern crate syn;
 /// #
-/// use syn::Expr;
-/// use syn::parse::Result;
+/// use syn::{Expr, Result};
 ///
 /// fn run() -> Result<()> {
 ///     let code = "assert_eq!(u8::max_value(), 255)";
@@ -681,7 +676,7 @@ pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T, Er
 /// # fn main() { run().unwrap() }
 /// ```
 #[cfg(feature = "parsing")]
-pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T, Error> {
+pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T> {
     parse::Parser::parse_str(T::parse, s)
 }
 
@@ -724,7 +719,7 @@ pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T, Error> {
 /// # fn main() { run().unwrap() }
 /// ```
 #[cfg(all(feature = "parsing", feature = "full"))]
-pub fn parse_file(mut content: &str) -> Result<File, Error> {
+pub fn parse_file(mut content: &str) -> Result<File> {
     // Strip the BOM if it is present
     const BOM: &'static str = "\u{feff}";
     if content.starts_with(BOM) {

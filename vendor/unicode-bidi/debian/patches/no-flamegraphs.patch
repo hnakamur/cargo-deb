@@ -1,8 +1,6 @@
-Index: unicode-bidi/Cargo.toml
-===================================================================
---- unicode-bidi.orig/Cargo.toml
-+++ unicode-bidi/Cargo.toml
-@@ -23,13 +23,6 @@ repository = "https://github.com/servo/u
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -23,13 +23,6 @@
  
  [lib]
  name = "unicode_bidi"
@@ -16,7 +14,7 @@ Index: unicode-bidi/Cargo.toml
  
  [dependencies.serde]
  version = ">=0.8, <2.0"
-@@ -43,7 +36,6 @@ version = ">=0.8, <2.0"
+@@ -43,7 +36,6 @@
  
  [features]
  with_serde = ["serde"]

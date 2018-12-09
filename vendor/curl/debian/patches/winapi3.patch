@@ -1,19 +1,24 @@
---- a/Cargo.toml	1970-01-01 00:00:00.000000000 +0000
-+++ b/Cargo.toml	2018-09-21 18:54:24.693880364 +0000
-@@ -48,4 +48,2 @@ version = "0.1.2"
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -54,13 +54,12 @@
+ [target."cfg(all(unix, not(target_os = \"macos\")))".dependencies.openssl-sys]
  version = "0.9.33"
--[target."cfg(target_env=\"msvc\")".dependencies.kernel32-sys]
+ optional = true
+-[target."cfg(target_env = \"msvc\")".dependencies.kernel32-sys]
 -version = "0.2.2"
  
-@@ -54,3 +52,4 @@ version = "0.1.13"
+ [target."cfg(target_env = \"msvc\")".dependencies.schannel]
+ version = "0.1.13"
  [target."cfg(windows)".dependencies.winapi]
 -version = "0.2.7"
 +version = "0.3"
 +features = ["winsock2", "wincrypt", "libloaderapi"]
  [badges.appveyor]
---- a/src/easy/windows.rs	2018-09-21 18:01:35.962553903 +0000
-+++ b/src/easy/windows.rs	2018-09-21 18:01:35.962553903 +0000
-@@ -4,21 +4,21 @@ use libc::c_void;
+ repository = "alexcrichton/curl-rust"
+ 
+--- a/src/easy/windows.rs
++++ b/src/easy/windows.rs
+@@ -4,21 +4,21 @@
  
  #[cfg(target_env = "msvc")]
  mod win {
@@ -38,20 +43,20 @@
              if n == ptr::null() {
                  None
              } else {
---- a/src/lib.rs	2018-09-21 18:01:35.962553903 +0000
-+++ b/src/lib.rs	2018-09-21 18:01:35.962553903 +0000
-@@ -61,8 +61,6 @@ extern crate openssl_probe;
- #[cfg(windows)]
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -62,8 +62,6 @@
  extern crate winapi;
  
--#[cfg(target_env = "msvc")]
--extern crate kernel32;
  #[cfg(target_env = "msvc")]
+-extern crate kernel32;
+-#[cfg(target_env = "msvc")]
  extern crate schannel;
  
---- a/src/multi.rs	2018-09-21 18:01:35.962553903 +0000
-+++ b/src/multi.rs	2018-09-21 18:01:35.962553903 +0000
-@@ -8,7 +8,7 @@ use libc::{c_int, c_char, c_void, c_long, c_short};
+ use std::ffi::CStr;
+--- a/src/multi.rs
++++ b/src/multi.rs
+@@ -8,7 +8,7 @@
  use curl_sys;
  
  #[cfg(windows)]

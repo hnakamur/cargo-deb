@@ -12,7 +12,7 @@
 
 [package]
 name = "curl"
-version = "0.4.18"
+version = "0.4.19"
 authors = ["Alex Crichton <alex@alexcrichton.com>"]
 autotests = true
 description = "Rust bindings to libcurl for making HTTP requests"
@@ -26,7 +26,8 @@ repository = "https://github.com/alexcrichton/curl-rust"
 name = "atexit"
 harness = false
 [dependencies.curl-sys]
-version = "0.4.9"
+version = "0.4.15"
+default-features = false
 
 [dependencies.libc]
 version = "0.2.42"
@@ -40,16 +41,23 @@ version = "0.6"
 version = "2.0.3"
 
 [features]
+default = ["ssl"]
+force-system-lib-on-osx = ["curl-sys/force-system-lib-on-osx"]
 http2 = ["curl-sys/http2"]
+ssl = ["openssl-sys", "openssl-probe", "curl-sys/ssl"]
+static-curl = ["curl-sys/static-curl"]
+static-ssl = ["curl-sys/static-ssl"]
 [target."cfg(all(unix, not(target_os = \"macos\")))".dependencies.openssl-probe]
 version = "0.1.2"
+optional = true
 
 [target."cfg(all(unix, not(target_os = \"macos\")))".dependencies.openssl-sys]
 version = "0.9.33"
-[target."cfg(target_env=\"msvc\")".dependencies.kernel32-sys]
+optional = true
+[target."cfg(target_env = \"msvc\")".dependencies.kernel32-sys]
 version = "0.2.2"
 
-[target."cfg(target_env=\"msvc\")".dependencies.schannel]
+[target."cfg(target_env = \"msvc\")".dependencies.schannel]
 version = "0.1.13"
 [target."cfg(windows)".dependencies.winapi]
 version = "0.2.7"
