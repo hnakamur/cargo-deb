@@ -128,4 +128,4 @@ fi
 )
 
 echo >&2 "$0: cleaning up..."
-rm -rf .cargo Cargo.lock.orig Cargo.lock debcargo-conf
+rm -rf .cargo Cargo.lock.orig debcargo-conf
