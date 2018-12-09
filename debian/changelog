@@ -1,3 +1,18 @@
+cargo (0.31.1-1~exp1) UNRELEASED; urgency=medium
+
+  [ upstream ]
+  * [1.30.0] Backport msys progress bar fix for stable.
+
+  [ Ximin Luo ]
+  * debian-cargo-vendor: only store differences between vendor-patches and
+    debcargo-conf.
+
+  [ Vasudev Kamath ]
+  * Do not delete Cargo.lock in debian-cargo-vendor script as its
+    referenced later in make_orig_multi.sh.
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 09 Dec 2018 22:11:04 +0530
+
 cargo (0.31.0-4) unstable; urgency=medium
 
   * Don't set RUSTFLAGS in d/rules. (Closes: #914110)
