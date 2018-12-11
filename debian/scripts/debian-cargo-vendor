@@ -56,6 +56,9 @@ for i in *; do
 	if [ -e ../../debcargo-conf/src/$i/debian/rules ]; then
 		echo >&2 "$0: not patching $i because its debcargo-conf has a custom rules file"
 		echo >&2 "$0: you may want to examine this situation more closely"
+    # Exit the directory or we will error out in next cd
+    # TODO: any better way to do this?
+    cd ..
 		continue
 	fi
 	if [ -d ../../debcargo-conf/src/$i/debian/patches ]; then
@@ -76,7 +79,7 @@ done; $x ); do
 	echo >&2 "$0: You are now in a sub-shell!"
 	echo >&2 "$0: Fix the failed patches, then exit the sub-shell by pressing ctrl-D ONCE."
 	echo >&2 "$0: If you need to abort this process, press ctrl-D then quickly ctrl-C."
-	if [ -f debian/debcargo-conf.patch ]; then
+	if [ -f ${WORKDIR}/debian/debcargo-conf.patch ]; then
 		echo >&2 "$0: Previous patch changes exist, to apply them run:"
 		echo >&2 "  $ patch -d vendor -p2 < debian/debcargo-conf.patch"
 	fi
@@ -121,11 +124,14 @@ for i in *; do (
 git add .
 if ! git diff --cached --quiet; then
 	git commit -m "Manual changes from debian-cargo-vendor"
-	git diff @~ > ../debian/debcargo-conf.patch || true
-	echo >&2 "$0: backed up patch changes to debian/debcargo-conf.patch"
+	git diff @~ > ../../debcargo-conf.patch || true
+	(cd ../.. ; echo >&2 "$0: backed up patch changes to $(pwd)/debcargo-conf.patch")
 	echo >&2 "$0: you should backport/merge them back into debcargo-conf.git"
 fi
 )
 
 echo >&2 "$0: cleaning up..."
-rm -rf .cargo Cargo.lock.orig debcargo-conf
+rm -rf .cargo Cargo.lock debcargo-conf
+
+echo >&2 "$0: restoring original Cargo.lock"
+mv Cargo.lock.orig Cargo.lock

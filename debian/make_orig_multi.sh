@@ -42,6 +42,9 @@ export GIT_AUTHOR_EMAIL="<>"
 export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
 export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
 
+# Make sure WORKDIR env is accessible to debian-cargo-vendor
+export WORKDIR
+
 ${WORKDIR}/debian/scripts/debian-cargo-vendor
 
 # Clean embedded libs and update checksums
