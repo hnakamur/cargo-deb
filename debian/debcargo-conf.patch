@@ -1,11 +1,13 @@
 diff --git a/src/commoncrypto-sys/debian/patches/no-clippy.patch b/src/commoncrypto-sys/debian/patches/no-clippy.patch
-index 3e4c885..4a43b0d 100644
+index 3e4c885..93789f3 100644
 --- a/src/commoncrypto-sys/debian/patches/no-clippy.patch
 +++ b/src/commoncrypto-sys/debian/patches/no-clippy.patch
 @@ -1,17 +1,16 @@
- --- a/Cargo.toml	2017-01-24 06:56:51.000000000 +0000
- +++ b/Cargo.toml	2018-09-15 15:37:47.602333479 +0000
+---- a/Cargo.toml	2017-01-24 06:56:51.000000000 +0000
+-+++ b/Cargo.toml	2018-09-15 15:37:47.602333479 +0000
 -@@ -19,14 +19,8 @@
++--- a/Cargo.toml
+++++ b/Cargo.toml
 +@@ -8,13 +8,8 @@
   keywords = ["crypto", "hash", "digest", "osx", "commoncrypto"]
   license = "MIT"
@@ -30,13 +32,15 @@ index 3e4c885..4a43b0d 100644
 + [dev-dependencies]
 + hex = "0.2"
 diff --git a/src/commoncrypto/debian/patches/no-clippy.patch b/src/commoncrypto/debian/patches/no-clippy.patch
-index 38d9c92..1603e39 100644
+index 38d9c92..b21a7ca 100644
 --- a/src/commoncrypto/debian/patches/no-clippy.patch
 +++ b/src/commoncrypto/debian/patches/no-clippy.patch
 @@ -1,17 +1,16 @@
- --- a/Cargo.toml	2017-01-24 06:56:51.000000000 +0000
- +++ b/Cargo.toml	2018-09-15 17:37:01.354423224 +0000
+---- a/Cargo.toml	2017-01-24 06:56:51.000000000 +0000
+-+++ b/Cargo.toml	2018-09-15 17:37:01.354423224 +0000
 -@@ -19,14 +19,8 @@
++--- a/Cargo.toml
+++++ b/Cargo.toml
 +@@ -8,13 +8,8 @@
   keywords = ["crypto", "hash", "digest", "osx", "commoncrypto"]
   license = "MIT"
@@ -127,86 +131,30 @@ index dce2312..a4ab79e 100644
   use curl_sys;
   
   #[cfg(windows)]
-diff --git a/src/flate2/debian/patches/disable-miniz.patch b/src/flate2/debian/patches/disable-miniz.patch
-index a6f6670..0ac771b 100644
---- a/src/flate2/debian/patches/disable-miniz.patch
-+++ b/src/flate2/debian/patches/disable-miniz.patch
-@@ -5,11 +5,11 @@
-  optional = true
-  
- -[dependencies.miniz-sys]
---version = "0.1.7"
-+-version = "0.1.11"
- -optional = true
- -
-  [dependencies.miniz_oxide_c_api]
-- version = "0.1"
-+ version = "0.2"
-  features = ["no_c_export"]
- @@ -56,7 +52,8 @@
-  version = "0.1"
-diff --git a/src/flate2/debian/patches/drop-deps-for-cargo.patch b/src/flate2/debian/patches/drop-deps-for-cargo.patch
-new file mode 100644
-index 0000000..19c4a55
---- /dev/null
-+++ b/src/flate2/debian/patches/drop-deps-for-cargo.patch
-@@ -0,0 +1,28 @@
-+--- flate2.orig/Cargo.toml
-++++ flate2/Cargo.toml
-+@@ -33,11 +33,6 @@
-+ version = "1.0"
-+ optional = true
-+ 
-+-[dependencies.miniz_oxide_c_api]
-+-version = "0.2"
-+-features = ["no_c_export"]
-+-optional = true
-+-
-+ [dependencies.tokio-io]
-+ version = "0.1"
-+ optional = true
-+@@ -54,12 +49,9 @@
-+ [features]
-+ default = ["zlib"]
-+ miniz-sys = ["zlib"]
-+-rust_backend = ["miniz_oxide_c_api"]
-++rust_backend = ["zlib"]
-+ tokio = ["tokio-io", "futures"]
-+ zlib = ["libz-sys"]
-+-[target."cfg(all(target_arch = \"wasm32\", not(target_os = \"emscripten\")))".dependencies.miniz_oxide_c_api]
-+-version = "0.2"
-+-features = ["no_c_export"]
-+ [badges.appveyor]
-+ repository = "alexcrichton/flate2-rs"
-+ 
-diff --git a/src/flate2/debian/patches/series b/src/flate2/debian/patches/series
-index d42c267..393adff 100644
---- a/src/flate2/debian/patches/series
-+++ b/src/flate2/debian/patches/series
-@@ -1 +1,2 @@
- disable-miniz.patch
-+drop-deps-for-cargo.patch
 diff --git a/src/jobserver/debian/patches/relax-dep-version.patch b/src/jobserver/debian/patches/relax-dep-version.patch
-index b3218cc..d12faa5 100644
+index b3218cc..e69de29 100644
 --- a/src/jobserver/debian/patches/relax-dep-version.patch
 +++ b/src/jobserver/debian/patches/relax-dep-version.patch
-@@ -1,8 +1,8 @@
+@@ -1,8 +0,0 @@
 ---- a/Cargo.toml	2018-08-03 01:58:48.002962262 -0700
 -+++ b/Cargo.toml	2018-08-03 01:58:54.275006248 -0700
-+--- a/Cargo.toml
-++++ b/Cargo.toml
- @@ -61,4 +61,4 @@
-  [target."cfg(unix)".dependencies.libc]
-  version = "0.2"
-  [target."cfg(windows)".dependencies.rand]
+-@@ -61,4 +61,4 @@
+- [target."cfg(unix)".dependencies.libc]
+- version = "0.2"
+- [target."cfg(windows)".dependencies.rand]
 --version = "0.4"
-+-version = "0.6"
- +version = "< 0.6, >= 0.4"
+-+version = "< 0.6, >= 0.4"
 diff --git a/src/openssl-sys/debian/patches/disable-vendor.patch b/src/openssl-sys/debian/patches/disable-vendor.patch
-index a4e6d8f..45a0d36 100644
+index a4e6d8f..b8e1051 100644
 --- a/src/openssl-sys/debian/patches/disable-vendor.patch
 +++ b/src/openssl-sys/debian/patches/disable-vendor.patch
-@@ -5,7 +5,7 @@
+@@ -1,11 +1,11 @@
+---- a/Cargo.toml	2018-09-03 21:17:45.506177066 -0700
+-+++ b/Cargo.toml	2018-09-03 21:18:00.573513575 -0700
++--- a/Cargo.toml
+++++ b/Cargo.toml
+ @@ -28,14 +28,11 @@
+  [build-dependencies.cc]
   version = "1.0"
   
  -[build-dependencies.openssl-src]
@@ -216,10 +164,10 @@ index a4e6d8f..45a0d36 100644
  -
   [build-dependencies.pkg-config]
 diff --git a/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff b/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff
-index d5c8ce5..08ca008 100644
+index d5c8ce5..449bed0 100644
 --- a/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff
 +++ b/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff
-@@ -1,11 +1,9 @@
+@@ -1,13 +1,17 @@
 -Index: rand/Cargo.toml
 -===================================================================
 ---- rand.orig/Cargo.toml
@@ -230,17 +178,33 @@ index d5c8ce5..08ca008 100644
 - serde1 = ["serde", "serde_derive", "rand_core/serde1"]
 +--- a/Cargo.toml
 ++++ b/Cargo.toml
-+@@ -65,7 +65,7 @@
++@@ -65,13 +65,10 @@
 + nightly = ["simd_support"]
 + serde1 = ["rand_core/serde1", "rand_isaac/serde1", "rand_xorshift/serde1"]
 + simd_support = ["packed_simd"]
  -std = ["rand_core/std", "alloc", "libc", "winapi", "cloudabi", "fuchsia-zircon"]
  +std = ["rand_core/std", "alloc", "libc", "winapi", "cloudabi"]
   [target."cfg(target_os = \"cloudabi\")".dependencies.cloudabi]
+  version = "0.0.3"
+  optional = true
++-[target."cfg(target_os = \"fuchsia\")".dependencies.fuchsia-zircon]
++-version = "0.3.2"
++-optional = true
++ [target."cfg(unix)".dependencies.libc]
++ version = "0.2"
++ optional = true
 diff --git a/src/unicode-bidi/debian/patches/no-flamegraphs.patch b/src/unicode-bidi/debian/patches/no-flamegraphs.patch
-index 6234d5d..2c1dce7 100644
+index 6234d5d..9acab86 100644
 --- a/src/unicode-bidi/debian/patches/no-flamegraphs.patch
 +++ b/src/unicode-bidi/debian/patches/no-flamegraphs.patch
+@@ -1,5 +1,5 @@
+---- a/Cargo.toml	2017-07-06 23:45:07.000000000 +0000
+-+++ b/Cargo.toml	2018-09-15 18:09:13.913086470 +0000
++--- a/Cargo.toml
+++++ b/Cargo.toml
+ @@ -23,13 +23,6 @@
+  
+  [lib]
 @@ -12,12 +12,13 @@
  -version = "0.1"
  -optional = true
