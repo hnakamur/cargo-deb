@@ -33,7 +33,7 @@ Files: vendor/bitflags/*
        vendor/unicode-width/*
        vendor/rand_core/*
        vendor/rand_core-0*/*
-       vendor/rand/*
+       vendor/rand-*/*
        vendor/rand_chacha/*
        vendor/rand_hc/*
        vendor/rand_isaac/*
@@ -97,7 +97,6 @@ Comment: see upstream projects,
 
 Files:
  vendor/crossbeam-channel/*
- vendor/crossbeam-deque/*
  vendor/crossbeam-epoch/*
  vendor/crossbeam-utils/*
 Copyright: 2017-2018 The Crossbeam Project Developers
@@ -109,8 +108,7 @@ Copyright: 2015 Andrew Gallant <jamslam@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/BurntSushi/rucd
 
-Files: vendor/kernel32/*
-       vendor/winapi/*
+Files: vendor/winapi/*
 Copyright: 2014-2017 Peter Atashian <retep998@gmail.com>
            2014-2017 winapi-rs developers
 License: MIT
@@ -243,11 +241,6 @@ Copyright: 2015-2017 erick.tryzelaar <erick.tryzelaar@gmail.com>
 License: MIT or Apache-2.0
 Comment: see https://github.com/unicode-rs/unicode-xid
 
-Files: vendor/unicode-xid/*/scripts/unicode.py
-Copyright: 2011-2015 The Rust Project Developers
-           2015 The Servo Project Developers
-License: MIT or Apache-2.0
-
 Files: vendor/unreachable/*
        vendor/void/*
 Copyright: 2015-2017 Jonathan Reem <jonathan.reem@gmail.com>
@@ -282,7 +275,7 @@ Comment: see https://github.com/KokaKiwi/rust-hex
 
 Files: vendor/num_cpus/*
 Copyright: 2015, Sean McArthur <sean@seanmonstar.com>
-License:
+License: MIT or Apache-2.0
 
 Files: vendor/atty/*
 Copyright: 2015-2016, Doug Tangren
@@ -531,39 +524,6 @@ License: Unlicense
  OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
-
-License: Unicode-terms
- Distributed under the Terms of Use in http://www.unicode.org/copyright.html.
- .
- Permission is hereby granted, free of charge, to any person obtaining
- a copy of the Unicode data files and any associated documentation
- (the "Data Files") or Unicode software and any associated documentation
- (the "Software") to deal in the Data Files or Software
- without restriction, including without limitation the rights to use,
- copy, modify, merge, publish, distribute, and/or sell copies of
- the Data Files or Software, and to permit persons to whom the Data Files
- or Software are furnished to do so, provided that either
- (a) this copyright and permission notice appear with all copies
- of the Data Files or Software, or
- (b) this copyright and permission notice appear in associated
- Documentation.
- .
- THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
- ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
- WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- NONINFRINGEMENT OF THIRD PARTY RIGHTS.
- IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
- NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
- DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
- DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
- TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
- PERFORMANCE OF THE DATA FILES OR SOFTWARE.
- .
- Except as contained in this notice, the name of a copyright holder
- shall not be used in advertising or otherwise to promote the sale,
- use or other dealings in these Data Files or Software without prior
- written authorization of the copyright holder.
-Comment: see http://www.unicode.org/copyright.html
 
 License: BSL-1.0
  Permission is hereby granted, free of charge, to any person or organization
