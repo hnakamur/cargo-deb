@@ -9,6 +9,11 @@ toml/tests/
 num/ci/
 openssl/test/
 schannel/test/*
+libnghttp2-sys/nghttp2/fuzz/corpus/*/*
+libnghttp2-sys/nghttp2/tests/testdata/*
+libnghttp2-sys/nghttp2/integration-tests/*
+libnghttp2-sys/nghttp2/src/test.*
+libnghttp2-sys/nghttp2/src/ca.*
 
 # misc support data
 failure/CODE_OF_CONDUCT.md
@@ -57,3 +62,12 @@ vec_map/Cargo.toml
 winapi/README.md
 winapi/src/lib.rs
 winapi/src/winnt.rs
+libnghttp2-sys/nghttp2/doc/*.1
+libnghttp2-sys/nghttp2/m4/ax_boost_base.m4
+libnghttp2-sys/nghttp2/doc/bash_completion/*
+libnghttp2-sys/nghttp2/third-party/neverbleed/README.md
+libnghttp2-sys/nghttp2/third-party/mruby/*
+proptest/src/regex-contrib/crates_regex.rs
+
+# documentation themes
+libnghttp2-sys/nghttp2/doc/_themes/sphinx_rtd_theme/*
