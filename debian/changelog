@@ -1,3 +1,372 @@
+cargo (0.32.0-1~1.gbpa537be) UNRELEASED; urgency=medium
+
+  ** SNAPSHOT build @a537bea5afc91b437d90db80b3d65d71cef31eb8 **
+
+  [ Eh2406 ]
+  * a start on using proptest to fuzz the resolver
+  * cache the example url to solve performance problem
+  * get working with minimal-versions
+  * better generation of version numbers
+  * small clean up
+  * small clean up
+  * handle "bad" slightly better
+  * small clean up for the cache of the example url
+  * incorporate @AltSysrq suggestions
+  * update to the new version of proptest
+  * use the new `impl Strategy for Vec<S>` to only generate valid dependency names
+  * use the new `result_cache`
+  * double down on `prop_flat_map` to guarantee version requirements are meet by the crate named.
+  * stronger assert in the core
+  * use args for scale
+  * works a LOT better if the simple cases are at the beginning
+  * small clean up
+  * small clean up
+  * more controllable bad dependencies, and use Index for ranges
+  * remove a `prop_flat_map` use @AltSysrq suggestion again
+  * fail fast on CI, don't shrink the input
+  * If resolution was successful, then unpublishing a version of a crate that was not selected should not change that.
+  * If resolution was unsuccessful, then it should stay unsuccessful even if any version of a crate is unpublished.
+  * Copy the full case from https://github.com/rust-lang/cargo/commit/003c29b0c71e5ea28fbe8e72c148c755c9f3f8d9
+  * remove things depending on bad, rename some things
+  * remove "D"
+  * remove lots more
+  * rename things
+  * renumber things
+  * split up some names
+  * time to investigate the bug
+
+  [ Alex Crichton ]
+  * Fix publishing renamed dependencies to crates.io
+
+  [ Zach Lute ]
+  * Add empty ctrlc handler on Windows.
+
+  [ Eh2406 ]
+  * this oddly worked
+  * a new one to minimized
+  * remove unused crates
+
+  [ Dale Wijnand ]
+  * Setup Stale Probot
+  * Limit to 1 stale bot action per hour (24 per day)
+  * Raise threshold to 180 days until issues are stale (6 months)
+  * Tweak stale bots initial comment wording
+  * E-easy/E-help-wanted issues can go stale
+  * I-nominated/P-high issues can go stale
+  * Configure a close comment message for stale bot
+  * Restrict stale bot to just issues
+  * Keep C-feature-request from going stale
+  * Allow PRs to be marked stale & be closed
+
+  [ Eh2406 ]
+  * remove debs leading to remove now unused crates
+
+  [ Dale Wijnand ]
+  * Try using an active voice in the stale bot messages
+  * Spelling
+
+  [ Eh2406 ]
+  * remove debs leading to remove now unused crates
+  * rename deps
+  * clean up commas
+
+  [ Dale Wijnand ]
+  * Often it's not the issue author that needs to comment
+
+  [ Eh2406 ]
+  * a new one to minimized
+  * remove debs leading to remove now unused crates
+  * rename deps
+  * small clean up
+
+  [ Guillaume Gomez ]
+  * Remove error code check in doc test
+  * Add possibility to remove process exit code
+  * revert b1d6a7e changes
+
+  [ Eh2406 ]
+  * only skip in the `backtrack_stack` if the `conflicting_activations` is complete
+  * cargo fmt
+
+  [ Dale Wijnand ]
+  * Add newline spacing to stale bot's message
+  * Grammar
+  * I think "6 months" reads better than "180 days"
+  * Use indentation, it's Super Effective!
+  * Two newlines will do
+  * Run the cross-compile disable check ASAP
+  * Link stale bot to its tracking issue
+  * typo
+  * Stop test --doc from silently ignoring other target selecting options
+
+  [ Eric Huss ]
+  * Fix bash completion on mac.
+  * Bash completion: support arbitrary toolchain names.
+
+  [ Eh2406 ]
+  * give intermediate steps names
+
+  [ Eric Huss ]
+  * --all-targets fixes
+
+  [ Eh2406 ]
+  * pull the has bad dep before `prop_flat_map`
+  * bump env_logger to a more minimal-versions compatible one
+
+  [ Sönke Hahn ]
+  * use more common semver terminology for clarity in docs
+
+  [ Alex Crichton ]
+  * Bump cargo to 0.32.0
+
+  [ Eric Huss ]
+  * Disable master in CI.
+
+  [ Alex Crichton ]
+  * Move downloading crates higher up in Cargo
+  * Rename PackageSet::get to `get_one`
+  * Refactor `build_unit_dependencies` for parallel downloads
+  * Parallelize downloads with HTTP/2
+  * Only enable downloads through an RAII structure
+  * Comment about how we print downloads
+  * Update the progress bar for parallel downloads
+  * Review comments!
+  * Handle callbacks invoked outside of `tls::set`
+  * Tweaks to retry logic
+  * Use `Message::result_for` for better error messages
+  * Don't print a download summary if an error happens
+  * Avoid a debug overflow from curl
+  * Don't enable HTTP1 pipelining as apparently it's flaky
+
+  [ steveklabnik ]
+  * No longer warn about #![feature(rust_2018_preview)]
+
+  [ Dale Wijnand ]
+  * Finish removing PreviewNotFound
+
+  [ Alex Crichton ]
+  * Disable multiplexing by default for now
+
+  [ Eh2406 ]
+  * `edge list` is a much cleaner approach
+  * add a test to test the tester
+  * check each registry more thoroughly
+
+  [ Dale Wijnand ]
+  * Bump stale bot daysUntilClose from 7 to 30
+  * Bump stale bot daysUntilStale to 3 yrs 2 months
+  * Tweak stale bot's wording to emphasis summary giving over closing
+  * If creating a new GitSource, updating it is required before querying it
+  * Specify lockfile path in --locked error msg
+
+  [ Joel Gallant ]
+  * Removes -Zunstable-options for rustdoc testing
+  * Fixes verbose output tests
+  * Fixes doc::doc_edition test output (too many spaces)
+
+  [ Zach Lute ]
+  * Replace 'project' with 'package' in many strings and comments.
+  * Replaced 'project' with 'package' in Cargo documentation.
+
+  [ Dale Wijnand ]
+  * Fix init::no_filename
+
+  [ Eduard-Mihai Burtescu ]
+  * Remove `fix::local_paths_no_fix`, as `crate_in_paths` is getting stabilized.
+
+  [ Diogo Sousa ]
+  * Fix urls for the edition guide.
+
+  [ Alex Crichton ]
+  * Only load `~/.cargo/config` for `cargo install`
+
+  [ Eh2406 ]
+  * pretty print the registry made by proptest
+
+  [ Zach Lute ]
+  * Revert any project->package changes that would change URLs or anchors for now.
+
+  [ Dale Wijnand ]
+  * Enable some fix tests on stable
+
+  [ Matthias Krüger ]
+  * cargo version: support --verbose
+
+  [ Jeff Dickey ]
+  * fix: login url
+
+  [ Matthias Krüger ]
+  * job queue: remove outdated comment about reenabling compile-progress once #5695 is fixed
+
+  [ David Tolnay ]
+  * Fix missing messages when --message-format=json is deeply nested
+
+  [ Alex Crichton ]
+  * Print a line per downloaded crate
+
+  [ Eh2406 ]
+  * proptest 0.8.7 has a better `ci_no_shrink`
+
+  [ Alex Crichton ]
+  * Fix `--build-plan` with dev-dependencies
+
+  [ Eh2406 ]
+  * In theory shrinkage should be 2, but in practice we get better trees with a larger value.
+  * move the visual indicator code out of the most complicated loop
+
+  [ Eric Huss ]
+  * Clean up appveyor config.
+
+  [ Kelly Thomas Kline ]
+  * Correct spelling
+  * Correct spelling
+
+  [ Ben Boeckel ]
+  * build: export repository information
+
+  [ Eh2406 ]
+  * move the BinaryHeap/pop_most_constrained code out of the most complicated loop
+  * make names more consistent between local variables and BacktrackFrame
+  * move helper functions to support
+  * use the abbreviation cx
+
+  [ Ben Boeckel ]
+  * docs: clarify where package metadata comes from
+
+  [ Josh Triplett ]
+  * cargo build: Simplify help for pkgids
+
+  [ Linda_pp ]
+  * Fix typo
+
+  [ Alex Crichton ]
+  * Try to improve "version not found" error
+
+  [ Eric Huss ]
+  * Second attempt at fixing msys terminal width.
+
+  [ Christopher Swindle ]
+  * Allow registry option for cargo install.
+  * Switch to use registry
+
+  [ Igor Matuszewski ]
+  * Bump libgit2-sys to 0.7.9
+
+  [ Eh2406 ]
+  * fmt
+  * remove Graph::sort as it is unused
+  * use impl Iterator instead of custom types in resolver and graph
+  * let jetbrains reorder some impls to match the definition
+  * use impl Iterator instead of custom types in `source`
+
+  [ Christopher Swindle ]
+  * Add support for registry to new and init
+  * Add support for providing a default registry
+  * Add default in config document
+
+  [ Igor Matuszewski ]
+  * Bump flate2 to 1.0.3
+
+  [ Eric Huss ]
+  * Fix dashes in rename dependencies.
+
+  [ Dale Wijnand ]
+  * Detail dep name in invalid version error
+  * Introduce issue templates
+  * Make issue templates work for Cargo
+
+  [ Eh2406 ]
+  * validate some basic properties of a valid resolve
+  * fix redundant pkgid generation
+
+  [ Christopher Swindle ]
+  * Switch to use crates-io as the registry name and don't include publish when registry is not specified
+
+  [ Dale Wijnand ]
+  * Adapt the issue templates
+  * Just drop the part about duplicate issues
+  * Trim back the issue templates.
+  * Don't explain issue titles to people
+  * Problem before Steps
+  * Steer the feature request author to describe the underlying problem first
+  * Trim back to just cargo version
+
+  [ Eh2406 ]
+  * assert_contains -> assert_same
+  * Test that the generator makes registries that include multiple versions of the same library
+  * faster test by unpublishing all at once
+
+  [ Alex Crichton ]
+  * Add convenience debugging for HTTP requests in Cargo
+
+  [ Eric Huss ]
+  * Fix dylib reuse with uplift.
+
+  [ Alex Butler ]
+  * Expose manifest error chain
+  * Wrap all, including io, manifest errors
+  * Wrap initial ManifestError in toml module
+
+  [ Eric Huss ]
+  * Track `panic` in Unit early.
+  * Minor cleanup for metabuild hash
+
+  [ Alex Butler ]
+  * Add PackageError wrappers for activation errors
+
+  [ Oliver S̶c̶h̶n̶e̶i̶d̶e̶r Scherer ]
+  * Future proof an unstable test
+
+  [ Alex Butler ]
+  * Rename PackageError -> ResolveError
+  * Add package_path to ResolveError
+
+  [ Oliver S̶c̶h̶n̶e̶i̶d̶e̶r Scherer ]
+  * lang items need feature gates
+
+  [ Alex Butler ]
+  * Move ResolveError -> core/resolver/errors.rs
+
+  [ Dale Wijnand ]
+  * Preserve lockfile top comment
+  * More consistency in comment format
+  * Learn to use Project::read_file & String::insert
+  * Assert the lock files are byte-for-byte equal
+  * Preserve multiline top comments
+  * Explain why top comments are preserved in Cargo.lock
+
+  [ Ted Mielczarek ]
+  * Prefix build script output with crate name when running in extra verbose mode. Fixes #6158.
+  * Restore a line of test output that was accidentally deleted while rebasing
+
+  [ Eric Huss ]
+  * Provide error for testing non-workspaces packages with dev-dependencies.
+  * Fix minor broken link in docs.
+
+  [ Dale Wijnand ]
+  * Remove Compilation.libraries
+
+  [ Eric Huss ]
+  * Fix download summary overlapping progress.
+
+  [ Dale Wijnand ]
+  * Remove the remote TODO on Compilation.native_dirs
+
+  [ Alex Crichton ]
+  * Don't turn on edition lints for unfixed crates
+  * Use `Multi::get_timeout` instead of our own
+  * Scope retries per download
+  * Fix timeouts firing while tarballs are extracted
+  * Timeout batch downloads, not each download
+  * fix: Don't back out changes with `--broken-code`
+  * Stabilize the `rename-dependency` feature
+
+  [ Vasudev Kamath ]
+  * Fix the scripts related to tarball creation
+  * Update unsuspicious file list for 0.32.0
+
+ -- Vasudev Kamath <vasudev@copyninja.info>  Tue, 11 Dec 2018 22:45:43 +0530
+
 cargo (0.31.1-1) unstable; urgency=medium
 
   * Upload 0.31.1 to unstable.
