@@ -1,4 +1,4 @@
-cargo (0.31.1-1~exp1) UNRELEASED; urgency=medium
+cargo (0.31.1-1~exp1) experimental; urgency=medium
 
   [ upstream ]
   * [1.30.0] Backport msys progress bar fix for stable.
@@ -11,7 +11,7 @@ cargo (0.31.1-1~exp1) UNRELEASED; urgency=medium
   * Do not delete Cargo.lock in debian-cargo-vendor script as its
     referenced later in make_orig_multi.sh.
 
- -- Vasudev Kamath <vasudev@copyninja.info>  Sun, 09 Dec 2018 22:11:04 +0530
+ -- Vasudev Kamath <vasudev@copyninja.info>  Tue, 11 Dec 2018 20:53:53 +0530
 
 cargo (0.31.0-4) unstable; urgency=medium
 
