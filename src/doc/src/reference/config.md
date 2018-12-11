@@ -1,13 +1,13 @@
 ## Configuration
 
 This document will explain how Cargo’s configuration system works, as well as
-available keys or configuration.  For configuration of a project through its
+available keys or configuration.  For configuration of a package through its
 manifest, see the [manifest format](reference/manifest.html).
 
 ### Hierarchical structure
 
 
-Cargo allows local configuration for a particular project as well as global
+Cargo allows local configuration for a particular package as well as global
 configuration, like git. Cargo extends this to a hierarchical strategy.
 If, for example, Cargo were invoked in `/projects/foo/bar/baz`, then the
 following configuration files would be probed for and unified in this order:
@@ -19,7 +19,7 @@ following configuration files would be probed for and unified in this order:
 * `/.cargo/config`
 * `$HOME/.cargo/config`
 
-With this structure, you can specify configuration per-project, and even
+With this structure, you can specify configuration per-package, and even
 possibly check it into version control. You can also specify personal defaults
 with a configuration file in your home directory.
 
@@ -93,6 +93,7 @@ runner = ".."
 [registry]
 index = "..."   # URL of the registry index (defaults to the central repository)
 token = "..."   # Access token (found on the central repo’s website)
+default = "..." # Default alternative registry to use (can be overriden with --registry)
 
 [http]
 proxy = "host:port" # HTTP proxy to use for HTTP requests (defaults to none)
@@ -101,6 +102,17 @@ timeout = 30        # Timeout for each HTTP request, in seconds
 cainfo = "cert.pem" # Path to Certificate Authority (CA) bundle (optional)
 check-revoke = true # Indicates whether SSL certs are checked for revocation
 low-speed-limit = 5 # Lower threshold for bytes/sec (10 = default, 0 = disabled)
+multiplexing = false  # whether or not to use HTTP/2 multiplexing where possible
+
+# This setting can be used to help debug what's going on with HTTP requests made
+# by Cargo. When set to `true` then Cargo's normal debug logging will be filled
+# in with HTTP information, which you can extract with
+# `RUST_LOG=cargo::ops::registry=debug` (and `trace` may print more).
+#
+# Be wary when posting these logs elsewhere though, it may be the case that a
+# header has an authentication token in it you don't want leaked! Be sure to
+# briefly review logs before posting them.
+debug = false
 
 [build]
 jobs = 1                  # number of parallel jobs, defaults to # of CPUs

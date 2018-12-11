@@ -14,6 +14,7 @@ use jobserver::{Acquired, HelperThread};
 use core::profiles::Profile;
 use core::{PackageId, Target, TargetKind};
 use handle_error;
+use util;
 use util::{internal, profile, CargoResult, CargoResultExt, ProcessBuilder};
 use util::{Config, DependencyQueue, Dirty, Fresh, Freshness};
 use util::{Progress, ProgressStyle};
@@ -111,15 +112,17 @@ impl<'a> JobState<'a> {
     pub fn capture_output(
         &self,
         cmd: &ProcessBuilder,
+        prefix: Option<String>,
         print_output: bool,
     ) -> CargoResult<Output> {
+        let prefix = prefix.unwrap_or_else(|| String::new());
         cmd.exec_with_streaming(
             &mut |out| {
-                let _ = self.tx.send(Message::Stdout(out.to_string()));
+                let _ = self.tx.send(Message::Stdout(format!("{}{}", prefix, out)));
                 Ok(())
             },
             &mut |err| {
-                let _ = self.tx.send(Message::Stderr(err.to_string()));
+                let _ = self.tx.send(Message::Stderr(format!("{}{}", prefix, err)));
                 Ok(())
             },
             print_output,
@@ -219,22 +222,11 @@ impl<'a> JobQueue<'a> {
         // maximum number of parallel jobs we have tokens for). A local queue
         // is maintained separately from the main dependency queue as one
         // dequeue may actually dequeue quite a bit of work (e.g. 10 binaries
-        // in one project).
+        // in one package).
         //
         // After a job has finished we update our internal state if it was
         // successful and otherwise wait for pending work to finish if it failed
         // and then immediately return.
-        //
-        // TODO: the progress bar should be re-enabled but unfortunately it's
-        //       difficult to do so right now due to how compiler error messages
-        //       work. Cargo doesn't redirect stdout/stderr of compiler
-        //       processes so errors are not captured, and Cargo doesn't know
-        //       when an error is being printed, meaning that a progress bar
-        //       will get jumbled up in the output! To reenable this progress
-        //       bar we'll need to probably capture the stderr of rustc and
-        //       capture compiler error messages, but that also means
-        //       reproducing rustc's styling of error messages which is
-        //       currently a pretty big task. This is issue #5695.
         let mut error = None;
         let mut progress = Progress::with_style("Building", ProgressStyle::Ratio, cx.bcx.config);
         let total = self.queue.len();
@@ -368,16 +360,7 @@ impl<'a> JobQueue<'a> {
             opt_type += " + debuginfo";
         }
 
-        let time_elapsed = {
-            let duration = cx.bcx.config.creation_time().elapsed();
-            let secs = duration.as_secs();
-
-            if secs >= 60 {
-                format!("{}m {:02}s", secs / 60, secs % 60)
-            } else {
-                format!("{}.{:02}s", secs, duration.subsec_nanos() / 10_000_000)
-            }
-        };
+        let time_elapsed = util::elapsed(cx.bcx.config.creation_time().elapsed());
 
         if self.queue.is_empty() {
             let message = format!(
@@ -535,7 +518,7 @@ impl<'a> Key<'a> {
 
     fn dependencies<'cfg>(&self, cx: &Context<'a, 'cfg>) -> CargoResult<Vec<Key<'a>>> {
         let unit = Unit {
-            pkg: cx.bcx.get_package(self.pkg)?,
+            pkg: cx.get_package(self.pkg)?,
             target: self.target,
             profile: self.profile,
             kind: self.kind,

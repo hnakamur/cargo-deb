@@ -85,7 +85,7 @@ fn check_version_control(opts: &FixOptions) -> CargoResult<()> {
     }
     let config = opts.compile_opts.config;
     if !existing_vcs_repo(config.cwd(), config.cwd()) {
-        bail!("no VCS found for this project and `cargo fix` can potentially \
+        bail!("no VCS found for this package and `cargo fix` can potentially \
                perform destructive changes; if you'd like to suppress this \
                error pass `--allow-no-vcs`")
     }
@@ -137,7 +137,7 @@ fn check_version_control(opts: &FixOptions) -> CargoResult<()> {
         files_list.push_str(" (staged)\n");
     }
 
-    bail!("the working directory of this project has uncommitted changes, and \
+    bail!("the working directory of this package has uncommitted changes, and \
            `cargo fix` can potentially perform destructive changes; if you'd \
            like to suppress this error pass `--allow-dirty`, `--allow-staged`, \
            or commit the changes to these files:\n\
@@ -165,7 +165,7 @@ pub fn fix_maybe_exec_rustc() -> CargoResult<bool> {
     // not the best heuristic but matches what Cargo does today at least.
     let mut fixes = FixedCrate::default();
     if let Some(path) = &args.file {
-        if env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
+        if args.primary_package {
             trace!("start rustfixing {:?}", path);
             fixes = rustfix_crate(&lock_addr, rustc.as_ref(), path, &args)?;
         }
@@ -205,9 +205,11 @@ pub fn fix_maybe_exec_rustc() -> CargoResult<bool> {
         // user's code with our changes. Back out everything and fall through
         // below to recompile again.
         if !output.status.success() {
-            for (path, file) in fixes.files.iter() {
-                fs::write(path, &file.original_code)
-                    .with_context(|_| format!("failed to write file `{}`", path))?;
+            if env::var_os(BROKEN_CODE_ENV).is_none() {
+                for (path, file) in fixes.files.iter() {
+                    fs::write(path, &file.original_code)
+                        .with_context(|_| format!("failed to write file `{}`", path))?;
+                }
             }
             log_failed_fix(&output.stderr)?;
         }
@@ -503,6 +505,7 @@ struct FixArgs {
     idioms: bool,
     enabled_edition: Option<String>,
     other: Vec<OsString>,
+    primary_package: bool,
 }
 
 enum PrepareFor {
@@ -543,6 +546,7 @@ impl FixArgs {
             ret.prepare_for_edition = PrepareFor::Next;
         }
         ret.idioms = env::var(IDIOMS_ENV).is_ok();
+        ret.primary_package = env::var("CARGO_PRIMARY_PACKAGE").is_ok();
         ret
     }
 
@@ -554,12 +558,14 @@ impl FixArgs {
             .arg("--cap-lints=warn");
         if let Some(edition) = &self.enabled_edition {
             cmd.arg("--edition").arg(edition);
-            if self.idioms {
+            if self.idioms && self.primary_package {
                 if edition == "2018" { cmd.arg("-Wrust-2018-idioms"); }
             }
         }
-        if let Some(edition) = self.prepare_for_edition_resolve() {
-            cmd.arg("-W").arg(format!("rust-{}-compatibility", edition));
+        if self.primary_package {
+            if let Some(edition) = self.prepare_for_edition_resolve() {
+                cmd.arg("-W").arg(format!("rust-{}-compatibility", edition));
+            }
         }
     }
 

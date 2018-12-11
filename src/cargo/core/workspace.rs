@@ -13,7 +13,7 @@ use core::{Dependency, PackageIdSpec};
 use core::{EitherManifest, Package, SourceId, VirtualManifest};
 use ops;
 use sources::PathSource;
-use util::errors::{CargoResult, CargoResultExt};
+use util::errors::{CargoResult, CargoResultExt, ManifestError};
 use util::paths;
 use util::toml::read_manifest;
 use util::{Config, Filesystem};
@@ -389,9 +389,9 @@ impl<'cfg> Workspace<'cfg> {
             }
 
             // Don't walk across `CARGO_HOME` when we're looking for the
-            // workspace root. Sometimes a project will be organized with
+            // workspace root. Sometimes a package will be organized with
             // `CARGO_HOME` pointing inside of the workspace root or in the
-            // current project, but we don't want to mistakenly try to put
+            // current package, but we don't want to mistakenly try to put
             // crates.io crates into the workspace by accident.
             if self.config.home() == path {
                 break;
@@ -508,7 +508,8 @@ impl<'cfg> Workspace<'cfg> {
                 .collect::<Vec<_>>()
         };
         for candidate in candidates {
-            self.find_path_deps(&candidate, root_manifest, true)?;
+            self.find_path_deps(&candidate, root_manifest, true)
+                .map_err(|err| ManifestError::new(err, manifest_path.clone()))?;
         }
         Ok(())
     }

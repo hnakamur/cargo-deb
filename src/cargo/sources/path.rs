@@ -9,6 +9,7 @@ use ignore::Match;
 use ignore::gitignore::GitignoreBuilder;
 
 use core::{Dependency, Package, PackageId, Source, SourceId, Summary};
+use core::source::MaybePackage;
 use ops;
 use util::{self, internal, CargoResult};
 use util::paths;
@@ -540,16 +541,28 @@ impl<'cfg> Source for PathSource<'cfg> {
         Ok(())
     }
 
-    fn download(&mut self, id: &PackageId) -> CargoResult<Package> {
+    fn download(&mut self, id: &PackageId) -> CargoResult<MaybePackage> {
         trace!("getting packages; id={}", id);
 
         let pkg = self.packages.iter().find(|pkg| pkg.package_id() == id);
         pkg.cloned()
+            .map(MaybePackage::Ready)
             .ok_or_else(|| internal(format!("failed to find {} in path source", id)))
+    }
+
+    fn finish_download(&mut self, _id: &PackageId, _data: Vec<u8>) -> CargoResult<Package> {
+        panic!("no download should have started")
     }
 
     fn fingerprint(&self, pkg: &Package) -> CargoResult<String> {
         let (max, max_path) = self.last_modified_file(pkg)?;
         Ok(format!("{} ({})", max, max_path.display()))
+    }
+
+    fn describe(&self) -> String {
+        match self.source_id.url().to_file_path() {
+            Ok(path) => path.display().to_string(),
+            Err(_) => self.source_id.to_string(),
+        }
     }
 }

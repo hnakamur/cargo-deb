@@ -46,6 +46,7 @@ pub use iter::{Memchr, Memchr2, Memchr3};
 #[cfg(all(
     feature = "libc",
     not(target_arch = "wasm32"),
+    not(target_env = "sgx"),
 ))]
 mod c;
 #[allow(dead_code)]
@@ -118,7 +119,7 @@ pub fn memrchr3_iter(
 ///
 /// While this is operationally the same as something like
 /// `haystack.iter().position(|&b| b == needle)`, `memchr` will use a highly
-/// optimized routine that can be up to an order of magnitude master in some
+/// optimized routine that can be up to an order of magnitude faster in some
 /// cases.
 ///
 /// # Example
@@ -143,6 +144,7 @@ pub fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
             feature = "libc",
             not(target_arch = "wasm32"),
             not(target_arch = "windows"),
+            not(target_env = "sgx"),
         ))] {
             #[inline(always)]
             fn imp(n1: u8, haystack: &[u8]) -> Option<usize> {
@@ -246,6 +248,7 @@ pub fn memrchr(needle: u8, haystack: &[u8]) -> Option<usize> {
             target_os = "linux",
             not(target_arch = "wasm32"),
             not(target_arch = "windows"),
+            not(target_env = "sgx"),
         ))] {
             #[inline(always)]
             fn imp(n1: u8, haystack: &[u8]) -> Option<usize> {

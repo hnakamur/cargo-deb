@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use core::compiler::{BuildConfig, BuildContext, CompileMode, Context, Kind, Unit};
-use core::profiles::ProfileFor;
+use core::profiles::UnitFor;
 use core::Workspace;
 use ops;
 use util::errors::{CargoResult, CargoResultExt};
@@ -22,7 +22,7 @@ pub struct CleanOptions<'a> {
     pub doc: bool,
 }
 
-/// Cleans the project from build artifacts.
+/// Cleans the package's build artifacts.
 pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
     let target_dir = ws.target_dir();
     let config = ws.config();
@@ -52,18 +52,18 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
     for spec in opts.spec.iter() {
         // Translate the spec to a Package
         let pkgid = resolve.query(spec)?;
-        let pkg = packages.get(pkgid)?;
+        let pkg = packages.get_one(pkgid)?;
 
         // Generate all relevant `Unit` targets for this package
         for target in pkg.targets() {
             for kind in [Kind::Host, Kind::Target].iter() {
                 for mode in CompileMode::all_modes() {
-                    for profile_for in ProfileFor::all_values() {
+                    for unit_for in UnitFor::all_values() {
                         let profile = if mode.is_run_custom_build() {
                             profiles.get_profile_run_custom_build(&profiles.get_profile(
                                 pkg.package_id(),
                                 ws.is_member(pkg),
-                                *profile_for,
+                                *unit_for,
                                 CompileMode::Build,
                                 opts.release,
                             ))
@@ -71,7 +71,7 @@ pub fn clean(ws: &Workspace, opts: &CleanOptions) -> CargoResult<()> {
                             profiles.get_profile(
                                 pkg.package_id(),
                                 ws.is_member(pkg),
-                                *profile_for,
+                                *unit_for,
                                 *mode,
                                 opts.release,
                             )

@@ -15,12 +15,14 @@
 #![cfg_attr(feature = "cargo-clippy", allow(wrong_self_convention))]   // perhaps Rc should be special cased in Clippy?
 
 extern crate atty;
+extern crate bytesize;
 extern crate clap;
 #[cfg(target_os = "macos")]
 extern crate core_foundation;
 extern crate crates_io as registry;
 extern crate crossbeam_utils;
 extern crate curl;
+extern crate curl_sys;
 #[macro_use]
 extern crate failure;
 extern crate filetime;
@@ -214,7 +216,7 @@ pub fn version() -> VersionInfo {
     // There are two versions at play here:
     //   - version of cargo-the-binary, which you see when you type `cargo --version`
     //   - version of cargo-the-library, which you download from crates.io for use
-    //     in your projects.
+    //     in your packages.
     //
     // We want to make the `binary` version the same as the corresponding Rust/rustc release.
     // At the same time, we want to keep the library version at `0.x`, because Cargo as

@@ -137,6 +137,8 @@ pub mod git;
 pub mod paths;
 pub mod publish;
 pub mod registry;
+#[macro_use]
+pub mod resolver;
 
 /*
  *
@@ -1389,6 +1391,7 @@ fn substitute_macros(input: &str) -> String {
         ("[DOCTEST]", "   Doc-tests"),
         ("[PACKAGING]", "   Packaging"),
         ("[DOWNLOADING]", " Downloading"),
+        ("[DOWNLOADED]", "  Downloaded"),
         ("[UPLOADING]", "   Uploading"),
         ("[VERIFYING]", "   Verifying"),
         ("[ARCHIVING]", "   Archiving"),

@@ -1,8 +1,0 @@
---- Cargo.toml	2018-08-03 01:58:48.002962262 -0700
-+++ Cargo.toml	2018-08-03 01:58:54.275006248 -0700
-@@ -61,4 +61,4 @@
- [target."cfg(unix)".dependencies.libc]
- version = "0.2"
- [target."cfg(windows)".dependencies.rand]
--version = "0.4"
-+version = "< 0.6, >= 0.4"

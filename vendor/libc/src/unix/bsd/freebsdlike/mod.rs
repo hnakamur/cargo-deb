@@ -669,7 +669,8 @@ pub const IPV6_LEAVE_GROUP: ::c_int = 13;
 pub const IPV6_RECVPKTINFO: ::c_int = 36;
 pub const IPV6_PKTINFO: ::c_int = 46;
 
-pub const TCP_NODELAY:   ::c_int = 1;
+pub const TCP_NOPUSH:    ::c_int = 4;
+pub const TCP_NOOPT:     ::c_int = 8;
 pub const TCP_KEEPIDLE:  ::c_int = 256;
 pub const TCP_KEEPINTVL: ::c_int = 512;
 pub const TCP_KEEPCNT:   ::c_int = 1024;
@@ -1015,6 +1016,8 @@ pub const SF_ARCHIVED:      ::c_ulong = 0x00010000;
 pub const SF_IMMUTABLE:     ::c_ulong = 0x00020000;
 pub const SF_APPEND:        ::c_ulong = 0x00040000;
 pub const SF_NOUNLINK:      ::c_ulong = 0x00100000;
+
+pub const TIMER_ABSTIME: ::c_int = 1;
 
 f! {
     pub fn WIFCONTINUED(status: ::c_int) -> bool {

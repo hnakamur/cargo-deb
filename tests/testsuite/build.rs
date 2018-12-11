@@ -438,6 +438,36 @@ Caused by:
 }
 
 #[test]
+fn cargo_compile_with_invalid_non_numeric_dep_version() {
+    let p = project()
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+
+            [dependencies]
+            crossbeam = "y"
+        "#,
+        ).build();
+
+    p.cargo("build")
+        .with_status(101)
+        .with_stderr(
+            "\
+[ERROR] failed to parse manifest at `[CWD]/Cargo.toml`
+
+Caused by:
+  failed to parse the version requirement `y` for dependency `crossbeam`
+
+Caused by:
+  the given version requirement is invalid
+",
+        ).run();
+}
+
+#[test]
 fn cargo_compile_without_manifest() {
     let p = project().no_manifest().build();
 
@@ -1338,6 +1368,7 @@ fn crate_env_vars() {
         version = "0.5.1-alpha.1"
         description = "This is foo"
         homepage = "http://example.com"
+        repository = "http://example.com/repo.git"
         authors = ["wycats@example.com"]
         "#,
         ).file(
@@ -1354,6 +1385,7 @@ fn crate_env_vars() {
             static CARGO_MANIFEST_DIR: &'static str = env!("CARGO_MANIFEST_DIR");
             static PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
             static HOMEPAGE: &'static str = env!("CARGO_PKG_HOMEPAGE");
+            static REPOSITORY: &'static str = env!("CARGO_PKG_REPOSITORY");
             static DESCRIPTION: &'static str = env!("CARGO_PKG_DESCRIPTION");
 
             fn main() {
@@ -1364,6 +1396,7 @@ fn crate_env_vars() {
                  println!("{}", s);
                  assert_eq!("foo", PKG_NAME);
                  assert_eq!("http://example.com", HOMEPAGE);
+                 assert_eq!("http://example.com/repo.git", REPOSITORY);
                  assert_eq!("This is foo", DESCRIPTION);
                 let s = format!("{}.{}.{}-{}", VERSION_MAJOR,
                                 VERSION_MINOR, VERSION_PATCH, VERSION_PRE);
@@ -3569,11 +3602,12 @@ fn build_all_member_dependency_same_name() {
 
     p.cargo("build --all")
         .with_stderr(
-            "[..] Updating `[..]` index\n\
-             [..] Downloading a v0.1.0 ([..])\n\
-             [..] Compiling a v0.1.0\n\
-             [..] Compiling a v0.1.0 ([..])\n\
-             [..] Finished dev [unoptimized + debuginfo] target(s) in [..]\n",
+            "[UPDATING] `[..]` index\n\
+             [DOWNLOADING] crates ...\n\
+             [DOWNLOADED] a v0.1.0 ([..])\n\
+             [COMPILING] a v0.1.0\n\
+             [COMPILING] a v0.1.0 ([..])\n\
+             [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]\n",
         ).run();
 }
 
@@ -3938,10 +3972,6 @@ fn inferred_benchmarks() {
 
 #[test]
 fn target_edition() {
-    if !is_nightly() {
-        // --edition is nightly-only
-        return;
-    }
     let p = project()
         .file(
             "Cargo.toml",
@@ -3957,6 +3987,7 @@ fn target_edition() {
         .build();
 
     p.cargo("build -v")
+        .without_status() // passes on nightly, fails on stable, b/c --edition is nightly-only
         .with_stderr_contains(
             "\
 [COMPILING] foo v0.0.1 ([..])

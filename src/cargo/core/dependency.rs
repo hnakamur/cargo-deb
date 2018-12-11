@@ -28,7 +28,7 @@ struct Inner {
     specified_req: bool,
     kind: Kind,
     only_match_name: bool,
-    rename: Option<InternedString>,
+    explicit_name_in_toml: Option<InternedString>,
 
     optional: bool,
     default_features: bool,
@@ -73,7 +73,7 @@ impl ser::Serialize for Dependency {
             uses_default_features: self.uses_default_features(),
             features: self.features(),
             target: self.platform(),
-            rename: self.rename().map(|s| s.as_str()),
+            rename: self.explicit_name_in_toml().map(|s| s.as_str()),
         }.serialize(s)
     }
 }
@@ -86,19 +86,18 @@ pub enum Kind {
 }
 
 fn parse_req_with_deprecated(
+    name: &str,
     req: &str,
     extra: Option<(&PackageId, &Config)>,
 ) -> CargoResult<VersionReq> {
     match VersionReq::parse(req) {
-        Err(e) => {
+        Err(ReqParseError::DeprecatedVersionRequirement(requirement)) => {
             let (inside, config) = match extra {
                 Some(pair) => pair,
-                None => return Err(e.into()),
+                None => return Err(ReqParseError::DeprecatedVersionRequirement(requirement).into()),
             };
-            match e {
-                ReqParseError::DeprecatedVersionRequirement(requirement) => {
-                    let msg = format!(
-                        "\
+            let msg = format!(
+                "\
 parsed version requirement `{}` is no longer valid
 
 Previous versions of Cargo accepted this malformed requirement,
@@ -109,18 +108,25 @@ This will soon become a hard error, so it's either recommended to
 update to a fixed version or contact the upstream maintainer about
 this warning.
 ",
-                        req,
-                        inside.name(),
-                        inside.version(),
-                        requirement
-                    );
-                    config.shell().warn(&msg)?;
+                req,
+                inside.name(),
+                inside.version(),
+                requirement
+            );
+            config.shell().warn(&msg)?;
 
-                    Ok(requirement)
-                }
-                e => Err(e.into()),
-            }
-        }
+            Ok(requirement)
+        },
+        Err(e) => {
+            let err: CargoResult<VersionReq> = Err(e.into());
+            let v: VersionReq = err.chain_err(|| {
+                format!(
+                    "failed to parse the version requirement `{}` for dependency `{}`",
+                    req, name
+                )
+            })?;
+            Ok(v)
+        },
         Ok(v) => Ok(v),
     }
 }
@@ -149,7 +155,7 @@ impl Dependency {
     ) -> CargoResult<Dependency> {
         let arg = Some((inside, config));
         let (specified_req, version_req) = match version {
-            Some(v) => (true, parse_req_with_deprecated(v, arg)?),
+            Some(v) => (true, parse_req_with_deprecated(name, v, arg)?),
             None => (false, VersionReq::any()),
         };
 
@@ -170,7 +176,7 @@ impl Dependency {
         source_id: &SourceId,
     ) -> CargoResult<Dependency> {
         let (specified_req, version_req) = match version {
-            Some(v) => (true, parse_req_with_deprecated(v, None)?),
+            Some(v) => (true, parse_req_with_deprecated(name, v, None)?),
             None => (false, VersionReq::any()),
         };
 
@@ -199,7 +205,7 @@ impl Dependency {
                 default_features: true,
                 specified_req: false,
                 platform: None,
-                rename: None,
+                explicit_name_in_toml: None,
             }),
         }
     }
@@ -229,7 +235,7 @@ impl Dependency {
     /// foo = { version = "0.1", package = 'bar' }
     /// ```
     pub fn name_in_toml(&self) -> InternedString {
-        self.rename().unwrap_or(self.inner.name)
+        self.explicit_name_in_toml().unwrap_or(self.inner.name)
     }
 
     /// The name of the package that this `Dependency` depends on.
@@ -285,8 +291,8 @@ impl Dependency {
     ///
     /// If the `package` key is used in `Cargo.toml` then this returns the same
     /// value as `name_in_toml`.
-    pub fn rename(&self) -> Option<InternedString> {
-        self.inner.rename
+    pub fn explicit_name_in_toml(&self) -> Option<InternedString> {
+        self.inner.explicit_name_in_toml
     }
 
     pub fn set_kind(&mut self, kind: Kind) -> &mut Dependency {
@@ -330,8 +336,8 @@ impl Dependency {
         self
     }
 
-    pub fn set_rename(&mut self, rename: &str) -> &mut Dependency {
-        Rc::make_mut(&mut self.inner).rename = Some(InternedString::new(rename));
+    pub fn set_explicit_name_in_toml(&mut self, name: &str) -> &mut Dependency {
+        Rc::make_mut(&mut self.inner).explicit_name_in_toml = Some(InternedString::new(name));
         self
     }
 

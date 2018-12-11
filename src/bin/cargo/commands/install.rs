@@ -34,6 +34,7 @@ pub fn cli() -> App {
         )
         .arg_target_triple("Build for the target triple")
         .arg(opt("root", "Directory to install packages into").value_name("DIR"))
+        .arg(opt("registry", "Registry to use").value_name("REGISTRY"))
         .after_help(
             "\
 This command manages Cargo's local set of installed binary crates. Only packages
@@ -74,11 +75,10 @@ continuous integration systems.",
 }
 
 pub fn exec(config: &mut Config, args: &ArgMatches) -> CliResult {
-    let mut compile_opts = args.compile_options(config, CompileMode::Build)?;
+    let registry = args.registry(config)?;
 
-    // for `cargo-install` we want to use what the user specified via `--target` and ignore what's
-    // in `.cargo/config` and what the environment says
-    compile_opts.build_config.requested_target = args.target();
+    config.reload_rooted_at_cargo_home()?;
+    let mut compile_opts = args.compile_options(config, CompileMode::Build)?;
 
     compile_opts.build_config.release = !args.is_present("debug");
 
@@ -105,6 +105,8 @@ pub fn exec(config: &mut Config, args: &ArgMatches) -> CliResult {
     } else if krates.is_empty() {
         from_cwd = true;
         SourceId::for_path(config.cwd())?
+    } else if let Some(registry) = registry {
+        SourceId::alt_registry(config, &registry)?
     } else {
         SourceId::crates_io(config)?
     };

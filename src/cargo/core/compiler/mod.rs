@@ -118,7 +118,7 @@ impl Executor for DefaultExecutor {
         _mode: CompileMode,
         state: &job_queue::JobState<'_>,
     ) -> CargoResult<()> {
-        state.capture_output(&cmd, false).map(drop)
+        state.capture_output(&cmd, None, false).map(drop)
     }
 }
 
@@ -645,7 +645,7 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
                     false,
                 ).map(drop)
         } else {
-            state.capture_output(&rustdoc, false).map(drop)
+            state.capture_output(&rustdoc, None, false).map(drop)
         };
         exec_result.chain_err(|| format!("Could not document `{}`.", name))?;
         Ok(())
@@ -658,8 +658,8 @@ fn rustdoc<'a, 'cfg>(cx: &mut Context<'a, 'cfg>, unit: &Unit<'a>) -> CargoResult
 // actually invoke rustc.
 //
 // In general users don't expect `cargo build` to cause rebuilds if you change
-// directories. That could be if you just change directories in the project or
-// if you literally move the whole project wholesale to a new directory. As a
+// directories. That could be if you just change directories in the package or
+// if you literally move the whole package wholesale to a new directory. As a
 // result we mostly don't factor in `cwd` to this calculation. Instead we try to
 // track the workspace as much as possible and we update the current directory
 // of rustc/rustdoc where appropriate.
@@ -765,20 +765,8 @@ fn build_base_args<'a, 'cfg>(
         cmd.arg("-C").arg(&format!("opt-level={}", opt_level));
     }
 
-    // If a panic mode was configured *and* we're not ever going to be used in a
-    // plugin, then we can compile with that panic mode.
-    //
-    // If we're used in a plugin then we'll eventually be linked to libsyntax
-    // most likely which isn't compiled with a custom panic mode, so we'll just
-    // get an error if we actually compile with that. This fixes `panic=abort`
-    // crates which have plugin dependencies, but unfortunately means that
-    // dependencies shared between the main application and plugins must be
-    // compiled without `panic=abort`. This isn't so bad, though, as the main
-    // application will still be compiled with `panic=abort`.
     if let Some(panic) = panic.as_ref() {
-        if !cx.used_in_plugin.contains(unit) {
-            cmd.arg("-C").arg(format!("panic={}", panic));
-        }
+        cmd.arg("-C").arg(format!("panic={}", panic));
     }
 
     // Disable LTO for host builds as prefer_dynamic and it are mutually

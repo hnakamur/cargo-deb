@@ -12,6 +12,8 @@ use toml;
 
 use core::{Dependency, Edition, Package, PackageIdSpec, Source, SourceId};
 use core::{PackageId, Workspace};
+use core::source::SourceMap;
+use core::package::PackageSet;
 use core::compiler::{DefaultExecutor, Executor};
 use ops::{self, CompileFilter};
 use sources::{GitSource, PathSource, SourceConfigMap};
@@ -167,7 +169,7 @@ fn install_one(
             krate,
             vers,
             config,
-            is_first_install,
+            true,
             &mut |git| git.read_packages(),
         )?
     } else if source_id.is_path() {
@@ -227,13 +229,13 @@ fn install_one(
         match pkg.manifest().edition() {
             Edition::Edition2015 => config.shell().warn(
                 "Using `cargo install` to install the binaries for the \
-                 project in current working directory is deprecated, \
+                 package in current working directory is deprecated, \
                  use `cargo install --path .` instead. \
                  Use `cargo build` if you want to simply build the package.",
             )?,
             Edition::Edition2018 => bail!(
                 "Using `cargo install` to install the binaries for the \
-                 project in current working directory is no longer supported, \
+                 package in current working directory is no longer supported, \
                  use `cargo install --path .` instead. \
                  Use `cargo build` if you want to simply build the package."
             ),
@@ -499,22 +501,28 @@ where
                 source.source_id(),
             )?;
             let deps = source.query_vec(&dep)?;
-            match deps.iter().map(|p| p.package_id()).max() {
-                Some(pkgid) => {
-                    let pkg = source.download(pkgid)?;
-                    Ok((pkg, Box::new(source)))
-                }
+            let pkgid = match deps.iter().map(|p| p.package_id()).max() {
+                Some(pkgid) => pkgid,
                 None => {
                     let vers_info = vers.map(|v| format!(" with version `{}`", v))
                         .unwrap_or_default();
-                    Err(format_err!(
+                    bail!(
                         "could not find `{}` in {}{}",
                         name,
                         source.source_id(),
                         vers_info
-                    ))
+                    )
                 }
-            }
+            };
+
+            let pkg = {
+                let mut map = SourceMap::new();
+                map.insert(Box::new(&mut source));
+                PackageSet::new(&[pkgid.clone()], map, config)?
+                    .get_one(&pkgid)?
+                    .clone()
+            };
+            Ok((pkg, Box::new(source)))
         }
         None => {
             let candidates = list_all(&mut source)?;

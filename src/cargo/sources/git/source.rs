@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use url::Url;
 
-use core::source::{Source, SourceId};
+use core::source::{Source, SourceId, MaybePackage};
 use core::GitReference;
 use core::{Dependency, Package, PackageId, Summary};
 use util::Config;
@@ -210,7 +210,7 @@ impl<'cfg> Source for GitSource<'cfg> {
         self.path_source.as_mut().unwrap().update()
     }
 
-    fn download(&mut self, id: &PackageId) -> CargoResult<Package> {
+    fn download(&mut self, id: &PackageId) -> CargoResult<MaybePackage> {
         trace!(
             "getting packages for package id `{}` from `{:?}`",
             id,
@@ -222,8 +222,16 @@ impl<'cfg> Source for GitSource<'cfg> {
             .download(id)
     }
 
+    fn finish_download(&mut self, _id: &PackageId, _data: Vec<u8>) -> CargoResult<Package> {
+        panic!("no download should have started")
+    }
+
     fn fingerprint(&self, _pkg: &Package) -> CargoResult<String> {
         Ok(self.rev.as_ref().unwrap().to_string())
+    }
+
+    fn describe(&self) -> String {
+        format!("git repository {}", self.source_id)
     }
 }
 
