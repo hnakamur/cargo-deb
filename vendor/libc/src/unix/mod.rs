@@ -347,10 +347,6 @@ cfg_if! {
         #[link(name = "root")]
         #[link(name = "network")]
         extern {}
-    } else if #[cfg(target_os = "fuchsia")] {
-        #[link(name = "c")]
-        #[link(name = "fdio")]
-        extern {}
     } else if #[cfg(target_env = "newlib")] {
         #[link(name = "c")]
         #[link(name = "m")]
@@ -476,6 +472,9 @@ extern {
     pub fn strdup(cs: *const c_char) -> *mut c_char;
     pub fn strpbrk(cs: *const c_char, ct: *const c_char) -> *mut c_char;
     pub fn strstr(cs: *const c_char, ct: *const c_char) -> *mut c_char;
+    pub fn strcasecmp(s1: *const c_char, s2: *const c_char) -> c_int;
+    pub fn strncasecmp(s1: *const c_char, s2: *const c_char,
+                       n: size_t) -> c_int;
     pub fn strlen(cs: *const c_char) -> size_t;
     pub fn strnlen(cs: *const c_char, maxlen: size_t) -> size_t;
     #[cfg_attr(
@@ -712,6 +711,7 @@ extern {
                 -> ::ssize_t;
     pub fn rmdir(path: *const c_char) -> ::c_int;
     pub fn seteuid(uid: uid_t) -> ::c_int;
+    pub fn setegid(gid: gid_t) -> ::c_int;
     pub fn setgid(gid: gid_t) -> ::c_int;
     pub fn setpgid(pid: pid_t, pgid: pid_t) -> ::c_int;
     pub fn setsid() -> pid_t;
@@ -1108,6 +1108,10 @@ extern {
     pub fn posix_openpt(flags: ::c_int) -> ::c_int;
     pub fn ptsname(fd: ::c_int) -> *mut ::c_char;
     pub fn unlockpt(fd: ::c_int) -> ::c_int;
+
+    pub fn strcasestr(cs: *const c_char, ct: *const c_char) -> *mut c_char;
+    pub fn getline (lineptr: *mut *mut c_char, n: *mut size_t,
+        stream: *mut FILE) -> ssize_t;
 }
 
 cfg_if! {
@@ -1119,8 +1123,7 @@ cfg_if! {
         pub use self::newlib::*;
     } else if #[cfg(any(target_os = "linux",
                         target_os = "android",
-                        target_os = "emscripten",
-                        target_os = "fuchsia"))] {
+                        target_os = "emscripten"))] {
         mod notbsd;
         pub use self::notbsd::*;
     } else if #[cfg(any(target_os = "macos",

@@ -27,7 +27,8 @@ fn simple() {
         .with_stderr(
             "\
 [UPDATING] `[..]` index
-[DOWNLOADING] foo v0.0.1 (registry [..])
+[DOWNLOADING] crates ...
+[DOWNLOADED] foo v0.0.1 (registry [..])
 [INSTALLING] foo v0.0.1
 [COMPILING] foo v0.0.1
 [FINISHED] release [optimized] target(s) in [..]
@@ -53,12 +54,14 @@ fn multiple_pkgs() {
         .with_stderr(
             "\
 [UPDATING] `[..]` index
-[DOWNLOADING] foo v0.0.1 (registry `[CWD]/registry`)
+[DOWNLOADING] crates ...
+[DOWNLOADED] foo v0.0.1 (registry `[CWD]/registry`)
 [INSTALLING] foo v0.0.1
 [COMPILING] foo v0.0.1
 [FINISHED] release [optimized] target(s) in [..]
 [INSTALLING] [CWD]/home/.cargo/bin/foo[EXE]
-[DOWNLOADING] bar v0.0.2 (registry `[CWD]/registry`)
+[DOWNLOADING] crates ...
+[DOWNLOADED] bar v0.0.2 (registry `[CWD]/registry`)
 [INSTALLING] bar v0.0.2
 [COMPILING] bar v0.0.2
 [FINISHED] release [optimized] target(s) in [..]
@@ -97,7 +100,8 @@ fn pick_max_version() {
         .with_stderr(
             "\
 [UPDATING] `[..]` index
-[DOWNLOADING] foo v0.2.1 (registry [..])
+[DOWNLOADING] crates ...
+[DOWNLOADED] foo v0.2.1 (registry [..])
 [INSTALLING] foo v0.2.1
 [COMPILING] foo v0.2.1
 [FINISHED] release [optimized] target(s) in [..]
@@ -277,6 +281,22 @@ fn multiple_crates_select() {
         .arg("bar")
         .run();
     assert_has_installed_exe(cargo_home(), "bar");
+}
+
+#[test]
+fn multiple_crates_git_all() {
+    let p = git::repo(&paths::root().join("foo"))
+        .file("Cargo.toml", r#"\
+[workspace]
+members = ["bin1", "bin2"]
+"#)
+        .file("bin1/Cargo.toml", &basic_manifest("bin1", "0.1.0"))
+        .file("bin2/Cargo.toml", &basic_manifest("bin2", "0.1.0"))
+        .file("bin1/src/main.rs", r#"fn main() { println!("Hello, world!"); }"#)
+        .file("bin2/src/main.rs", r#"fn main() { println!("Hello, world!"); }"#)
+        .build();
+
+    cargo_process(&format!("install --git {} bin1 bin2", p.url().to_string())).run();
 }
 
 #[test]
@@ -694,7 +714,7 @@ fn installs_from_cwd_by_default() {
     p.cargo("install")
         .with_stderr_contains(
             "warning: Using `cargo install` to install the binaries for the \
-             project in current working directory is deprecated, \
+             package in current working directory is deprecated, \
              use `cargo install --path .` instead. \
              Use `cargo build` if you want to simply build the package.",
         ).run();
@@ -728,7 +748,7 @@ fn installs_from_cwd_with_2018_warnings() {
         .with_status(101)
         .with_stderr_contains(
             "error: Using `cargo install` to install the binaries for the \
-             project in current working directory is no longer supported, \
+             package in current working directory is no longer supported, \
              use `cargo install --path .` instead. \
              Use `cargo build` if you want to simply build the package.",
         ).run();
@@ -1004,7 +1024,7 @@ fn vers_precise() {
     pkg("foo", "0.1.2");
 
     cargo_process("install foo --vers 0.1.1")
-        .with_stderr_contains("[DOWNLOADING] foo v0.1.1 (registry [..])")
+        .with_stderr_contains("[DOWNLOADED] foo v0.1.1 (registry [..])")
         .run();
 }
 
@@ -1014,7 +1034,7 @@ fn version_too() {
     pkg("foo", "0.1.2");
 
     cargo_process("install foo --version 0.1.1")
-        .with_stderr_contains("[DOWNLOADING] foo v0.1.1 (registry [..])")
+        .with_stderr_contains("[DOWNLOADED] foo v0.1.1 (registry [..])")
         .run();
 }
 
@@ -1236,20 +1256,39 @@ warning: be sure to add `[..]` to your PATH to be able to run the installed bina
 }
 
 #[test]
-fn install_ignores_cargo_config() {
+fn install_ignores_local_cargo_config() {
     pkg("bar", "0.0.1");
 
     let p = project()
         .file(
             ".cargo/config",
             r#"
-            [build]
-            target = "non-existing-target"
-        "#,
+                [build]
+                target = "non-existing-target"
+            "#,
         )
         .file("src/main.rs", "fn main() {}")
         .build();
 
     p.cargo("install bar").run();
     assert_has_installed_exe(cargo_home(), "bar");
+}
+
+#[test]
+fn install_global_cargo_config() {
+    pkg("bar", "0.0.1");
+
+    let config = cargo_home().join("config");
+    let mut toml = fs::read_to_string(&config).unwrap_or(String::new());
+
+    toml.push_str(r#"
+        [build]
+        target = 'nonexistent'
+    "#);
+    fs::write(&config, toml).unwrap();
+
+    cargo_process("install bar")
+        .with_status(101)
+        .with_stderr_contains("[..]--target nonexistent[..]")
+        .run();
 }

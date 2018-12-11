@@ -6,6 +6,7 @@ use cargo::CargoResult;
 use cargo::core::Workspace;
 use cargo::core::compiler::{BuildConfig, MessageFormat};
 use cargo::ops::{CompileFilter, CompileOptions, NewOptions, Packages, VersionControl};
+use cargo::sources::CRATES_IO_REGISTRY;
 use cargo::util::paths;
 use cargo::util::important_paths::find_root_manifest_for_wd;
 
@@ -150,6 +151,11 @@ pub trait AppExt: Sized {
         )
             ._arg(opt("bin", "Use a binary (application) template [default]"))
             ._arg(opt("lib", "Use a library template"))
+            ._arg(
+                opt("edition", "Edition to set for the crate generated")
+                    .possible_values(&["2015", "2018"])
+                    .value_name("YEAR")
+            )
             ._arg(
                 opt(
                     "name",
@@ -341,6 +347,8 @@ pub trait ArgMatchesExt {
             self._is_present("lib"),
             self.value_of_path("path", config).unwrap(),
             self._value_of("name").map(|s| s.to_string()),
+            self._value_of("edition").map(|s| s.to_string()),
+            self.registry(config)?,
         )
     }
 
@@ -353,9 +361,22 @@ pub trait ArgMatchesExt {
                          requires -Zunstable-options to use."
                     ));
                 }
-                Ok(Some(registry.to_string()))
+
+                if registry == CRATES_IO_REGISTRY {
+                    // If "crates.io" is specified then we just need to return None
+                    // as that will cause cargo to use crates.io. This is required
+                    // for the case where a default alterative registry is used
+                    // but the user wants to switch back to crates.io for a single
+                    // command.
+                    Ok(None)
+                }
+                else {
+                    Ok(Some(registry.to_string()))                    
+                }
             }
-            None => Ok(None),
+            None => {
+                config.default_registry()
+            }
         }
     }
 

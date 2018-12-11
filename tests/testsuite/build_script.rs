@@ -2707,7 +2707,8 @@ fn warnings_hidden_for_upstream() {
         .with_stderr(
             "\
 [UPDATING] `[..]` index
-[DOWNLOADING] bar v0.1.0 ([..])
+[DOWNLOADING] crates ...
+[DOWNLOADED] bar v0.1.0 ([..])
 [COMPILING] bar v0.1.0
 [RUNNING] `rustc [..]`
 [RUNNING] `[..]`
@@ -2761,7 +2762,8 @@ fn warnings_printed_on_vv() {
         .with_stderr(
             "\
 [UPDATING] `[..]` index
-[DOWNLOADING] bar v0.1.0 ([..])
+[DOWNLOADING] crates ...
+[DOWNLOADED] bar v0.1.0 ([..])
 [COMPILING] bar v0.1.0
 [RUNNING] `rustc [..]`
 [RUNNING] `[..]`
@@ -2801,13 +2803,13 @@ fn output_shows_on_vv() {
         ).build();
 
     p.cargo("build -vv")
-        .with_stdout("stdout")
+        .with_stdout("[foo 0.5.0] stdout")
         .with_stderr(
             "\
 [COMPILING] foo v0.5.0 ([..])
 [RUNNING] `rustc [..]`
 [RUNNING] `[..]`
-stderr
+[foo 0.5.0] stderr
 [RUNNING] `rustc [..]`
 [FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
 ",

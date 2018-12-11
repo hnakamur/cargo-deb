@@ -1,9 +1,0 @@
---- Cargo.toml	2017-07-06 23:45:07.000000000 +0000
-+++ Cargo.toml	2018-09-15 18:09:13.913086470 +0000
-@@ -37,6 +30,5 @@
- [features]
- bench_it = []
- default = []
--flame_it = ["flame", "flamer"]
- unstable = []
- with_serde = ["serde"]

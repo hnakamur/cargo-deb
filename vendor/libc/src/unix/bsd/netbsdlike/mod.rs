@@ -431,8 +431,6 @@ pub const IP_DROP_MEMBERSHIP: ::c_int = 13;
 pub const IPV6_RECVPKTINFO: ::c_int = 36;
 pub const IPV6_PKTINFO: ::c_int = 46;
 
-pub const TCP_NODELAY:    ::c_int = 0x01;
-
 pub const SOL_SOCKET: ::c_int = 0xffff;
 pub const SO_DEBUG: ::c_int = 0x01;
 pub const SO_ACCEPTCONN: ::c_int = 0x0002;
@@ -591,6 +589,8 @@ pub const SF_ARCHIVED:      ::c_ulong = 0x00010000;
 pub const SF_IMMUTABLE:     ::c_ulong = 0x00020000;
 pub const SF_APPEND:        ::c_ulong = 0x00040000;
 
+pub const TIMER_ABSTIME: ::c_int = 1;
+
 f! {
     pub fn WSTOPSIG(status: ::c_int) -> ::c_int {
         status >> 8
@@ -603,11 +603,6 @@ f! {
     pub fn WIFSTOPPED(status: ::c_int) -> bool {
         (status & 0o177) == 0o177
     }
-}
-
-extern {
-    pub fn chflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;
-    pub fn fchflags(fd: ::c_int, flags: ::c_ulong) -> ::c_int;
 }
 
 #[link(name = "util")]

@@ -4,9 +4,11 @@ Bug: https://github.com/alexcrichton/ssh2-rs/issues/88
 Forwarded: not-needed
 Last-Update: 2018-07-28
 
---- a/build.rs
-+++ b/build.rs
-@@ -21,19 +21,20 @@
+Index: libssh2-sys/build.rs
+===================================================================
+--- libssh2-sys.orig/build.rs
++++ libssh2-sys/build.rs
+@@ -17,19 +17,20 @@ fn main() {
      // The system copy of libssh2 is not used by default because it
      // can lead to having two copies of libssl loaded at once.
      // See https://github.com/alexcrichton/ssh2-rs/pull/88
@@ -35,5 +37,5 @@ Last-Update: 2018-07-28
 +    //         .status();
 +    // }
  
-     let mut cfg = cmake::Config::new("libssh2");
- 
+     let target = env::var("TARGET").unwrap();
+     let dst = PathBuf::from(env::var_os("OUT_DIR").unwrap());

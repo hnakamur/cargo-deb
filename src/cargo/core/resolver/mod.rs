@@ -47,7 +47,7 @@
 //! that we're implementing something that probably shouldn't be allocating all
 //! over the place.
 
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -58,24 +58,25 @@ use core::interning::InternedString;
 use core::PackageIdSpec;
 use core::{Dependency, PackageId, Registry, Summary};
 use util::config::Config;
-use util::errors::{CargoError, CargoResult};
-use util::lev_distance::lev_distance;
+use util::errors::CargoResult;
 use util::profile;
 
 use self::context::{Activations, Context};
 use self::types::{ActivateError, ActivateResult, Candidate, ConflictReason, DepsFrame, GraphNode};
-use self::types::{RcVecIter, RegistryQueryer};
+use self::types::{RcVecIter, RegistryQueryer, RemainingDeps, ResolverProgress};
 
 pub use self::encode::{EncodableDependency, EncodablePackageId, EncodableResolve};
 pub use self::encode::{Metadata, WorkspaceResolve};
-pub use self::resolve::{Deps, DepsNotReplaced, Resolve};
+pub use self::resolve::Resolve;
 pub use self::types::Method;
+pub use self::errors::ResolveError;
 
 mod conflict_cache;
 mod context;
 mod encode;
 mod resolve;
 mod types;
+mod errors;
 
 /// Builds the list of all packages required to build the first argument.
 ///
@@ -170,15 +171,8 @@ fn activate_deps_loop(
     summaries: &[(Summary, Method)],
     config: Option<&Config>,
 ) -> CargoResult<Context> {
-    // Note that a `BinaryHeap` is used for the remaining dependencies that need
-    // activation. This heap is sorted such that the "largest value" is the most
-    // constrained dependency, or the one with the least candidates.
-    //
-    // This helps us get through super constrained portions of the dependency
-    // graph quickly and hopefully lock down what later larger dependencies can
-    // use (those with more candidates).
     let mut backtrack_stack = Vec::new();
-    let mut remaining_deps = BinaryHeap::new();
+    let mut remaining_deps = RemainingDeps::new();
 
     // `past_conflicting_activations` is a cache of the reasons for each time we
     // backtrack.
@@ -200,11 +194,7 @@ fn activate_deps_loop(
         }
     }
 
-    let mut ticks = 0;
-    let start = Instant::now();
-    let time_to_print = Duration::from_millis(500);
-    let mut printed = false;
-    let mut deps_time = Duration::new(0, 0);
+    let mut printed = ResolverProgress::new();
 
     // Main resolution loop, this is the workhorse of the resolution algorithm.
     //
@@ -219,43 +209,14 @@ fn activate_deps_loop(
     // its own dependencies in turn. The `backtrack_stack` is a side table of
     // backtracking states where if we hit an error we can return to in order to
     // attempt to continue resolving.
-    while let Some(mut deps_frame) = remaining_deps.pop() {
-        // If we spend a lot of time here (we shouldn't in most cases) then give
-        // a bit of a visual indicator as to what we're doing. Only enable this
-        // when stderr is a tty (a human is likely to be watching) to ensure we
-        // get deterministic output otherwise when observed by tools.
-        //
-        // Also note that we hit this loop a lot, so it's fairly performance
-        // sensitive. As a result try to defer a possibly expensive operation
-        // like `Instant::now` by only checking every N iterations of this loop
-        // to amortize the cost of the current time lookup.
-        ticks += 1;
-        if let Some(config) = config {
-            if config.shell().is_err_tty()
-                && !printed
-                && ticks % 1000 == 0
-                && start.elapsed() - deps_time > time_to_print
-            {
-                printed = true;
-                config.shell().status("Resolving", "dependency graph...")?;
-            }
-        }
-
-        let just_here_for_the_error_messages = deps_frame.just_for_error_messages;
-
-        // Figure out what our next dependency to activate is, and if nothing is
-        // listed then we're entirely done with this frame (yay!) and we can
-        // move on to the next frame.
-        let frame = match deps_frame.remaining_siblings.next() {
-            Some(sibling) => {
-                let parent = Summary::clone(&deps_frame.parent);
-                remaining_deps.push(deps_frame);
-                (parent, sibling)
-            }
-            None => continue,
-        };
+    while let Some((just_here_for_the_error_messages, frame)) =
+        remaining_deps.pop_most_constrained()
+    {
         let (mut parent, (mut cur, (mut dep, candidates, mut features))) = frame;
-        assert!(!remaining_deps.is_empty());
+
+        // If we spend a lot of time here (we shouldn't in most cases) then give
+        // a bit of a visual indicator as to what we're doing.
+        printed.shell_status(config)?;
 
         trace!(
             "{}[{}]>{} {} candidates",
@@ -305,7 +266,12 @@ fn activate_deps_loop(
                 // It's our job here to backtrack, if possible, and find a
                 // different candidate to activate. If we can't find any
                 // candidates whatsoever then it's time to bail entirely.
-                trace!("{}[{}]>{} -- no candidates", parent.name(), cur, dep.package_name());
+                trace!(
+                    "{}[{}]>{} -- no candidates",
+                    parent.name(),
+                    cur,
+                    dep.package_name()
+                );
 
                 // Use our list of `conflicting_activations` to add to our
                 // global list of past conflicting activations, effectively
@@ -325,13 +291,18 @@ fn activate_deps_loop(
                     past_conflicting_activations.insert(&dep, &conflicting_activations);
                 }
 
-                match find_candidate(&mut backtrack_stack, &parent, &conflicting_activations) {
+                match find_candidate(
+                    &mut backtrack_stack,
+                    &parent,
+                    backtracked,
+                    &conflicting_activations,
+                ) {
                     Some((candidate, has_another, frame)) => {
                         // Reset all of our local variables used with the
                         // contents of `frame` to complete our backtrack.
                         cur = frame.cur;
-                        cx = frame.context_backup;
-                        remaining_deps = frame.deps_backup;
+                        cx = frame.context;
+                        remaining_deps = frame.remaining_deps;
                         remaining_candidates = frame.remaining_candidates;
                         parent = frame.parent;
                         dep = frame.dep;
@@ -342,7 +313,7 @@ fn activate_deps_loop(
                     }
                     None => {
                         debug!("no candidates found");
-                        Err(activation_error(
+                        Err(errors::activation_error(
                             &cx,
                             registry.registry,
                             &parent,
@@ -375,8 +346,8 @@ fn activate_deps_loop(
             let backtrack = if has_another {
                 Some(BacktrackFrame {
                     cur,
-                    context_backup: Context::clone(&cx),
-                    deps_backup: <BinaryHeap<DepsFrame>>::clone(&remaining_deps),
+                    context: Context::clone(&cx),
+                    remaining_deps: remaining_deps.clone(),
                     remaining_candidates: remaining_candidates.clone(),
                     parent: Summary::clone(&parent),
                     dep: Dependency::clone(&dep),
@@ -409,7 +380,7 @@ fn activate_deps_loop(
                 // frame in the end if it looks like it's not going to end well,
                 // so figure that out here.
                 Ok(Some((mut frame, dur))) => {
-                    deps_time += dur;
+                    printed.elapsed(dur);
 
                     // Our `frame` here is a new package with its own list of
                     // dependencies. Do a sanity check here of all those
@@ -432,8 +403,7 @@ fn activate_deps_loop(
                             .clone()
                             .filter_map(|(_, (ref new_dep, _, _))| {
                                 past_conflicting_activations.conflicting(&cx, new_dep)
-                            })
-                            .next()
+                            }).next()
                         {
                             // If one of our deps is known unresolvable
                             // then we will not succeed.
@@ -465,20 +435,15 @@ fn activate_deps_loop(
                         {
                             if let Some((other_parent, conflict)) = remaining_deps
                                 .iter()
-                                .flat_map(|other| other.flatten())
                                 // for deps related to us
-                                .filter(|&(_, ref other_dep)|
-                                        known_related_bad_deps.contains(other_dep))
-                                .filter_map(|(other_parent, other_dep)| {
+                                .filter(|&(_, ref other_dep)| {
+                                    known_related_bad_deps.contains(other_dep)
+                                }).filter_map(|(other_parent, other_dep)| {
                                     past_conflicting_activations
-                                        .find_conflicting(
-                                            &cx,
-                                            &other_dep,
-                                            |con| con.contains_key(&pid)
-                                        )
-                                        .map(|con| (other_parent, con))
-                                })
-                                .next()
+                                        .find_conflicting(&cx, &other_dep, |con| {
+                                            con.contains_key(&pid)
+                                        }).map(|con| (other_parent, con))
+                                }).next()
                             {
                                 let rel = conflict.get(&pid).unwrap().clone();
 
@@ -518,6 +483,7 @@ fn activate_deps_loop(
                             find_candidate(
                                 &mut backtrack_stack.clone(),
                                 &parent,
+                                backtracked,
                                 &conflicting_activations,
                             ).is_none()
                         }
@@ -590,7 +556,7 @@ fn activate_deps_loop(
             // for error messages anyway so we can live with a little
             // imprecision.
             if let Some(b) = backtrack {
-                cx = b.context_backup;
+                cx = b.context;
             }
         }
 
@@ -664,8 +630,8 @@ fn activate(
 #[derive(Clone)]
 struct BacktrackFrame {
     cur: usize,
-    context_backup: Context,
-    deps_backup: BinaryHeap<DepsFrame>,
+    context: Context,
+    remaining_deps: RemainingDeps,
     remaining_candidates: RemainingCandidates,
     parent: Summary,
     dep: Dependency,
@@ -809,12 +775,13 @@ fn compatible(a: &semver::Version, b: &semver::Version) -> bool {
 fn find_candidate(
     backtrack_stack: &mut Vec<BacktrackFrame>,
     parent: &Summary,
+    backtracked: bool,
     conflicting_activations: &HashMap<PackageId, ConflictReason>,
 ) -> Option<(Candidate, bool, BacktrackFrame)> {
     while let Some(mut frame) = backtrack_stack.pop() {
         let next = frame.remaining_candidates.next(
             &mut frame.conflicting_activations,
-            &frame.context_backup,
+            &frame.context,
             &frame.dep,
         );
         let (candidate, has_another) = match next {
@@ -830,220 +797,25 @@ fn find_candidate(
         // active in this back up we know that we're guaranteed to not actually
         // make any progress. As a result if we hit this condition we can
         // completely skip this backtrack frame and move on to the next.
-        if frame
-            .context_backup
-            .is_conflicting(Some(parent.package_id()), conflicting_activations)
-        {
-            continue;
+        if !backtracked {
+            if frame
+                .context
+                .is_conflicting(Some(parent.package_id()), conflicting_activations)
+            {
+                trace!(
+                    "{} = \"{}\" skip as not solving {}: {:?}",
+                    frame.dep.package_name(),
+                    frame.dep.version_req(),
+                    parent.package_id(),
+                    conflicting_activations
+                );
+                continue;
+            }
         }
 
         return Some((candidate, has_another, frame));
     }
     None
-}
-
-fn activation_error(
-    cx: &Context,
-    registry: &mut Registry,
-    parent: &Summary,
-    dep: &Dependency,
-    conflicting_activations: &HashMap<PackageId, ConflictReason>,
-    candidates: &[Candidate],
-    config: Option<&Config>,
-) -> CargoError {
-    let graph = cx.graph();
-    if !candidates.is_empty() {
-        let mut msg = format!("failed to select a version for `{}`.", dep.package_name());
-        msg.push_str("\n    ... required by ");
-        msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
-
-        msg.push_str("\nversions that meet the requirements `");
-        msg.push_str(&dep.version_req().to_string());
-        msg.push_str("` are: ");
-        msg.push_str(
-            &candidates
-                .iter()
-                .map(|v| v.summary.version())
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-
-        let mut conflicting_activations: Vec<_> = conflicting_activations.iter().collect();
-        conflicting_activations.sort_unstable();
-        let (links_errors, mut other_errors): (Vec<_>, Vec<_>) = conflicting_activations
-            .drain(..)
-            .rev()
-            .partition(|&(_, r)| r.is_links());
-
-        for &(p, r) in links_errors.iter() {
-            if let ConflictReason::Links(ref link) = *r {
-                msg.push_str("\n\nthe package `");
-                msg.push_str(&*dep.package_name());
-                msg.push_str("` links to the native library `");
-                msg.push_str(link);
-                msg.push_str("`, but it conflicts with a previous package which links to `");
-                msg.push_str(link);
-                msg.push_str("` as well:\n");
-            }
-            msg.push_str(&describe_path(&graph.path_to_top(p)));
-        }
-
-        let (features_errors, other_errors): (Vec<_>, Vec<_>) = other_errors
-            .drain(..)
-            .partition(|&(_, r)| r.is_missing_features());
-
-        for &(p, r) in features_errors.iter() {
-            if let ConflictReason::MissingFeatures(ref features) = *r {
-                msg.push_str("\n\nthe package `");
-                msg.push_str(&*p.name());
-                msg.push_str("` depends on `");
-                msg.push_str(&*dep.package_name());
-                msg.push_str("`, with features: `");
-                msg.push_str(features);
-                msg.push_str("` but `");
-                msg.push_str(&*dep.package_name());
-                msg.push_str("` does not have these features.\n");
-            }
-            // p == parent so the full path is redundant.
-        }
-
-        if !other_errors.is_empty() {
-            msg.push_str(
-                "\n\nall possible versions conflict with \
-                 previously selected packages.",
-            );
-        }
-
-        for &(p, _) in other_errors.iter() {
-            msg.push_str("\n\n  previously selected ");
-            msg.push_str(&describe_path(&graph.path_to_top(p)));
-        }
-
-        msg.push_str("\n\nfailed to select a version for `");
-        msg.push_str(&*dep.package_name());
-        msg.push_str("` which could resolve this conflict");
-
-        return format_err!("{}", msg);
-    }
-
-    // We didn't actually find any candidates, so we need to
-    // give an error message that nothing was found.
-    //
-    // Maybe the user mistyped the ver_req? Like `dep="2"` when `dep="0.2"`
-    // was meant. So we re-query the registry with `deb="*"` so we can
-    // list a few versions that were actually found.
-    let all_req = semver::VersionReq::parse("*").unwrap();
-    let mut new_dep = dep.clone();
-    new_dep.set_version_req(all_req);
-    let mut candidates = match registry.query_vec(&new_dep, false) {
-        Ok(candidates) => candidates,
-        Err(e) => return e,
-    };
-    candidates.sort_unstable_by(|a, b| b.version().cmp(a.version()));
-
-    let mut msg = if !candidates.is_empty() {
-        let versions = {
-            let mut versions = candidates
-                .iter()
-                .take(3)
-                .map(|cand| cand.version().to_string())
-                .collect::<Vec<_>>();
-
-            if candidates.len() > 3 {
-                versions.push("...".into());
-            }
-
-            versions.join(", ")
-        };
-
-        let mut msg = format!(
-            "no matching version `{}` found for package `{}`\n\
-             location searched: {}\n\
-             versions found: {}\n",
-            dep.version_req(),
-            dep.package_name(),
-            dep.source_id(),
-            versions
-        );
-        msg.push_str("required by ");
-        msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
-
-        // If we have a path dependency with a locked version, then this may
-        // indicate that we updated a sub-package and forgot to run `cargo
-        // update`. In this case try to print a helpful error!
-        if dep.source_id().is_path() && dep.version_req().to_string().starts_with('=') {
-            msg.push_str(
-                "\nconsider running `cargo update` to update \
-                 a path dependency's locked version",
-            );
-        }
-
-        msg
-    } else {
-        // Maybe the user mistyped the name? Like `dep-thing` when `Dep_Thing`
-        // was meant. So we try asking the registry for a `fuzzy` search for suggestions.
-        let mut candidates = Vec::new();
-        if let Err(e) = registry.query(&new_dep, &mut |s| candidates.push(s.name()), true) {
-            return e;
-        };
-        candidates.sort_unstable();
-        candidates.dedup();
-        let mut candidates: Vec<_> = candidates
-            .iter()
-            .map(|n| (lev_distance(&*new_dep.package_name(), &*n), n))
-            .filter(|&(d, _)| d < 4)
-            .collect();
-        candidates.sort_by_key(|o| o.0);
-        let mut msg = format!(
-            "no matching package named `{}` found\n\
-             location searched: {}\n",
-            dep.package_name(),
-            dep.source_id()
-        );
-        if !candidates.is_empty() {
-            let mut names = candidates
-                .iter()
-                .take(3)
-                .map(|c| c.1.as_str())
-                .collect::<Vec<_>>();
-
-            if candidates.len() > 3 {
-                names.push("...");
-            }
-
-            msg.push_str("did you mean: ");
-            msg.push_str(&names.join(", "));
-            msg.push_str("\n");
-        }
-        msg.push_str("required by ");
-        msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
-
-        msg
-    };
-
-    if let Some(config) = config {
-        if config.cli_unstable().offline {
-            msg.push_str(
-                "\nAs a reminder, you're using offline mode (-Z offline) \
-                 which can sometimes cause surprising resolution failures, \
-                 if this error is too confusing you may with to retry \
-                 without the offline flag.",
-            );
-        }
-    }
-
-    format_err!("{}", msg)
-}
-
-/// Returns String representation of dependency chain for a particular `pkgid`.
-fn describe_path(path: &[&PackageId]) -> String {
-    use std::fmt::Write;
-    let mut dep_path_desc = format!("package `{}`", path[0]);
-    for dep in path[1..].iter() {
-        write!(dep_path_desc, "\n    ... which is depended on by `{}`", dep).unwrap();
-    }
-    dep_path_desc
 }
 
 fn check_cycles(resolve: &Resolve, activations: &Activations) -> CargoResult<()> {
@@ -1076,7 +848,7 @@ fn check_cycles(resolve: &Resolve, activations: &Activations) -> CargoResult<()>
             bail!(
                 "cyclic package dependency: package `{}` depends on itself. Cycle:\n{}",
                 id,
-                describe_path(&resolve.path_to_top(id))
+                errors::describe_path(&resolve.path_to_top(id))
             );
         }
 
@@ -1126,7 +898,7 @@ fn check_duplicate_pkgs_in_lockfile(resolve: &Resolve) -> CargoResult<()> {
         if let Some(prev_pkg_id) = unique_pkg_ids.insert(encodable_pkd_id, pkg_id) {
             bail!(
                 "package collision in the lockfile: packages {} and {} are different, \
-                 but only one can be written to lockfile unambigiously",
+                 but only one can be written to lockfile unambiguously",
                 prev_pkg_id,
                 pkg_id
             )

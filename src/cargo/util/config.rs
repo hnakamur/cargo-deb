@@ -174,6 +174,16 @@ impl Config {
         self.home_path.join("registry").join("src")
     }
 
+    /// The default cargo registry (`alternative-registry`)
+    pub fn default_registry(&self) -> CargoResult<Option<String>> {
+        Ok(
+            match self.get_string("registry.default")? {
+                Some(registry) => Some(registry.val),
+                None => None,
+            }
+        )
+    }
+
     /// Get a reference to the shell, for e.g. writing error messages
     pub fn shell(&self) -> RefMut<Shell> {
         self.shell.borrow_mut()
@@ -279,6 +289,13 @@ impl Config {
             Ok(()) => Ok(()),
             Err(_) => bail!("could not fill values"),
         }
+    }
+
+    pub fn reload_rooted_at_cargo_home(&mut self) -> CargoResult<()> {
+        let home = self.home_path.clone().into_path_unlocked();
+        let values = self.load_values_from(&home)?;
+        self.values.replace(values);
+        Ok(())
     }
 
     pub fn cwd(&self) -> &Path {
@@ -611,9 +628,16 @@ impl Config {
 
     /// Loads configuration from the filesystem
     pub fn load_values(&self) -> CargoResult<HashMap<String, ConfigValue>> {
-        let mut cfg = CV::Table(HashMap::new(), PathBuf::from("."));
+        self.load_values_from(&self.cwd)
+    }
 
-        walk_tree(&self.cwd, |path| {
+    fn load_values_from(&self, path: &Path)
+        -> CargoResult<HashMap<String, ConfigValue>>
+    {
+        let mut cfg = CV::Table(HashMap::new(), PathBuf::from("."));
+        let home = self.home_path.clone().into_path_unlocked();
+
+        walk_tree(path, &home, |path| {
             let mut contents = String::new();
             let mut file = File::open(&path)?;
             file.read_to_string(&mut contents)
@@ -756,7 +780,8 @@ impl Config {
         {
             let mut http = http.borrow_mut();
             http.reset();
-            ops::configure_http_handle(self, &mut http)?;
+            let timeout = ops::configure_http_handle(self, &mut http)?;
+            timeout.configure(&mut http)?;
         }
         Ok(http)
     }
@@ -1535,7 +1560,7 @@ pub fn homedir(cwd: &Path) -> Option<PathBuf> {
     ::home::cargo_home_with_cwd(cwd).ok()
 }
 
-fn walk_tree<F>(pwd: &Path, mut walk: F) -> CargoResult<()>
+fn walk_tree<F>(pwd: &Path, home: &Path, mut walk: F) -> CargoResult<()>
 where
     F: FnMut(&Path) -> CargoResult<()>,
 {
@@ -1552,12 +1577,6 @@ where
     // Once we're done, also be sure to walk the home directory even if it's not
     // in our history to be sure we pick up that standard location for
     // information.
-    let home = homedir(pwd).ok_or_else(|| {
-        format_err!(
-            "Cargo couldn't find your home directory. \
-             This probably means that $HOME was not set."
-        )
-    })?;
     let config = home.join("config");
     if !stash.contains(&config) && fs::metadata(&config).is_ok() {
         walk(&config)?;

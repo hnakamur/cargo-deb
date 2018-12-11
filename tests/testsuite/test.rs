@@ -3101,3 +3101,124 @@ fn doctest_skip_staticlib() {
 [RUNNING] target/debug/deps/foo-[..]",
         ).run();
 }
+
+#[test]
+fn can_not_mix_doc_tests_and_regular_tests() {
+    let p = project()
+        .file("src/lib.rs", "\
+/// ```
+/// assert_eq!(1, 1)
+/// ```
+pub fn foo() -> u8 { 1 }
+
+#[cfg(test)] mod tests {
+    #[test] fn it_works() { assert_eq!(2 + 2, 4); }
+}
+")
+        .build();
+
+    p.cargo("test")
+        .with_stderr("\
+[COMPILING] foo v0.0.1 ([CWD])
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] target/debug/deps/foo-[..]
+[DOCTEST] foo
+")
+        .with_stdout("
+running 1 test
+test tests::it_works ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+
+running 1 test
+test src/lib.rs - foo (line 1) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+\n")
+        .run();
+
+    p.cargo("test --lib")
+        .with_stderr("\
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
+[RUNNING] target/debug/deps/foo-[..]\n")
+        .with_stdout("
+running 1 test
+test tests::it_works ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+\n")
+        .run();
+
+    p.cargo("test --doc")
+        .with_stderr("\
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
+[DOCTEST] foo
+")
+        .with_stdout("
+running 1 test
+test src/lib.rs - foo (line 1) ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+").run();
+
+    p.cargo("test --lib --doc")
+        .with_status(101)
+        .with_stderr("[ERROR] Can't mix --doc with other target selecting options\n")
+        .run();
+}
+
+#[test]
+fn test_all_targets_lib() {
+    let p = project().file("src/lib.rs", "").build();
+
+    p.cargo("test --all-targets")
+        .with_stderr(
+            "\
+[COMPILING] foo [..]
+[FINISHED] dev [..]
+[RUNNING] [..]foo[..]
+",
+        ).run();
+}
+
+
+#[test]
+fn test_dep_with_dev() {
+    Package::new("devdep", "0.1.0").publish();
+    let p = project()
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.0.1"
+
+            [dependencies]
+            bar = { path = "bar" }
+        "#,
+        )
+        .file("src/lib.rs", "")
+        .file(
+            "bar/Cargo.toml",
+            r#"
+            [package]
+            name = "bar"
+            version = "0.0.1"
+
+            [dev-dependencies]
+            devdep = "0.1"
+        "#,
+        )
+        .file("bar/src/lib.rs", "")
+        .build();
+
+    p.cargo("test -p bar")
+        .with_status(101)
+        .with_stderr(
+            "[ERROR] package `bar` cannot be tested because it requires dev-dependencies \
+             and is not a member of the workspace",
+        )
+        .run();
+}

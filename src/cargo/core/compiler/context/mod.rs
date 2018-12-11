@@ -31,8 +31,8 @@ use self::compilation_files::CompilationFiles;
 /// All information needed to define a Unit.
 ///
 /// A unit is an object that has enough information so that cargo knows how to build it.
-/// For example, if your project has dependencies, then every dependency will be built as a library
-/// unit. If your project is a library, then it will be built as a library unit as well, or if it
+/// For example, if your package has dependencies, then every dependency will be built as a library
+/// unit. If your package is a library, then it will be built as a library unit as well, or if it
 /// is a binary with `main.rs`, then a binary will be output. There are also separate unit types
 /// for `test`ing and `check`ing, amongst others.
 ///
@@ -94,11 +94,11 @@ pub struct Context<'a, 'cfg: 'a> {
     pub compiled: HashSet<Unit<'a>>,
     pub build_scripts: HashMap<Unit<'a>, Arc<BuildScripts>>,
     pub links: Links<'a>,
-    pub used_in_plugin: HashSet<Unit<'a>>,
     pub jobserver: Client,
     primary_packages: HashSet<&'a PackageId>,
     unit_dependencies: HashMap<Unit<'a>, Vec<Unit<'a>>>,
     files: Option<CompilationFiles<'a, 'cfg>>,
+    package_cache: HashMap<&'a PackageId, &'a Package>,
 }
 
 impl<'a, 'cfg> Context<'a, 'cfg> {
@@ -126,13 +126,13 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
             build_scripts: HashMap::new(),
             build_explicit_deps: HashMap::new(),
             links: Links::new(),
-            used_in_plugin: HashSet::new(),
             jobserver,
             build_script_overridden: HashSet::new(),
 
             primary_packages: HashSet::new(),
             unit_dependencies: HashMap::new(),
             files: None,
+            package_cache: HashMap::new(),
         })
     }
 
@@ -165,7 +165,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         queue.execute(&mut self, &mut plan)?;
 
         if build_plan {
-            plan.set_inputs(self.bcx.inputs()?);
+            plan.set_inputs(self.build_plan_inputs()?);
             plan.output_plan();
         }
 
@@ -189,13 +189,6 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                     ));
                 } else if unit.target.is_bin() || unit.target.is_bin_example() {
                     self.compilation.binaries.push(bindst.clone());
-                } else if unit.target.is_lib() {
-                    let pkgid = unit.pkg.package_id().clone();
-                    self.compilation
-                        .libraries
-                        .entry(pkgid)
-                        .or_insert_with(HashSet::new)
-                        .insert((unit.target.clone(), output.path.clone()));
                 }
             }
 
@@ -212,24 +205,6 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
                         .or_insert_with(Vec::new)
                         .push(("OUT_DIR".to_string(), out_dir));
                 }
-
-                if !dep.target.is_lib() {
-                    continue;
-                }
-                if dep.mode.is_doc() {
-                    continue;
-                }
-
-                let outputs = self.outputs(dep)?;
-                self.compilation
-                    .libraries
-                    .entry(unit.pkg.package_id().clone())
-                    .or_insert_with(HashSet::new)
-                    .extend(
-                        outputs
-                            .iter()
-                            .map(|output| (dep.target.clone(), output.path.clone())),
-                    );
             }
 
             if unit.mode == CompileMode::Doctest {
@@ -326,8 +301,12 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         };
         self.primary_packages.extend(units.iter().map(|u| u.pkg.package_id()));
 
-        build_unit_dependencies(units, self.bcx, &mut self.unit_dependencies)?;
-        self.build_used_in_plugin_map(units)?;
+        build_unit_dependencies(
+            units,
+            self.bcx,
+            &mut self.unit_dependencies,
+            &mut self.package_cache,
+        )?;
         let files = CompilationFiles::new(
             units,
             host_layout,
@@ -361,37 +340,6 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         let layout = files.target.as_ref().unwrap_or(&files.host);
         self.compilation.root_output = layout.dest().to_path_buf();
         self.compilation.deps_output = layout.deps().to_path_buf();
-        Ok(())
-    }
-
-    /// Builds up the `used_in_plugin` internal to this context from the list of
-    /// top-level units.
-    ///
-    /// This will recursively walk `units` and all of their dependencies to
-    /// determine which crate are going to be used in plugins or not.
-    fn build_used_in_plugin_map(&mut self, units: &[Unit<'a>]) -> CargoResult<()> {
-        let mut visited = HashSet::new();
-        for unit in units {
-            self.walk_used_in_plugin_map(unit, unit.target.for_host(), &mut visited)?;
-        }
-        Ok(())
-    }
-
-    fn walk_used_in_plugin_map(
-        &mut self,
-        unit: &Unit<'a>,
-        is_plugin: bool,
-        visited: &mut HashSet<(Unit<'a>, bool)>,
-    ) -> CargoResult<()> {
-        if !visited.insert((*unit, is_plugin)) {
-            return Ok(());
-        }
-        if is_plugin {
-            self.used_in_plugin.insert(*unit);
-        }
-        for unit in self.dep_targets(unit) {
-            self.walk_used_in_plugin_map(&unit, is_plugin || unit.target.for_host(), visited)?;
-        }
         Ok(())
     }
 
@@ -455,7 +403,7 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
         //   `CARGO_INCREMENTAL`.
         // * `profile.dev.incremental` - in `Cargo.toml` specific profiles can
         //   be configured to enable/disable incremental compilation. This can
-        //   be primarily used to disable incremental when buggy for a project.
+        //   be primarily used to disable incremental when buggy for a package.
         // * Finally, each profile has a default for whether it will enable
         //   incremental compilation or not. Primarily development profiles
         //   have it enabled by default while release profiles have it disabled
@@ -494,6 +442,29 @@ impl<'a, 'cfg> Context<'a, 'cfg> {
 
     pub fn is_primary_package(&self, unit: &Unit<'a>) -> bool {
         self.primary_packages.contains(unit.pkg.package_id())
+    }
+
+    /// Gets a package for the given package id.
+    pub fn get_package(&self, id: &PackageId) -> CargoResult<&'a Package> {
+        self.package_cache.get(id)
+            .cloned()
+            .ok_or_else(|| format_err!("failed to find {}", id))
+    }
+
+    /// Return the list of filenames read by cargo to generate the BuildContext
+    /// (all Cargo.toml, etc).
+    pub fn build_plan_inputs(&self) -> CargoResult<Vec<PathBuf>> {
+        let mut inputs = Vec::new();
+        // Note that we're using the `package_cache`, which should have been
+        // populated by `build_unit_dependencies`, and only those packages are
+        // considered as all the inputs.
+        //
+        // (notably we skip dev-deps here if they aren't present)
+        for pkg in self.package_cache.values() {
+            inputs.push(pkg.manifest_path().to_path_buf());
+        }
+        inputs.sort();
+        Ok(inputs)
     }
 }
 

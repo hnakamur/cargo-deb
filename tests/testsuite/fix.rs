@@ -666,7 +666,7 @@ fn warns_if_no_vcs_detected() {
         .with_status(101)
         .with_stderr(
             "\
-             error: no VCS found for this project and `cargo fix` can potentially perform \
+             error: no VCS found for this package and `cargo fix` can potentially perform \
              destructive changes; if you'd like to suppress this error pass `--allow-no-vcs`\
              ",
         ).run();
@@ -690,7 +690,7 @@ fn warns_about_dirty_working_directory() {
         .with_status(101)
         .with_stderr(
             "\
-error: the working directory of this project has uncommitted changes, \
+error: the working directory of this package has uncommitted changes, \
 and `cargo fix` can potentially perform destructive changes; if you'd \
 like to suppress this error pass `--allow-dirty`, `--allow-staged`, or \
 commit the changes to these files:
@@ -724,7 +724,7 @@ fn warns_about_staged_working_directory() {
         .with_status(101)
         .with_stderr(
             "\
-error: the working directory of this project has uncommitted changes, \
+error: the working directory of this package has uncommitted changes, \
 and `cargo fix` can potentially perform destructive changes; if you'd \
 like to suppress this error pass `--allow-dirty`, `--allow-staged`, or \
 commit the changes to these files:
@@ -786,9 +786,6 @@ fn fix_all_targets_by_default() {
 
 #[test]
 fn prepare_for_and_enable() {
-    if !is_nightly() {
-        return;
-    }
     let p = project()
         .file(
             "Cargo.toml",
@@ -905,9 +902,6 @@ fn idioms_2015_ok() {
 
 #[test]
 fn both_edition_migrate_flags() {
-    if !is_nightly() {
-        return;
-    }
     let p = project().file("src/lib.rs", "").build();
 
     let stderr = "\
@@ -1077,4 +1071,119 @@ fn does_not_crash_with_rustc_wrapper() {
     p.cargo("fix --allow-no-vcs")
         .env("RUSTC_WRAPPER", "/usr/bin/env")
         .run();
+}
+
+#[test]
+fn only_warn_for_relevant_crates() {
+    let p = project()
+        .file(
+            "Cargo.toml",
+            r#"
+                [package]
+                name = "foo"
+                version = "0.1.0"
+
+                [dependencies]
+                a = { path = 'a' }
+            "#,
+        )
+        .file("src/lib.rs", "")
+        .file(
+            "a/Cargo.toml",
+            r#"
+                [package]
+                name = "a"
+                version = "0.1.0"
+            "#,
+        )
+        .file(
+            "a/src/lib.rs",
+            "
+                pub fn foo() {}
+                pub mod bar {
+                    use foo;
+                    pub fn baz() { foo() }
+                }
+            ",
+        )
+        .build();
+
+    p.cargo("fix --allow-no-vcs --edition")
+        .with_stderr("\
+[CHECKING] a v0.1.0 ([..])
+[CHECKING] foo v0.1.0 ([..])
+[FINISHED] dev [unoptimized + debuginfo] target(s) in [..]
+")
+        .run();
+}
+
+#[test]
+fn fix_to_broken_code() {
+    if !is_nightly() {
+        return;
+    }
+    let p = project()
+        .file(
+            "foo/Cargo.toml",
+            r#"
+                [package]
+                name = 'foo'
+                version = '0.1.0'
+                [workspace]
+            "#,
+        ).file(
+            "foo/src/main.rs",
+            r##"
+                use std::env;
+                use std::fs;
+                use std::io::Write;
+                use std::path::{Path, PathBuf};
+                use std::process::{self, Command};
+
+                fn main() {
+                    let is_lib_rs = env::args_os()
+                        .map(PathBuf::from)
+                        .any(|l| l == Path::new("src/lib.rs"));
+                    if is_lib_rs {
+                        let path = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+                        let path = path.join("foo");
+                        if path.exists() {
+                            panic!()
+                        } else {
+                            fs::File::create(&path).unwrap();
+                        }
+                    }
+
+                    let status = Command::new("rustc")
+                        .args(env::args().skip(1))
+                        .status()
+                        .expect("failed to run rustc");
+                    process::exit(status.code().unwrap_or(2));
+                }
+            "##,
+        ).file(
+            "bar/Cargo.toml",
+            r#"
+                [package]
+                name = 'bar'
+                version = '0.1.0'
+                [workspace]
+            "#,
+        ).file("bar/build.rs", "fn main() {}")
+        .file(
+            "bar/src/lib.rs",
+            "pub fn foo() { let mut x = 3; drop(x); }",
+        ).build();
+
+    // Build our rustc shim
+    p.cargo("build").cwd(p.root().join("foo")).run();
+
+    // Attempt to fix code, but our shim will always fail the second compile
+    p.cargo("fix --allow-no-vcs --broken-code")
+        .cwd(p.root().join("bar"))
+        .env("RUSTC", p.root().join("foo/target/debug/foo"))
+        .with_status(101)
+        .run();
+
+    assert_eq!(p.read_file("bar/src/lib.rs"), "pub fn foo() { let x = 3; drop(x); }");
 }
