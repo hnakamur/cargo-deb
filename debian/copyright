@@ -39,6 +39,7 @@ Files: vendor/bitflags/*
        vendor/rand_isaac/*
        vendor/rand_pcg/*
        vendor/rand_xorshift/*
+       vendor/num-traits/*
 Copyright: 2014-2018 The Rust Project Developers
 License: MIT or Apache-2.0
 Comment:
@@ -64,6 +65,8 @@ Files: vendor/backtrace/*
        vendor/tar/*
        vendor/toml/*
        vendor/socket2/*
+       vendor/libnghttp2-sys/*
+       vendor/wait-timeout/*
 Copyright: 2014-2018 Alex Crichton <alex@alexcrichton.com>
            2014-2018 The Rust Project Developers
 License: MIT or Apache-2.0
@@ -80,6 +83,8 @@ Files:
  vendor/same-file/*
  vendor/walkdir/*
  vendor/winapi-util/*
+ vendor/byteorder/*
+ vendor/bytesize/*
 Copyright: 2015-2018 Andrew Gallant <jamslam@gmail.com>
 License: MIT or Unlicense
 Comment: see upstream projects,
@@ -419,9 +424,22 @@ Copyright: 2016, Pascal Hertleif
            2016, Oliver Schneider
 License: MIT or Apache-2.0
 
+Files: vendor/bit-set/*
+ vendor/bit-vec/*
+Copyright: 2016 The Rust Project Developers
+           Alexis Beingessner <a.beingessner@gmail.com>
+License: MIT or Apache-2.0
+
+Files: vendor/proptest/*
+ vendor/rusty-fork/*
+Copyright: Jason Lingle
+           2016 FullContact, Inc
+License: MIT or Apache-2.0
+
 Files: debian/*
 Copyright: 2017 Ximin Luo <infinity0@debian.org>
            2015-2016 Luca Bruno <lucab@debian.org>
+           2017-2018 Vasudeva Kamath <vasudev@copyninja.info>
 License: MIT or Apache-2.0
 
 Files: debian/bootstrap.py
