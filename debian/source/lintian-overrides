@@ -1,0 +1,2 @@
+# Override for js file from vendored crate libnghttp2-sys documentation we can safely ignore this.
+source-is-missing
