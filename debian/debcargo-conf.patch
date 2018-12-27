@@ -131,6 +131,60 @@ index dce2312..a4ab79e 100644
   use curl_sys;
   
   #[cfg(windows)]
+diff --git a/src/ignore/debian/patches/relax-crossbeam-channel-dep.diff b/src/ignore/debian/patches/relax-crossbeam-channel-dep.diff
+deleted file mode 100644
+index 7989bb0..0000000
+--- a/src/ignore/debian/patches/relax-crossbeam-channel-dep.diff
++++ /dev/null
+@@ -1,41 +0,0 @@
+-Index: rust-ignore-0.4.4/Cargo.toml
+-===================================================================
+---- rust-ignore-0.4.4.orig/Cargo.toml
+-+++ rust-ignore-0.4.4/Cargo.toml
+-@@ -26,7 +26,7 @@ repository = "https://github.com/BurntSu
+- name = "ignore"
+- bench = false
+- [dependencies.crossbeam-channel]
+--version = "0.2.4"
+-+version = "0.3.2"
+- 
+- [dependencies.globset]
+- version = "0.4.2"
+-Index: rust-ignore-0.4.4/src/walk.rs
+-===================================================================
+---- rust-ignore-0.4.4.orig/src/walk.rs
+-+++ rust-ignore-0.4.4/src/walk.rs
+-@@ -1446,12 +1446,12 @@ impl Worker {
+-                 return None;
+-             }
+-             match self.rx.try_recv() {
+--                Some(Message::Work(work)) => {
+-+                Ok(Message::Work(work)) => {
+-                     self.waiting(false);
+-                     self.quitting(false);
+-                     return Some(work);
+-                 }
+--                Some(Message::Quit) => {
+-+                Ok(Message::Quit) => {
+-                     // We can't just quit because a Message::Quit could be
+-                     // spurious. For example, it's possible to observe that
+-                     // all workers are waiting even if there's more work to
+-@@ -1482,7 +1482,7 @@ impl Worker {
+-                         // Otherwise, spin.
+-                     }
+-                 }
+--                None => {
+-+                Err(_) => {
+-                     self.waiting(true);
+-                     self.quitting(false);
+-                     if self.num_waiting() == self.threads {
+diff --git a/src/ignore/debian/patches/series b/src/ignore/debian/patches/series
+deleted file mode 100644
+index db87168..0000000
+--- a/src/ignore/debian/patches/series
++++ /dev/null
+@@ -1 +0,0 @@
+-relax-crossbeam-channel-dep.diff
 diff --git a/src/jobserver/debian/patches/relax-dep-version.patch b/src/jobserver/debian/patches/relax-dep-version.patch
 index b3218cc..e69de29 100644
 --- a/src/jobserver/debian/patches/relax-dep-version.patch
@@ -144,25 +198,6 @@ index b3218cc..e69de29 100644
 - [target."cfg(windows)".dependencies.rand]
 --version = "0.4"
 -+version = "< 0.6, >= 0.4"
-diff --git a/src/openssl-sys/debian/patches/disable-vendor.patch b/src/openssl-sys/debian/patches/disable-vendor.patch
-index a4e6d8f..b8e1051 100644
---- a/src/openssl-sys/debian/patches/disable-vendor.patch
-+++ b/src/openssl-sys/debian/patches/disable-vendor.patch
-@@ -1,11 +1,11 @@
----- a/Cargo.toml	2018-09-03 21:17:45.506177066 -0700
--+++ b/Cargo.toml	2018-09-03 21:18:00.573513575 -0700
-+--- a/Cargo.toml
-++++ b/Cargo.toml
- @@ -28,14 +28,11 @@
-  [build-dependencies.cc]
-  version = "1.0"
-  
- -[build-dependencies.openssl-src]
---version = "110.0.4"
-+-version = "111.0.1"
- -optional = true
- -
-  [build-dependencies.pkg-config]
 diff --git a/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff b/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff
 index d5c8ce5..449bed0 100644
 --- a/src/rand/debian/patches/disable-fuchsia-zircon-dep.diff

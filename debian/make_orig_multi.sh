@@ -12,7 +12,7 @@ include /usr/share/dpkg/pkg-info.mk
 all:
 	@echo $(DEB_VERSION_UPSTREAM)
 EOF
-WORKDIR=${PWD}
+SRCDIR="$PWD"
 
 if [ -z "$1" ]
   then
@@ -42,10 +42,7 @@ export GIT_AUTHOR_EMAIL="<>"
 export GIT_COMMITTER_NAME="${GIT_AUTHOR_NAME}"
 export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
 
-# Make sure WORKDIR env is accessible to debian-cargo-vendor
-export WORKDIR
-
-${WORKDIR}/debian/scripts/debian-cargo-vendor
+SRCDIR="$SRCDIR" "$SRCDIR/debian/scripts/debian-cargo-vendor"
 
 # Clean embedded libs and update checksums
 grep -v '^#' ${VENDOR_FILTER} | xargs  -I% sh -c 'rm -rf vendor/%'
