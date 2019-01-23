@@ -1,0 +1,14 @@
+Description: Increase timeout for slow arches like mips
+Author: Ximin Luo <infinity0@debian.org>
+Bug: https://github.com/rust-lang/cargo/issues/6491
+--- a/tests/testsuite/support/resolver.rs
++++ b/tests/testsuite/support/resolver.rs
+@@ -118,7 +118,7 @@
+ 
+     // The largest test in our suite takes less then 30 sec.
+     // So lets fail the test if we have ben running for two long.
+-    assert!(start.elapsed() < Duration::from_secs(60));
++    assert!(start.elapsed() < Duration::from_secs(240));
+     resolve
+ }
+ 
