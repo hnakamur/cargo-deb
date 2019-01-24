@@ -12,3 +12,14 @@ Bug: https://github.com/rust-lang/cargo/issues/6491
      resolve
  }
  
+--- a/tests/testsuite/concurrent.rs
++++ b/tests/testsuite/concurrent.rs
+@@ -511,7 +511,7 @@
+     }
+ 
+     for _ in 0..n_concurrent_builds {
+-        let result = rx.recv_timeout(Duration::from_secs(30)).expect("Deadlock!");
++        let result = rx.recv_timeout(Duration::from_secs(120)).expect("Deadlock!");
+         execs().run_output(&result);
+     }
+ }

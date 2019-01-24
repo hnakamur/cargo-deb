@@ -1,6 +1,10 @@
 cargo (0.32.0-1~exp3) UNRELEASED; urgency=medium
 
+  [ Matt Kraai ]
   * Rename bash completion script so that it's used.
+
+  [ Ximin Luo ]
+  * Further increase a timeout duration for mips.
 
  -- Matt Kraai <kraai@debian.org>  Sun, 23 Dec 2018 09:42:30 -0800
 
