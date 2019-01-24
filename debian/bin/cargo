@@ -3,16 +3,26 @@
 Wrapper around cargo to have it build using Debian settings.
 
 Usage:
+    export PATH=/path/to/dir/of/this/script:$PATH
     export CARGO_HOME=debian/cargo_home
-    cargo prepare-debian /path/to/local/registry
+    cargo prepare-debian /path/to/local/registry [--link-from-system]
     cargo build
     cargo test
     cargo install
+    cargo clean
+    [rm -rf /path/to/local/registry]
+
+The "prepare-debian" subcommand writes a config file to $CARGO_HOME that makes
+the subsequent invocations use our Debian flags. The "--link-from-system" flag
+is optional; if you use it we will create /path/to/local/registry and symlink
+the contents of /usr/share/cargo/registry into it. You are then responsible for
+cleaning it up afterwards (a simple `rm -rf` should do).
 
 See cargo:d/rules and dh-cargo:cargo.pm for more examples.
 
 Make sure you add "Build-Depends: python3:native" if you use this directly.
-OTOH, you only need "Build-Depends: dh-cargo" if you use that.
+If using this only indirectly via dh-cargo, then you only need "Build-Depends:
+dh-cargo"; this is a general principle when declaring dependencies.
 
 If CARGO_HOME doesn't end with debian/cargo_home, then this script does nothing
 and passes through directly to cargo.
@@ -28,12 +38,20 @@ Otherwise, you *must* set the following environment variables:
 - DEB_CARGO_CRATE_IN_REGISTRY
   Whether the crate is in the local-registry (1) or the cwd (0, empty).
 
-- CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
-- DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE
+- CFLAGS CXXFLAGS CPPFLAGS LDFLAGS [*]
+- DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE [*]
 - (optional) DEB_BUILD_OPTIONS DEB_BUILD_PROFILES
 
-Due to https://github.com/rust-lang/cargo/issues/6338 you should probably
-*unset* RUSTFLAGS.
+For the envvars marked [*], it is easiest to set these in your d/rules via:
+
+    include /usr/share/dpkg/architecture.mk
+    include /usr/share/dpkg/buildflags.mk
+    include /usr/share/rustc/architecture.mk
+    export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS
+    export DEB_HOST_RUST_TYPE DEB_HOST_GNU_TYPE
+
+Due to https://github.com/rust-lang/cargo/issues/6338 you may want to *unset*
+RUSTFLAGS; if it's set (even to empty) it will break this script.
 """
 
 import os
@@ -44,6 +62,7 @@ import sys
 
 FLAGS = "CFLAGS CXXFLAGS CPPFLAGS LDFLAGS"
 ARCHES = "DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE"
+SYSTEM_REGISTRY = "/usr/share/cargo/registry"
 
 def log(*args):
     print("debian cargo wrapper:", *args, file=sys.stderr, flush=True)
@@ -55,8 +74,17 @@ def logrun(*args, **kwargs):
 def sourcepath(p=None):
     return os.path.join(os.getcwd(), p) if p else os.getcwd()
 
-def prepare_debian(cargo_home, registry, cratespec, host_gnu_type, ldflags):
-    if not os.path.exists(sourcepath(registry)):
+def prepare_debian(cargo_home, registry, cratespec, host_gnu_type, ldflags, link_from_system):
+    registry_path = sourcepath(registry)
+    if link_from_system:
+        log("linking %s/* into %s/" % (SYSTEM_REGISTRY, registry_path))
+        os.makedirs(registry_path, exist_ok=True)
+        crates = os.listdir(SYSTEM_REGISTRY) if os.path.isdir(SYSTEM_REGISTRY) else []
+        for c in crates:
+            target = os.path.join(registry_path, c)
+            if not os.path.islink(target):
+                os.symlink(os.path.join(SYSTEM_REGISTRY, c), target)
+    elif not os.path.exists(registry_path):
         raise ValueError("non-existent registry: %s" % registry)
 
     rustflags = "-C debuginfo=2 --cap-lints warn".split()
@@ -64,7 +92,7 @@ def prepare_debian(cargo_home, registry, cratespec, host_gnu_type, ldflags):
     for f in ldflags:
         rustflags.extend(["-C", "link-arg=%s" % f])
     rustflags.extend(["--remap-path-prefix",
-        "%s=/usr/share/cargo/registry/%s" % (sourcepath(), cratespec.replace("_", "-"))])
+        "%s=%s/%s" % (sourcepath(), SYSTEM_REGISTRY, cratespec.replace("_", "-"))])
 
     # TODO: we cannot enable this until dh_shlibdeps works correctly; atm we get:
     # dpkg-shlibdeps: warning: can't extract name and version from library name 'libstd-XXXXXXXX.so'
@@ -82,7 +110,7 @@ directory = "{0}"
 
 [build]
 rustflags = {1}
-""".format(sourcepath(registry), repr(rustflags)))
+""".format(registry_path, repr(rustflags)))
 
     return 0
 
@@ -142,8 +170,12 @@ def main(*args):
 
     if args[0] == "prepare-debian":
         registry = args[1]
+        link_from_system = False
+        if len(args) > 2 and args[2] == "--link-from-system":
+            link_from_system = True
         return prepare_debian(cargo_home, registry,
-            os.environ["DEB_CARGO_CRATE"], host_gnu_type, os.getenv("LDFLAGS", "").split())
+            os.environ["DEB_CARGO_CRATE"], host_gnu_type,
+            os.getenv("LDFLAGS", "").split(), link_from_system)
 
     newargs = []
     subcmd = None
