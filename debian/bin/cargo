@@ -35,9 +35,6 @@ Otherwise, you *must* set the following environment variables:
 - DEB_CARGO_PACKAGE
   Debian binary package that the result is to be installed into.
 
-- DEB_CARGO_CRATE_IN_REGISTRY
-  Whether the crate is in the local-registry (1) or the cwd (0, empty).
-
 - CFLAGS CXXFLAGS CPPFLAGS LDFLAGS [*]
 - DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE [*]
 - (optional) DEB_BUILD_OPTIONS DEB_BUILD_PROFILES
@@ -46,6 +43,9 @@ Otherwise, you *must* set the following environment variables:
   Prefix to install binaries under. Default: /usr. Sometimes you might want to
   change this to /usr/lib/cargo if the binary clashes with something else, and
   then symlink it into /usr under an alternative name - e.g. fd/fd-find.
+
+- (optional) DEB_CARGO_CRATE_IN_REGISTRY
+  Whether the crate is in the local-registry (1) or cwd (0, empty, default).
 
 For the envvars marked [*], it is easiest to set these in your d/rules via:
 
