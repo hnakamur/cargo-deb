@@ -23,3 +23,14 @@ Bug: https://github.com/rust-lang/cargo/issues/6491
          execs().run_output(&result);
      }
  }
+--- a/src/cargo/core/resolver/types.rs
++++ b/src/cargo/core/resolver/types.rs
+@@ -57,7 +57,7 @@
+         // If any of them are removed then it takes more than I am willing to measure.
+         // So lets fail the test fast if we have ben running for two long.
+         if cfg!(debug_assertions) && (self.ticks % 1000 == 0) {
+-            assert!(self.start.elapsed() - self.deps_time < Duration::from_secs(90));
++            assert!(self.start.elapsed() - self.deps_time < Duration::from_secs(360));
+         }
+         Ok(())
+     }

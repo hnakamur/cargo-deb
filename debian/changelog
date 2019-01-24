@@ -3,6 +3,7 @@ cargo (0.32.0-1) UNRELEASED; urgency=medium
   * debian-cargo-wrapper: Support DEB_CARGO_INSTALL_PREFIX for installing into
     somewhere other than /usr, e.g. / or /usr/lib/cargo.
   * Move dev scripts from /usr/share/cargo into /usr/share/cargo/scripts.
+  * Increase yet another timeout duration for slower architectures.
 
  -- Ximin Luo <infinity0@debian.org>  Wed, 23 Jan 2019 20:39:33 -0800
 
