@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use super::*;
 use punctuated::{Iter, IterMut, Punctuated};
 
@@ -300,14 +292,9 @@ impl Generics {
     /// Split a type's generics into the pieces required for impl'ing a trait
     /// for that type.
     ///
-    /// ```
-    /// # #[macro_use]
-    /// # extern crate quote;
-    /// #
-    /// # extern crate proc_macro2;
-    /// # extern crate syn;
-    /// #
+    /// ```edition2018
     /// # use proc_macro2::{Span, Ident};
+    /// # use quote::quote;
     /// #
     /// # fn main() {
     /// #     let generics: syn::Generics = Default::default();

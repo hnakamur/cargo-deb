@@ -37,37 +37,37 @@
 //!
 //! ```{.bash}
 //! $ RUST_LOG=error ./main
-//! ERROR: 2017-11-09T02:12:24Z: main: this is printed by default
+//! [2017-11-09T02:12:24Z ERROR main] this is printed by default
 //! ```
 //!
 //! ```{.bash}
 //! $ RUST_LOG=info ./main
-//! ERROR: 2017-11-09T02:12:24Z: main: this is printed by default
-//! INFO: 2017-11-09T02:12:24Z: main: the answer was: 12
+//! [2017-11-09T02:12:24Z ERROR main] this is printed by default
+//! [2017-11-09T02:12:24Z INFO main] the answer was: 12
 //! ```
 //!
 //! ```{.bash}
 //! $ RUST_LOG=debug ./main
-//! DEBUG: 2017-11-09T02:12:24Z: main: this is a debug message
-//! ERROR: 2017-11-09T02:12:24Z: main: this is printed by default
-//! INFO: 2017-11-09T02:12:24Z: main: the answer was: 12
+//! [2017-11-09T02:12:24Z DEBUG main] this is a debug message
+//! [2017-11-09T02:12:24Z ERROR main] this is printed by default
+//! [2017-11-09T02:12:24Z INFO main] the answer was: 12
 //! ```
 //!
 //! You can also set the log level on a per module basis:
 //!
 //! ```{.bash}
 //! $ RUST_LOG=main=info ./main
-//! ERROR: 2017-11-09T02:12:24Z: main: this is printed by default
-//! INFO: 2017-11-09T02:12:24Z: main: the answer was: 12
+//! [2017-11-09T02:12:24Z ERROR main] this is printed by default
+//! [2017-11-09T02:12:24Z INFO main] the answer was: 12
 //! ```
 //!
 //! And enable all logging:
 //!
 //! ```{.bash}
 //! $ RUST_LOG=main ./main
-//! DEBUG: 2017-11-09T02:12:24Z: main: this is a debug message
-//! ERROR: 2017-11-09T02:12:24Z: main: this is printed by default
-//! INFO: 2017-11-09T02:12:24Z: main: the answer was: 12
+//! [2017-11-09T02:12:24Z DEBUG main] this is a debug message
+//! [2017-11-09T02:12:24Z ERROR main] this is printed by default
+//! [2017-11-09T02:12:24Z INFO main] the answer was: 12
 //! ```
 //!
 //! If the binary name contains hyphens, you will need to replace
@@ -75,9 +75,9 @@
 //!
 //! ```{.bash}
 //! $ RUST_LOG=my_app ./my-app
-//! DEBUG: 2017-11-09T02:12:24Z: my_app: this is a debug message
-//! ERROR: 2017-11-09T02:12:24Z: my_app: this is printed by default
-//! INFO: 2017-11-09T02:12:24Z: my_app: the answer was: 12
+//! [2017-11-09T02:12:24Z DEBUG my_app] this is a debug message
+//! [2017-11-09T02:12:24Z ERROR my_app] this is printed by default
+//! [2017-11-09T02:12:24Z INFO my_app] the answer was: 12
 //! ```
 //!
 //! This is because Rust modules and crates cannot contain hyphens
@@ -157,25 +157,39 @@
 //! The following example excludes the timestamp from the log output:
 //! 
 //! ```
-//! #[macro_use] extern crate log;
-//! extern crate env_logger;
+//! use env_logger::Builder;
 //!
-//! use log::Level;
-//!
-//! fn main() {
-//!     env_logger::Builder::from_default_env()
-//!         .default_format_timestamp(false)
-//!         .init();
-//!
-//!     debug!("this is a debug {}", "message");
-//!     error!("this is printed by default");
-//!
-//!     if log_enabled!(Level::Info) {
-//!         let x = 3 * 4; // expensive computation
-//!         info!("the answer was: {}", x);
-//!     }
-//! }
+//! Builder::from_default_env()
+//!     .default_format_timestamp(false)
+//!     .init();
 //! ```
+//! 
+//! ### Stability of the default format
+//! 
+//! The default format won't optimise for long-term stability, and explicitly makes no 
+//! guarantees about the stability of its output across major, minor or patch version 
+//! bumps during `0.x`.
+//! 
+//! If you want to capture or interpret the output of `env_logger` programmatically 
+//! then you should use a custom format.
+//! 
+//! ### Using a custom format
+//! 
+//! Custom formats can be provided as closures to the [`Builder`].
+//! These closures take a [`Formatter`] and `log::Record` as arguments:
+//! 
+//! ```
+//! use std::io::Write;
+//! use env_logger::Builder;
+//!
+//! Builder::from_default_env()
+//!     .format(|buf, record| {
+//!         writeln!(buf, "{}: {}", record.level(), record.args())
+//!     })
+//!     .init();
+//! ```
+//! 
+//! See the [`fmt`] module for more details about custom formats.
 //! 
 //! ## Specifying defaults for environment variables
 //! 
@@ -185,26 +199,19 @@
 //! isn't set:
 //! 
 //! ```
-//! #[macro_use] extern crate log;
-//! extern crate env_logger;
+//! use env_logger::{Builder, Env};
 //!
-//! use log::Level;
-//!
-//! fn main() {
-//!     let env = env_logger::Env::default()
-//!         .filter_or(env_logger::DEFAULT_FILTER_ENV, "warn");
-//! 
-//!     env_logger::Builder::from_env(env).init();
-//! }
+//! Builder::from_env(Env::default().default_filter_or("warn")).init();
 //! ```
 //! 
 //! [log-crate-url]: https://docs.rs/log/
 //! [`Builder`]: struct.Builder.html
 //! [`Env`]: struct.Env.html
+//! [`fmt`]: fmt/index.html
 
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
        html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-       html_root_url = "https://docs.rs/env_logger/0.5.13")]
+       html_root_url = "https://docs.rs/env_logger/0.6.0")]
 #![cfg_attr(test, deny(warnings))]
 
 // When compiled for the rustc compiler itself we want to make sure that this is
@@ -215,15 +222,16 @@
 #![deny(missing_debug_implementations, missing_docs, warnings)]
 
 extern crate log;
+
+#[cfg(feature = "termcolor")]
 extern crate termcolor;
+#[cfg(feature = "humantime")]
 extern crate humantime;
+#[cfg(feature = "atty")]
 extern crate atty;
 
-use std::env;
+use std::{env, io};
 use std::borrow::Cow;
-use std::io::prelude::*;
-use std::io;
-use std::mem;
 use std::cell::RefCell;
 
 use log::{Log, LevelFilter, Record, SetLoggerError, Metadata};
@@ -231,7 +239,11 @@ use log::{Log, LevelFilter, Record, SetLoggerError, Metadata};
 pub mod filter;
 pub mod fmt;
 
-pub use self::fmt::{Target, WriteStyle, Color, Formatter};
+pub use self::fmt::glob::*;
+
+use self::filter::Filter;
+use self::fmt::Formatter;
+use self::fmt::writer::{self, Writer};
 
 /// The default name for the environment variable to read filters from.
 pub const DEFAULT_FILTER_ENV: &'static str = "RUST_LOG";
@@ -281,76 +293,9 @@ struct Var<'a> {
 /// [`Builder::try_init()`]: struct.Builder.html#method.try_init
 /// [`Builder`]: struct.Builder.html
 pub struct Logger {
-    writer: fmt::Writer,
-    filter: filter::Filter,
+    writer: Writer,
+    filter: Filter,
     format: Box<Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send>,
-}
-
-struct Format {
-    default_format_timestamp: bool,
-    default_format_module_path: bool,
-    default_format_level: bool,
-    default_format_timestamp_nanos: bool,
-    custom_format: Option<Box<Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send>>,
-}
-
-impl Default for Format {
-    fn default() -> Self {
-        Format {
-            default_format_timestamp: true,
-            default_format_module_path: true,
-            default_format_level: true,
-            default_format_timestamp_nanos: false,
-            custom_format: None,
-        }
-    }
-}
-
-impl Format {
-    /// Convert the format into a callable function.
-    /// 
-    /// If the `custom_format` is `Some`, then any `default_format` switches are ignored.
-    /// If the `custom_format` is `None`, then a default format is returned.
-    /// Any `default_format` switches set to `false` won't be written by the format.
-    fn into_boxed_fn(self) -> Box<Fn(&mut Formatter, &Record) -> io::Result<()> + Sync + Send> {
-        if let Some(fmt) = self.custom_format {
-            fmt
-        }
-        else {
-            Box::new(move |buf, record| {
-                let write_level = if self.default_format_level {
-                    let level = record.level();
-                    let level_style = buf.default_level_style(level);
-                    write!(buf, "{:>5} ", level_style.value(level))
-                } else {
-                    Ok(())
-                };
-
-                let write_ts = if self.default_format_timestamp {
-                    if self.default_format_timestamp_nanos {
-                      let ts_nanos = buf.precise_timestamp();
-                      write!(buf, "{}: ", ts_nanos) 
-                    } else {
-                      let ts = buf.timestamp();
-                      write!(buf, "{}: ", ts)      
-                    }
-                } else {
-                    Ok(())
-                };
-
-                let default_format_module_path = (self.default_format_module_path, record.module_path());
-                let write_module_path = if let (true, Some(module_path)) = default_format_module_path {
-                    write!(buf, "{}: ", module_path)
-                } else {
-                    Ok(())
-                };
-
-                let write_args = writeln!(buf, "{}", record.args());
-
-                write_level.and(write_ts).and(write_module_path).and(write_args)
-            })
-        }
-    }
 }
 
 /// `Builder` acts as builder for initializing a `Logger`.
@@ -384,8 +329,9 @@ impl Format {
 #[derive(Default)]
 pub struct Builder {
     filter: filter::Builder,
-    writer: fmt::Builder,
-    format: Format,
+    writer: writer::Builder,
+    format: fmt::Builder,
+    built: bool,
 }
 
 impl Builder {
@@ -510,7 +456,7 @@ impl Builder {
     /// 
     /// let mut builder = Builder::new();
     /// 
-    /// builder.format(|buf, record| write!(buf, "{}", record.args()));
+    /// builder.format(|buf, record| writeln!(buf, "{}", record.args()));
     /// ```
     ///
     /// [`Formatter`]: fmt/struct.Formatter.html
@@ -700,8 +646,14 @@ impl Builder {
     pub fn try_init(&mut self) -> Result<(), SetLoggerError> {
         let logger = self.build();
 
-        log::set_max_level(logger.filter());
-        log::set_boxed_logger(Box::new(logger))
+        let max_level = logger.filter();
+        let r = log::set_boxed_logger(Box::new(logger));
+
+        if r.is_ok() {
+            log::set_max_level(max_level);
+        }
+
+        r
     }
 
     /// Initializes the global logger with the built env logger.
@@ -722,10 +674,13 @@ impl Builder {
     /// The returned logger implements the `Log` trait and can be installed manually
     /// or nested within another logger.
     pub fn build(&mut self) -> Logger {
+        assert!(!self.built, "attempt to re-use consumed builder");
+        self.built = true;
+
         Logger {
             writer: self.writer.build(),
             filter: self.filter.build(),
-            format: mem::replace(&mut self.format, Default::default()).into_boxed_fn(),
+            format: self.format.build(),
         }
     }
 }
@@ -886,6 +841,18 @@ impl<'a> Env<'a> {
         self
     }
 
+    /// Use the default environment variable to read the filter from.
+    /// 
+    /// If the variable is not set, the default value will be used.
+    pub fn default_filter_or<V>(mut self, default: V) -> Self
+    where
+        V: Into<Cow<'a, str>>,
+    {
+        self.filter = Var::new_with_default(DEFAULT_FILTER_ENV, default);
+
+        self
+    }
+
     fn get_filter(&self) -> Option<String> {
         self.filter.get()
     }
@@ -909,6 +876,18 @@ impl<'a> Env<'a> {
             V: Into<Cow<'a, str>>,
     {
         self.write_style = Var::new_with_default(write_style_env, default);
+
+        self
+    }
+
+    /// Use the default environment variable to read the style from.
+    ///
+    /// If the variable is not set, the default value will be used.
+    pub fn default_write_style_or<V>(mut self, default: V) -> Self
+        where
+            V: Into<Cow<'a, str>>,
+    {
+        self.write_style = Var::new_with_default(DEFAULT_WRITE_STYLE_ENV, default);
 
         self
     }
@@ -981,10 +960,16 @@ mod std_fmt_impls {
 
     impl fmt::Debug for Builder{
         fn fmt(&self, f: &mut fmt::Formatter)->fmt::Result {
-            f.debug_struct("Logger")
-            .field("filter", &self.filter)
-            .field("writer", &self.writer)
-            .finish()
+            if self.built {
+                f.debug_struct("Logger")
+                .field("built", &true)
+                .finish()
+            } else {
+                f.debug_struct("Logger")
+                .field("filter", &self.filter)
+                .field("writer", &self.writer)
+                .finish()
+            }
         }
     }
 }

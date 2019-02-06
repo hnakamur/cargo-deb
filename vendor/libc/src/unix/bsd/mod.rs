@@ -57,7 +57,9 @@ s! {
         pub ifa_addr: *mut ::sockaddr,
         pub ifa_netmask: *mut ::sockaddr,
         pub ifa_dstaddr: *mut ::sockaddr,
-        pub ifa_data: *mut ::c_void
+        pub ifa_data: *mut ::c_void,
+        #[cfg(target_os = "netbsd")]
+        pub ifa_addrflags: ::c_uint
     }
 
     pub struct fd_set {
@@ -179,6 +181,7 @@ pub const SIG_SETMASK: ::c_int = 3;
 pub const SIG_BLOCK: ::c_int = 0x1;
 pub const SIG_UNBLOCK: ::c_int = 0x2;
 
+pub const IP_TOS: ::c_int = 3;
 pub const IP_MULTICAST_IF: ::c_int = 9;
 pub const IP_MULTICAST_TTL: ::c_int = 10;
 pub const IP_MULTICAST_LOOP: ::c_int = 11;
@@ -188,6 +191,12 @@ pub const IPV6_MULTICAST_IF: ::c_int = 9;
 pub const IPV6_MULTICAST_HOPS: ::c_int = 10;
 pub const IPV6_MULTICAST_LOOP: ::c_int = 11;
 pub const IPV6_V6ONLY: ::c_int = 27;
+
+pub const IPTOS_ECN_NOTECT: u8 = 0x00;
+pub const IPTOS_ECN_MASK: u8 = 0x03;
+pub const IPTOS_ECN_ECT1: u8 = 0x01;
+pub const IPTOS_ECN_ECT0: u8 = 0x02;
+pub const IPTOS_ECN_CE: u8 = 0x03;
 
 pub const ST_RDONLY: ::c_ulong = 1;
 
@@ -333,41 +342,12 @@ pub const POLLRDBAND: ::c_short = 0x080;
 pub const POLLWRBAND: ::c_short = 0x100;
 
 f! {
-    pub fn CMSG_FIRSTHDR(mhdr: *const msghdr) -> *mut cmsghdr {
-        if (*mhdr).msg_controllen as usize >= mem::size_of::<cmsghdr>() {
-            (*mhdr).msg_control as *mut cmsghdr
+    pub fn CMSG_FIRSTHDR(mhdr: *const ::msghdr) -> *mut ::cmsghdr {
+        if (*mhdr).msg_controllen as usize >= mem::size_of::<::cmsghdr>() {
+            (*mhdr).msg_control as *mut ::cmsghdr
         } else {
-            0 as *mut cmsghdr
+            0 as *mut ::cmsghdr
         }
-    }
-
-    pub fn CMSG_NXTHDR(mhdr: *const msghdr,
-                       cmsg: *const cmsghdr) -> *mut cmsghdr {
-        if cmsg.is_null() {
-            return CMSG_FIRSTHDR(mhdr);
-        };
-        let pad = mem::align_of::<cmsghdr>() - 1;
-        let next = cmsg as usize + (*cmsg).cmsg_len as usize + pad & !pad;
-        let max = (*mhdr).msg_control as usize
-            + (*mhdr).msg_controllen as usize;
-        if next < max {
-            next as *mut cmsghdr
-        } else {
-            0 as *mut cmsghdr
-        }
-    }
-
-    pub fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut ::c_uchar {
-        cmsg.offset(1) as *mut ::c_uchar
-    }
-
-    pub fn CMSG_SPACE(length: ::c_uint) -> ::c_uint {
-        let pad = mem::align_of::<cmsghdr>() as ::c_uint - 1;
-        mem::size_of::<cmsghdr>() as ::c_uint + ((length + pad) & !pad)
-    }
-
-    pub fn CMSG_LEN(length: ::c_uint) -> ::c_uint {
-        mem::size_of::<cmsghdr>() as ::c_uint + length
     }
 
     pub fn FD_CLR(fd: ::c_int, set: *mut fd_set) -> () {

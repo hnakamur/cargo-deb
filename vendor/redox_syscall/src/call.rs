@@ -1,5 +1,5 @@
 use super::arch::*;
-use super::data::{SigAction, Stat, StatVfs, TimeSpec};
+use super::data::{Map, SigAction, Stat, StatVfs, TimeSpec};
 use super::error::Result;
 use super::number::*;
 
@@ -100,8 +100,8 @@ pub fn fexec(fd: usize, args: &[[usize; 2]], vars: &[[usize; 2]]) -> Result<usiz
 }
 
 /// Map a file into memory
-pub unsafe fn fmap(fd: usize, offset: usize, size: usize) -> Result<usize> {
-    syscall3(SYS_FMAP, fd, offset, size)
+pub unsafe fn fmap(fd: usize, map: &Map) -> Result<usize> {
+    syscall3(SYS_FMAP, fd, map as *const Map as usize, mem::size_of::<Map>())
 }
 
 /// Unmap a memory-mapped file
@@ -230,6 +230,11 @@ pub fn mkns(schemes: &[[usize; 2]]) -> Result<usize> {
     unsafe { syscall2(SYS_MKNS, schemes.as_ptr() as usize, schemes.len()) }
 }
 
+/// Change mapping flags
+pub unsafe fn mprotect(addr: usize, size: usize, flags: usize) -> Result<usize> {
+    syscall3(SYS_MPROTECT, addr, size, flags)
+}
+
 /// Sleep for the time specified in `req`
 pub fn nanosleep(req: &TimeSpec, rem: &mut TimeSpec) -> Result<usize> {
     unsafe { syscall2(SYS_NANOSLEEP, req as *const TimeSpec as usize,
@@ -320,6 +325,13 @@ pub fn sigaction(sig: usize, act: Option<&SigAction>, oldact: Option<&mut SigAct
                       act.map(|x| x as *const _).unwrap_or_else(ptr::null) as usize,
                       oldact.map(|x| x as *mut _).unwrap_or_else(ptr::null_mut) as usize,
                       restorer as usize) }
+}
+
+/// Get and/or set signal masks
+pub fn sigprocmask(how: usize, set: Option<&[u64; 2]>, oldset: Option<&mut [u64; 2]>) -> Result<usize> {
+    unsafe { syscall3(SYS_SIGPROCMASK, how,
+                      set.map(|x| x as *const _).unwrap_or_else(ptr::null) as usize,
+                      oldset.map(|x| x as *mut _).unwrap_or_else(ptr::null_mut) as usize) }
 }
 
 // Return from signal handler

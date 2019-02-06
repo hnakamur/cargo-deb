@@ -16,7 +16,7 @@ It must be added along with `log` to the project dependencies:
 ```toml
 [dependencies]
 log = "0.4.0"
-env_logger = "0.5.13"
+env_logger = "0.6.0"
 ```
 
 `env_logger` must be initialized as early as possible in the project. After it's initialized, you can use the `log` macros to do actual logging.
@@ -40,7 +40,7 @@ environment variable that corresponds with the log messages you want to show.
 
 ```bash
 $ RUST_LOG=info ./main
-INFO: 2017-11-09T02:12:24Z: main: starting up
+[2018-11-03T06:09:06Z INFO  default] starting up
 ```
 
 ### In tests
@@ -52,7 +52,7 @@ Tests can use the `env_logger` crate to see log messages generated during that t
 log = "0.4.0"
 
 [dev-dependencies]
-env_logger = "0.5.13"
+env_logger = { version = "0.6.0", default-features = false }
 ```
 
 ```rust
@@ -93,11 +93,11 @@ $ RUST_LOG=my_lib=info cargo test
      Running target/debug/my_lib-...
 
 running 2 tests
-INFO: 2017-11-09T02:12:24Z: my_lib::tests: logging from another test
-INFO: 2017-11-09T02:12:24Z: my_lib: add_one called with -8
+[INFO my_lib::tests] logging from another test
+[INFO my_lib] add_one called with -8
 test tests::it_handles_negative_numbers ... ok
-INFO: 2017-11-09T02:12:24Z: my_lib::tests: can log from the test too
-INFO: 2017-11-09T02:12:24Z: my_lib: add_one called with 2
+[INFO my_lib::tests] can log from the test too
+[INFO my_lib] add_one called with 2
 test tests::it_adds_one ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured
@@ -115,8 +115,8 @@ $ RUST_LOG=my_lib=info cargo test it_adds_one
      Running target/debug/my_lib-...
 
 running 1 test
-INFO: 2017-11-09T02:12:24Z: my_lib::tests: can log from the test too
-INFO: 2017-11-09T02:12:24Z: my_lib: add_one called with 2
+[INFO my_lib::tests] can log from the test too
+[INFO my_lib] add_one called with 2
 test tests::it_adds_one ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
@@ -131,10 +131,14 @@ you can use the `Builder` to change the log target:
 use std::env;
 use env_logger::{Builder, Target};
 
-let mut builder = Builder::new();
+let mut builder = Builder::from_default_env();
 builder.target(Target::Stdout);
-if env::var("RUST_LOG").is_ok() {
-    builder.parse(&env::var("RUST_LOG").unwrap());
-}
+
 builder.init();
 ```
+
+## Stability of the default format
+
+The default format won't optimise for long-term stability, and explicitly makes no guarantees about the stability of its output across major, minor or patch version bumps during `0.x`.
+
+If you want to capture or interpret the output of `env_logger` programmatically then you should use a custom format.

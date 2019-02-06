@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Syn is a parsing library for parsing a stream of Rust tokens into a syntax
 //! tree of Rust source code.
 //!
@@ -72,16 +64,12 @@
 //! proc-macro = true
 //! ```
 //!
-//! ```rust
-//! #[macro_use]
-//! extern crate quote;
-//! #[macro_use]
-//! extern crate syn;
-//!
+//! ```edition2018
 //! extern crate proc_macro;
 //!
 //! use proc_macro::TokenStream;
-//! use syn::DeriveInput;
+//! use quote::quote;
+//! use syn::{parse_macro_input, DeriveInput};
 //!
 //! # const IGNORE_TOKENS: &str = stringify! {
 //! #[proc_macro_derive(MyMacro)]
@@ -98,8 +86,6 @@
 //!     // Hand the output tokens back to the compiler
 //!     TokenStream::from(expanded)
 //! }
-//! #
-//! # fn main() {}
 //! ```
 //!
 //! The [`heapsize`] example directory shows a complete working Macros 1.1
@@ -109,7 +95,7 @@
 //!
 //! [`heapsize`]: https://github.com/dtolnay/syn/tree/master/examples/heapsize
 //!
-//! ```rust
+//! ```edition2018
 //! pub trait HeapSize {
 //!     /// Total number of bytes of heap memory owned by `self`.
 //!     fn heap_size_of_children(&self) -> usize;
@@ -119,7 +105,7 @@
 //! The custom derive allows users to write `#[derive(HeapSize)]` on data
 //! structures in their program.
 //!
-//! ```rust
+//! ```edition2018
 //! # const IGNORE_TOKENS: &str = stringify! {
 //! #[derive(HeapSize)]
 //! # };
@@ -137,7 +123,7 @@
 //! compiler's error messages are displayed in user code. Consider the error the
 //! user sees if one of their field types does not implement `HeapSize`.
 //!
-//! ```rust
+//! ```edition2018
 //! # const IGNORE_TOKENS: &str = stringify! {
 //! #[derive(HeapSize)]
 //! # };
@@ -171,7 +157,7 @@
 //! The example reimplements the popular `lazy_static` crate from crates.io as a
 //! procedural macro.
 //!
-//! ```
+//! ```edition2018
 //! # macro_rules! lazy_static {
 //! #     ($($tt:tt)*) => {}
 //! # }
@@ -236,7 +222,7 @@
 //!   dynamic library libproc_macro from rustc toolchain.
 
 // Syn types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/syn/0.15.22")]
+#![doc(html_root_url = "https://docs.rs/syn/0.15.26")]
 #![cfg_attr(feature = "cargo-clippy", allow(renamed_and_removed_lints))]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy, clippy_pedantic))]
 // Ignored clippy lints.
@@ -265,10 +251,10 @@
         empty_enum,
         if_not_else,
         items_after_statements,
+        module_name_repetitions,
         shadow_unrelated,
         similar_names,
         single_match_else,
-        stutter,
         unseparated_literal_suffix,
         use_self,
         used_underscore_binding,
@@ -441,7 +427,7 @@ mod gen {
     ///
     /// [`Visit`]: trait.Visit.html
     ///
-    /// ```rust
+    /// ```edition2018
     /// # use syn::{Attribute, BinOp, Expr, ExprBinary};
     /// #
     /// pub trait Visit<'ast> {
@@ -477,7 +463,7 @@ mod gen {
     ///
     /// [`VisitMut`]: trait.VisitMut.html
     ///
-    /// ```rust
+    /// ```edition2018
     /// # use syn::{Attribute, BinOp, Expr, ExprBinary};
     /// #
     /// pub trait VisitMut {
@@ -513,7 +499,7 @@ mod gen {
     ///
     /// [`Fold`]: trait.Fold.html
     ///
-    /// ```rust
+    /// ```edition2018
     /// # use syn::{Attribute, BinOp, Expr, ExprBinary};
     /// #
     /// pub trait Fold {
@@ -596,14 +582,11 @@ pub use error::{Error, Result};
 ///
 /// # Examples
 ///
-/// ```rust
-/// #[macro_use]
-/// extern crate quote;
-///
+/// ```edition2018
 /// extern crate proc_macro;
-/// extern crate syn;
 ///
 /// use proc_macro::TokenStream;
+/// use quote::quote;
 /// use syn::DeriveInput;
 ///
 /// # const IGNORE_TOKENS: &str = stringify! {
@@ -621,8 +604,6 @@ pub use error::{Error, Result};
 ///     // Convert into a token stream and return it
 ///     expanded.into()
 /// }
-/// #
-/// # fn main() {}
 /// ```
 #[cfg(all(
     not(all(target_arch = "wasm32", target_os = "unknown")),
@@ -661,9 +642,7 @@ pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T> {
 ///
 /// # Examples
 ///
-/// ```rust
-/// # extern crate syn;
-/// #
+/// ```edition2018
 /// use syn::{Expr, Result};
 ///
 /// fn run() -> Result<()> {
@@ -673,7 +652,9 @@ pub fn parse2<T: parse::Parse>(tokens: proc_macro2::TokenStream) -> Result<T> {
 ///     Ok(())
 /// }
 /// #
-/// # fn main() { run().unwrap() }
+/// # fn main() {
+/// #     run().unwrap();
+/// # }
 /// ```
 #[cfg(feature = "parsing")]
 pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T> {
@@ -695,9 +676,7 @@ pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
-/// # extern crate syn;
-/// #
+/// ```edition2018,no_run
 /// use std::error::Error;
 /// use std::fs::File;
 /// use std::io::Read;
@@ -716,7 +695,9 @@ pub fn parse_str<T: parse::Parse>(s: &str) -> Result<T> {
 ///     Ok(())
 /// }
 /// #
-/// # fn main() { run().unwrap() }
+/// # fn main() {
+/// #     run().unwrap();
+/// # }
 /// ```
 #[cfg(all(feature = "parsing", feature = "full"))]
 pub fn parse_file(mut content: &str) -> Result<File> {

@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use super::*;
 use punctuated::Punctuated;
 
@@ -366,11 +358,8 @@ pub mod parsing {
         ///
         /// # Example
         ///
-        /// ```
-        /// #[macro_use]
-        /// extern crate syn;
-        ///
-        /// use syn::{Path, Result};
+        /// ```edition2018
+        /// use syn::{Path, Result, Token};
         /// use syn::parse::{Parse, ParseStream};
         ///
         /// // A simplified single `use` statement like:
@@ -394,8 +383,6 @@ pub mod parsing {
         ///         })
         ///     }
         /// }
-        /// #
-        /// # fn main() {}
         /// ```
         pub fn parse_mod_style(input: ParseStream) -> Result<Self> {
             Ok(Path {

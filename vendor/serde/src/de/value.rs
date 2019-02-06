@@ -1,14 +1,10 @@
 //! Building blocks for deserializing basic values using the `IntoDeserializer`
 //! trait.
 //!
-//! ```rust
-//! #[macro_use]
-//! extern crate serde_derive;
-//!
-//! extern crate serde;
-//!
+//! ```edition2018
 //! use std::str::FromStr;
-//! use serde::de::{value, Deserialize, IntoDeserializer};
+//! use serde::Deserialize;
+//! use serde::de::{value, IntoDeserializer};
 //!
 //! #[derive(Deserialize)]
 //! enum Setting {
@@ -23,8 +19,6 @@
 //!         Self::deserialize(s.into_deserializer())
 //!     }
 //! }
-//! #
-//! # fn main() {}
 //! ```
 
 use lib::*;

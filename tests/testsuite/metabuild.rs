@@ -2,7 +2,8 @@ use glob::glob;
 use serde_json;
 use std::str;
 use support::{
-    basic_lib_manifest, basic_manifest, project, registry::Package, rustc_host, Project,
+    basic_lib_manifest, basic_manifest, is_coarse_mtime, project, registry::Package, rustc_host,
+    Project,
 };
 
 #[test]
@@ -212,6 +213,14 @@ fn metabuild_lib_name() {
 
 #[test]
 fn metabuild_fresh() {
+    if is_coarse_mtime() {
+        // This test doesn't work on coarse mtimes very well. Because the
+        // metabuild script is created at build time, its mtime is almost
+        // always equal to the mtime of the output. The second call to `build`
+        // will then think it needs to be rebuilt when it should be fresh.
+        return;
+    }
+
     // Check that rebuild is fresh.
     let p = project()
         .file(
@@ -424,6 +433,7 @@ fn metabuild_build_plan() {
             "package_name": "mb",
             "package_version": "0.5.0",
             "target_kind": ["lib"],
+            "compile_mode": "build",
             "kind": "Host",
             "deps": [],
             "outputs": ["[..]/target/debug/deps/libmb-[..].rlib"],
@@ -437,6 +447,7 @@ fn metabuild_build_plan() {
             "package_name": "mb-other",
             "package_version": "0.0.1",
             "target_kind": ["lib"],
+            "compile_mode": "build",
             "kind": "Host",
             "deps": [],
             "outputs": ["[..]/target/debug/deps/libmb_other-[..].rlib"],
@@ -450,6 +461,7 @@ fn metabuild_build_plan() {
             "package_name": "foo",
             "package_version": "0.0.1",
             "target_kind": ["custom-build"],
+            "compile_mode": "build",
             "kind": "Host",
             "deps": [0, 1],
             "outputs": ["[..]/target/debug/build/foo-[..]/metabuild_foo-[..][EXE]"],
@@ -463,6 +475,7 @@ fn metabuild_build_plan() {
             "package_name": "foo",
             "package_version": "0.0.1",
             "target_kind": ["custom-build"],
+            "compile_mode": "run-custom-build",
             "kind": "Host",
             "deps": [2],
             "outputs": [],
@@ -476,6 +489,7 @@ fn metabuild_build_plan() {
             "package_name": "foo",
             "package_version": "0.0.1",
             "target_kind": ["lib"],
+            "compile_mode": "build",
             "kind": "Host",
             "deps": [3],
             "outputs": ["[..]/foo/target/debug/deps/libfoo-[..].rlib"],

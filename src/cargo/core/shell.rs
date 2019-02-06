@@ -28,10 +28,12 @@ pub struct Shell {
 impl fmt::Debug for Shell {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.err {
-            ShellOut::Write(_) => f.debug_struct("Shell")
+            ShellOut::Write(_) => f
+                .debug_struct("Shell")
                 .field("verbosity", &self.verbosity)
                 .finish(),
-            ShellOut::Stream { color_choice, .. } => f.debug_struct("Shell")
+            ShellOut::Stream { color_choice, .. } => f
+                .debug_struct("Shell")
                 .field("verbosity", &self.verbosity)
                 .field("color_choice", &color_choice)
                 .finish(),
@@ -118,6 +120,13 @@ impl Shell {
     /// Get a reference to the underlying writer
     pub fn err(&mut self) -> &mut Write {
         self.err.as_write()
+    }
+
+    /// Erase from cursor to end of line.
+    pub fn err_erase_line(&mut self) {
+        if let ShellOut::Stream { tty: true, .. } = self.err {
+            imp::err_erase_line(self);
+        }
     }
 
     /// Shortcut to right-align and color green a status message.
@@ -332,6 +341,8 @@ mod imp {
 
     use libc;
 
+    use super::Shell;
+
     pub fn stderr_width() -> Option<usize> {
         unsafe {
             let mut winsize: libc::winsize = mem::zeroed();
@@ -345,10 +356,19 @@ mod imp {
             }
         }
     }
+
+    pub fn err_erase_line(shell: &mut Shell) {
+        // This is the "EL - Erase in Line" sequence. It clears from the cursor
+        // to the end of line.
+        // https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
+        let _ = shell.err().write_all(b"\x1B[K");
+    }
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 mod imp {
+    pub(super) use super::default_err_erase_line as err_erase_line;
+
     pub fn stderr_width() -> Option<usize> {
         None
     }
@@ -358,32 +378,35 @@ mod imp {
 mod imp {
     extern crate winapi;
 
-    use std::{cmp, mem, ptr};
     use self::winapi::um::fileapi::*;
     use self::winapi::um::handleapi::*;
     use self::winapi::um::processenv::*;
     use self::winapi::um::winbase::*;
     use self::winapi::um::wincon::*;
     use self::winapi::um::winnt::*;
+    use std::{cmp, mem, ptr};
+
+    pub(super) use super::default_err_erase_line as err_erase_line;
 
     pub fn stderr_width() -> Option<usize> {
         unsafe {
             let stdout = GetStdHandle(STD_ERROR_HANDLE);
             let mut csbi: CONSOLE_SCREEN_BUFFER_INFO = mem::zeroed();
             if GetConsoleScreenBufferInfo(stdout, &mut csbi) != 0 {
-                return Some((csbi.srWindow.Right - csbi.srWindow.Left) as usize)
+                return Some((csbi.srWindow.Right - csbi.srWindow.Left) as usize);
             }
 
             // On mintty/msys/cygwin based terminals, the above fails with
             // INVALID_HANDLE_VALUE. Use an alternate method which works
             // in that case as well.
-            let h = CreateFileA("CONOUT$\0".as_ptr() as *const CHAR,
+            let h = CreateFileA(
+                "CONOUT$\0".as_ptr() as *const CHAR,
                 GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 ptr::null_mut(),
                 OPEN_EXISTING,
                 0,
-                ptr::null_mut()
+                ptr::null_mut(),
             );
             if h == INVALID_HANDLE_VALUE {
                 return None;
@@ -404,7 +427,15 @@ mod imp {
                 // GetConsoleScreenBufferInfo returns accurate information.
                 return Some(cmp::min(60, width));
             }
-            return None;
+            None
         }
+    }
+}
+
+#[cfg(any(all(unix, not(any(target_os = "linux", target_os = "macos"))), windows,))]
+fn default_err_erase_line(shell: &mut Shell) {
+    if let Some(max_width) = imp::stderr_width() {
+        let blank = " ".repeat(max_width);
+        drop(write!(shell.err(), "{}\r", blank));
     }
 }

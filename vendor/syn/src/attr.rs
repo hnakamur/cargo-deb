@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use super::*;
 use punctuated::Punctuated;
 
@@ -77,11 +69,8 @@ ast_struct! {
     /// [`Attribute::parse_outer`]: #method.parse_outer
     /// [`Attribute::parse_inner`]: #method.parse_inner
     ///
-    /// ```
-    /// #[macro_use]
-    /// extern crate syn;
-    ///
-    /// use syn::{Attribute, Ident, Result};
+    /// ```edition2018
+    /// use syn::{Attribute, Ident, Result, Token};
     /// use syn::parse::{Parse, ParseStream};
     ///
     /// // Parses a unit struct with attributes.
@@ -105,8 +94,6 @@ ast_struct! {
     ///         })
     ///     }
     /// }
-    /// #
-    /// # fn main() {}
     /// ```
     pub struct Attribute #manual_extra_traits {
         pub pound_token: Token![#],
@@ -483,7 +470,7 @@ ast_enum_of_structs! {
 /// For example if we are developing an attribute macro that is intended to be
 /// invoked on function items as follows:
 ///
-/// ```rust
+/// ```edition2018
 /// # const IGNORE: &str = stringify! {
 /// #[my_attribute(path = "/v1/refresh")]
 /// # };
@@ -495,14 +482,11 @@ ast_enum_of_structs! {
 /// The implementation of this macro would want to parse its attribute arguments
 /// as type `AttributeArgs`.
 ///
-/// ```rust
-/// #[macro_use]
-/// extern crate syn;
-///
+/// ```edition2018
 /// extern crate proc_macro;
 ///
 /// use proc_macro::TokenStream;
-/// use syn::{AttributeArgs, ItemFn};
+/// use syn::{parse_macro_input, AttributeArgs, ItemFn};
 ///
 /// # const IGNORE: &str = stringify! {
 /// #[proc_macro_attribute]
@@ -514,8 +498,6 @@ ast_enum_of_structs! {
 ///     /* ... */
 /// #   "".parse().unwrap()
 /// }
-/// #
-/// # fn main() {}
 /// ```
 pub type AttributeArgs = Vec<NestedMeta>;
 

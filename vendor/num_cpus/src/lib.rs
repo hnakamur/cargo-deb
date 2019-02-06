@@ -28,7 +28,7 @@
 //! [`rayon::ThreadPool`]: https://docs.rs/rayon/0.8.2/rayon/struct.ThreadPool.html
 #![cfg_attr(test, deny(warnings))]
 #![deny(missing_docs)]
-#![doc(html_root_url = "https://docs.rs/num_cpus/1.8.0")]
+#![doc(html_root_url = "https://docs.rs/num_cpus/1.9.0")]
 #![allow(non_snake_case)]
 
 #[cfg(not(windows))]
@@ -374,12 +374,13 @@ fn get_num_cpus() -> usize {
     }
 }
 
-#[cfg(any(target_os = "emscripten", target_os = "redox", target_os = "haiku"))]
-fn get_num_cpus() -> usize {
-    1
-}
-
-#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+#[cfg(any(
+    target_os = "emscripten",
+    target_os = "redox",
+    target_os = "haiku",
+    target_arch = "wasm32",
+    target_env = "sgx"
+))]
 fn get_num_cpus() -> usize {
     1
 }

@@ -393,6 +393,9 @@ pub const F_GETNOSIGPIPE: ::c_int = 13;
 pub const F_SETNOSIGPIPE: ::c_int = 14;
 pub const F_MAXFD: ::c_int = 11;
 
+pub const IP_RECVDSTADDR: ::c_int = 7;
+pub const IP_SENDSRCADDR: ::c_int = IP_RECVDSTADDR;
+pub const IP_RECVIF: ::c_int = 20;
 pub const IP_PKTINFO: ::c_int = 25;
 pub const IP_RECVPKTINFO: ::c_int = 26;
 pub const IPV6_JOIN_GROUP: ::c_int = 12;
@@ -523,15 +526,16 @@ pub const AF_BLUETOOTH: ::c_int = 31;
 pub const AF_IEEE80211: ::c_int = 32;
 pub const AF_MPLS: ::c_int = 33;
 pub const AF_ROUTE: ::c_int = 34;
-pub const AF_MAX: ::c_int = 35;
+pub const AF_MAX: ::c_int = 36;
 
 pub const NET_MAXID: ::c_int = AF_MAX;
 pub const NET_RT_DUMP: ::c_int = 1;
 pub const NET_RT_FLAGS: ::c_int = 2;
-pub const NET_RT_OOIFLIST: ::c_int = 3;
-pub const NET_RT_OIFLIST: ::c_int = 4;
-pub const NET_RT_IFLIST: ::c_int = 5;
-pub const NET_RT_MAXID: ::c_int = 6;
+pub const NET_RT_OOOIFLIST: ::c_int = 3;
+pub const NET_RT_OOIFLIST: ::c_int = 4;
+pub const NET_RT_OIFLIST: ::c_int = 5;
+pub const NET_RT_IFLIST: ::c_int = 6;
+pub const NET_RT_MAXID: ::c_int = 7;
 
 pub const PF_OROUTE: ::c_int = AF_OROUTE;
 pub const PF_ARP: ::c_int = AF_ARP;
@@ -984,6 +988,20 @@ pub const CHWFLOW: ::tcflag_t = ::MDMBUF | ::CRTSCTS | ::CDTRCTS;
 pub const SOCK_CLOEXEC: ::c_int = 0x10000000;
 pub const SOCK_NONBLOCK: ::c_int = 0x20000000;
 
+pub const FIONCLEX: ::c_ulong = 0x20006602;
+// Uncomment on next NetBSD release
+// pub const FIOSEEKDATA: ::c_ulong = 0xc0086661;
+// pub const FIOSEEKHOLE: ::c_ulong = 0xc0086662;
+pub const FIONREAD: ::c_ulong = 0x4004667f;
+pub const FIOASYNC: ::c_ulong = 0x8004667d;
+pub const FIOSETOWN: ::c_ulong = 0x8004667c;
+pub const FIOGETOWN: ::c_ulong = 0x4004667b;
+pub const OFIOGETBMAP: ::c_ulong = 0xc004667a;
+pub const FIOGETBMAP: ::c_ulong = 0xc008667a;
+pub const FIONWRITE: ::c_ulong = 0x40046679;
+pub const FIONSPACE: ::c_ulong = 0x40046678;
+pub const FIBMAP: ::c_ulong = 0xc008667a;
+
 pub const SIGSTKSZ : ::size_t = 40960;
 
 pub const PT_DUMPCORE: ::c_int = 12;
@@ -1022,6 +1040,7 @@ f! {
     }
 }
 
+#[link(name = "rt")]
 extern {
     pub fn aio_read(aiocbp: *mut aiocb) -> ::c_int;
     pub fn aio_write(aiocbp: *mut aiocb) -> ::c_int;
@@ -1034,7 +1053,9 @@ extern {
     pub fn aio_cancel(fd: ::c_int, aiocbp: *mut aiocb) -> ::c_int;
     pub fn lio_listio(mode: ::c_int, aiocb_list: *const *mut aiocb,
                       nitems: ::c_int, sevp: *mut sigevent) -> ::c_int;
+}
 
+extern {
     pub fn chflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;
     pub fn fchflags(fd: ::c_int, flags: ::c_ulong) -> ::c_int;
     pub fn lchflags(path: *const ::c_char, flags: ::c_ulong) -> ::c_int;

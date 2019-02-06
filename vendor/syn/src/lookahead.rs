@@ -21,11 +21,8 @@ use token::Token;
 ///
 /// # Example
 ///
-/// ```
-/// #[macro_use]
-/// extern crate syn;
-///
-/// use syn::{ConstParam, Ident, Lifetime, LifetimeDef, Result, TypeParam};
+/// ```edition2018
+/// use syn::{ConstParam, Ident, Lifetime, LifetimeDef, Result, Token, TypeParam};
 /// use syn::parse::{Parse, ParseStream};
 ///
 /// // A generic parameter, a single one of the comma-separated elements inside
@@ -59,8 +56,6 @@ use token::Token;
 ///         }
 ///     }
 /// }
-/// #
-/// # fn main() {}
 /// ```
 pub struct Lookahead1<'a> {
     scope: Span,

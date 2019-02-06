@@ -60,7 +60,6 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::{IntoIterator, FromIterator, repeat};
 use std::mem;
-#[cfg(not(feature = "union"))]
 use std::mem::ManuallyDrop;
 use std::ops;
 use std::ptr;
@@ -268,9 +267,8 @@ impl<'a, T: 'a> Drop for Drain<'a,T> {
 }
 
 #[cfg(feature = "union")]
-#[allow(unions_with_drop_fields)]
 union SmallVecData<A: Array> {
-    inline: A,
+    inline: ManuallyDrop<A>,
     heap: (*mut A::Item, usize),
 }
 
@@ -286,10 +284,10 @@ impl<A: Array> SmallVecData<A> {
     }
     #[inline]
     fn from_inline(inline: A) -> SmallVecData<A> {
-        SmallVecData { inline }
+        SmallVecData { inline: ManuallyDrop::new(inline) }
     }
     #[inline]
-    unsafe fn into_inline(self) -> A { self.inline }
+    unsafe fn into_inline(self) -> A { ManuallyDrop::into_inner(self.inline) }
     #[inline]
     unsafe fn heap(&self) -> (*mut A::Item, usize) {
         self.heap
@@ -1342,18 +1340,16 @@ impl<A: Array> Extend<A::Item> for SmallVec<A> {
         self.reserve(lower_size_bound);
 
         unsafe {
-            let len = self.len();
-            let ptr = self.as_mut_ptr().offset(len as isize);
-            let mut count = 0;
-            while count < lower_size_bound {
+            let (ptr, len_ptr, cap) = self.triple_mut();
+            let mut len = SetLenOnDrop::new(len_ptr);
+            while len.get() < cap {
                 if let Some(out) = iter.next() {
-                    ptr::write(ptr.offset(count as isize), out);
-                    count += 1;
+                    ptr::write(ptr.offset(len.get() as isize), out);
+                    len.increment_len(1);
                 } else {
                     break;
                 }
             }
-            self.set_len(len + count);
         }
 
         for elem in iter {
@@ -1560,6 +1556,11 @@ impl<'a> SetLenOnDrop<'a> {
     #[inline]
     fn new(len: &'a mut usize) -> Self {
         SetLenOnDrop { local_len: *len, len: len }
+    }
+
+    #[inline]
+    fn get(&self) -> usize {
+        self.local_len
     }
 
     #[inline]

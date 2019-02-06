@@ -12,29 +12,23 @@
 
 [package]
 name = "crossbeam-channel"
-version = "0.2.6"
+version = "0.3.8"
 authors = ["The Crossbeam Project Developers"]
 description = "Multi-producer multi-consumer channels for message passing"
-homepage = "https://github.com/crossbeam-rs/crossbeam-channel"
+homepage = "https://github.com/crossbeam-rs/crossbeam/tree/master/crossbeam-channel"
 documentation = "https://docs.rs/crossbeam-channel"
 readme = "README.md"
 keywords = ["channel", "mpmc", "select", "golang", "message"]
 categories = ["algorithms", "concurrency", "data-structures"]
 license = "MIT/Apache-2.0"
-repository = "https://github.com/crossbeam-rs/crossbeam-channel"
-[dependencies.crossbeam-epoch]
-version = "0.6.0"
-
+repository = "https://github.com/crossbeam-rs/crossbeam"
 [dependencies.crossbeam-utils]
-version = "0.5.0"
-
-[dependencies.parking_lot]
-version = "0.6.3"
-
-[dependencies.rand]
-version = "0.5.3"
+version = "0.6.5"
 
 [dependencies.smallvec]
 version = "0.6.2"
-[dev-dependencies.crossbeam]
-version = "0.3.0"
+[dev-dependencies.rand]
+version = ">= 0.5, < 0.7"
+
+[dev-dependencies.signal-hook]
+version = "0.1.5"

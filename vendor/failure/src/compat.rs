@@ -44,4 +44,10 @@ with_std! {
             Box::new(Compat { error })
         }
     }
+
+    impl From<Error> for Box<StdError + Send + Sync> {
+        fn from(error: Error) -> Box<StdError + Send + Sync> {
+            Box::new(Compat { error })
+        }
+    }
 }

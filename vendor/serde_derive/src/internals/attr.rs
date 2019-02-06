@@ -20,7 +20,6 @@ use syn::NestedMeta::{Literal, Meta};
 
 pub use internals::case::RenameRule;
 
-#[derive(Clone)]
 struct Attr<'c, T> {
     cx: &'c Ctxt,
     name: &'static str,
@@ -90,16 +89,95 @@ impl<'c> BoolAttr<'c> {
     }
 }
 
-pub struct Name {
-    serialize: String,
-    deserialize: String,
+struct VecAttr<'c, T> {
+    cx: &'c Ctxt,
+    name: &'static str,
+    first_dup_tokens: TokenStream,
+    values: Vec<T>,
 }
 
+impl<'c, T> VecAttr<'c, T> {
+    fn none(cx: &'c Ctxt, name: &'static str) -> Self {
+        VecAttr {
+            cx: cx,
+            name: name,
+            first_dup_tokens: TokenStream::new(),
+            values: Vec::new(),
+        }
+    }
+
+    fn insert<A: ToTokens>(&mut self, obj: A, value: T) {
+        if self.values.len() == 1 {
+            self.first_dup_tokens = obj.into_token_stream();
+        }
+        self.values.push(value);
+    }
+
+    fn at_most_one(mut self) -> Result<Option<T>, ()> {
+        if self.values.len() > 1 {
+            let dup_token = self.first_dup_tokens;
+            self.cx.error_spanned_by(
+                dup_token,
+                format!("duplicate serde attribute `{}`", self.name),
+            );
+            Err(())
+        } else {
+            Ok(self.values.pop())
+        }
+    }
+
+    fn get(self) -> Vec<T> {
+        self.values
+    }
+}
+
+pub struct Name {
+    serialize: String,
+    serialize_renamed: bool,
+    deserialize: String,
+    deserialize_renamed: bool,
+    deserialize_aliases: Vec<String>,
+}
+
+#[allow(deprecated)]
 fn unraw(ident: &Ident) -> String {
+    // str::trim_start_matches was added in 1.30, trim_left_matches deprecated
+    // in 1.33. We currently support rustc back to 1.15 so we need to continue
+    // to use the deprecated one.
     ident.to_string().trim_left_matches("r#").to_owned()
 }
 
 impl Name {
+    fn from_attrs(
+        source_name: String,
+        ser_name: Attr<String>,
+        de_name: Attr<String>,
+        de_aliases: Option<VecAttr<String>>,
+    ) -> Name {
+        let deserialize_aliases = match de_aliases {
+            Some(de_aliases) => {
+                let mut alias_list = BTreeSet::new();
+                for alias_name in de_aliases.get() {
+                    alias_list.insert(alias_name);
+                }
+                alias_list.into_iter().collect()
+            }
+            None => Vec::new(),
+        };
+
+        let ser_name = ser_name.get();
+        let ser_renamed = ser_name.is_some();
+        let de_name = de_name.get();
+        let de_renamed = de_name.is_some();
+        Name {
+            serialize: ser_name.unwrap_or_else(|| source_name.clone()),
+            serialize_renamed: ser_renamed,
+            deserialize: de_name.unwrap_or(source_name),
+            deserialize_renamed: de_renamed,
+            deserialize_aliases: deserialize_aliases,
+        }
+    }
+
     /// Return the container name for the container when serializing.
     pub fn serialize_name(&self) -> String {
         self.serialize.clone()
@@ -109,6 +187,20 @@ impl Name {
     pub fn deserialize_name(&self) -> String {
         self.deserialize.clone()
     }
+
+    fn deserialize_aliases(&self) -> Vec<String> {
+        let mut aliases = self.deserialize_aliases.clone();
+        let main_name = self.deserialize_name();
+        if !aliases.contains(&main_name) {
+            aliases.push(main_name);
+        }
+        aliases
+    }
+}
+
+pub struct RenameAllRules {
+    serialize: RenameRule,
+    deserialize: RenameRule,
 }
 
 /// Represents struct or enum attribute information.
@@ -117,10 +209,10 @@ pub struct Container {
     transparent: bool,
     deny_unknown_fields: bool,
     default: Default,
-    rename_all: RenameRule,
+    rename_all_rules: RenameAllRules,
     ser_bound: Option<Vec<syn::WherePredicate>>,
     de_bound: Option<Vec<syn::WherePredicate>>,
-    tag: EnumTag,
+    tag: TagType,
     type_from: Option<syn::Type>,
     type_into: Option<syn::Type>,
     remote: Option<syn::Path>,
@@ -129,7 +221,7 @@ pub struct Container {
 }
 
 /// Styles of representing an enum.
-pub enum EnumTag {
+pub enum TagType {
     /// The default.
     ///
     /// ```json
@@ -194,7 +286,8 @@ impl Container {
         let mut transparent = BoolAttr::none(cx, "transparent");
         let mut deny_unknown_fields = BoolAttr::none(cx, "deny_unknown_fields");
         let mut default = Attr::none(cx, "default");
-        let mut rename_all = Attr::none(cx, "rename_all");
+        let mut rename_all_ser_rule = Attr::none(cx, "rename_all");
+        let mut rename_all_de_rule = Attr::none(cx, "rename_all");
         let mut ser_bound = Attr::none(cx, "bound");
         let mut de_bound = Attr::none(cx, "bound");
         let mut untagged = BoolAttr::none(cx, "untagged");
@@ -229,7 +322,10 @@ impl Container {
                     Meta(NameValue(ref m)) if m.ident == "rename_all" => {
                         if let Ok(s) = get_lit_str(cx, &m.ident, &m.ident, &m.lit) {
                             match RenameRule::from_str(&s.value()) {
-                                Ok(rename_rule) => rename_all.set(&m.ident, rename_rule),
+                                Ok(rename_rule) => {
+                                    rename_all_ser_rule.set(&m.ident, rename_rule);
+                                    rename_all_de_rule.set(&m.ident, rename_rule);
+                                }
                                 Err(()) => cx.error_spanned_by(
                                     s,
                                     format!(
@@ -238,6 +334,42 @@ impl Container {
                                         s.value(),
                                     ),
                                 ),
+                            }
+                        }
+                    }
+
+                    // Parse `#[serde(rename_all(serialize = "foo", deserialize = "bar"))]`
+                    Meta(List(ref m)) if m.ident == "rename_all" => {
+                        if let Ok((ser, de)) = get_renames(cx, &m.nested) {
+                            if let Some(ser) = ser {
+                                match RenameRule::from_str(&ser.value()) {
+                                    Ok(rename_rule) => {
+                                        rename_all_ser_rule.set(&m.ident, rename_rule)
+                                    }
+                                    Err(()) => cx.error_spanned_by(
+                                        ser,
+                                        format!(
+                                            "unknown rename rule for #[serde(rename_all \
+                                             = {:?})]",
+                                            ser.value(),
+                                        ),
+                                    ),
+                                }
+                            }
+                            if let Some(de) = de {
+                                match RenameRule::from_str(&de.value()) {
+                                    Ok(rename_rule) => {
+                                        rename_all_de_rule.set(&m.ident, rename_rule)
+                                    }
+                                    Err(()) => cx.error_spanned_by(
+                                        de,
+                                        format!(
+                                            "unknown rename rule for #[serde(rename_all \
+                                             = {:?})]",
+                                            de.value(),
+                                        ),
+                                    ),
+                                }
                             }
                         }
                     }
@@ -361,20 +493,27 @@ impl Container {
                                 syn::Data::Enum(_) => {
                                     internal_tag.set(&m.ident, s.value());
                                 }
-                                syn::Data::Struct(syn::DataStruct {
-                                    ref struct_token, ..
-                                }) => {
-                                    cx.error_spanned_by(
-                                        struct_token,
-                                        "#[serde(tag = \"...\")] can only be used on enums",
-                                    );
+                                syn::Data::Struct(syn::DataStruct { ref fields, .. }) => {
+                                    match *fields {
+                                        syn::Fields::Named(_) => {
+                                            internal_tag.set(&m.ident, s.value());
+                                        }
+                                        syn::Fields::Unnamed(_) | syn::Fields::Unit => {
+                                            cx.error_spanned_by(
+                                                fields,
+                                                "#[serde(tag = \"...\")] can only be used on enums \
+                                                and structs with named fields",
+                                            );
+                                        }
+                                    }
                                 }
                                 syn::Data::Union(syn::DataUnion {
                                     ref union_token, ..
                                 }) => {
                                     cx.error_spanned_by(
                                         union_token,
-                                        "#[serde(tag = \"...\")] can only be used on enums",
+                                        "#[serde(tag = \"...\")] can only be used on enums \
+                                         and structs with named fields",
                                     );
                                 }
                             }
@@ -458,14 +597,14 @@ impl Container {
         }
 
         Container {
-            name: Name {
-                serialize: ser_name.get().unwrap_or_else(|| unraw(&item.ident)),
-                deserialize: de_name.get().unwrap_or_else(|| unraw(&item.ident)),
-            },
+            name: Name::from_attrs(unraw(&item.ident), ser_name, de_name, None),
             transparent: transparent.get(),
             deny_unknown_fields: deny_unknown_fields.get(),
             default: default.get().unwrap_or(Default::None),
-            rename_all: rename_all.get().unwrap_or(RenameRule::None),
+            rename_all_rules: RenameAllRules {
+                serialize: rename_all_ser_rule.get().unwrap_or(RenameRule::None),
+                deserialize: rename_all_de_rule.get().unwrap_or(RenameRule::None),
+            },
             ser_bound: ser_bound.get(),
             de_bound: de_bound.get(),
             tag: decide_tag(cx, item, untagged, internal_tag, content),
@@ -481,8 +620,8 @@ impl Container {
         &self.name
     }
 
-    pub fn rename_all(&self) -> &RenameRule {
-        &self.rename_all
+    pub fn rename_all_rules(&self) -> &RenameAllRules {
+        &self.rename_all_rules
     }
 
     pub fn transparent(&self) -> bool {
@@ -505,7 +644,7 @@ impl Container {
         self.de_bound.as_ref().map(|vec| &vec[..])
     }
 
-    pub fn tag(&self) -> &EnumTag {
+    pub fn tag(&self) -> &TagType {
         &self.tag
     }
 
@@ -540,14 +679,14 @@ fn decide_tag(
     untagged: BoolAttr,
     internal_tag: Attr<String>,
     content: Attr<String>,
-) -> EnumTag {
+) -> TagType {
     match (
         untagged.0.get_with_tokens(),
         internal_tag.get_with_tokens(),
         content.get_with_tokens(),
     ) {
-        (None, None, None) => EnumTag::External,
-        (Some(_), None, None) => EnumTag::None,
+        (None, None, None) => TagType::External,
+        (Some(_), None, None) => TagType::None,
         (None, Some((_, tag)), None) => {
             // Check that there are no tuple variants.
             if let syn::Data::Enum(ref data) = item.data {
@@ -567,7 +706,7 @@ fn decide_tag(
                     }
                 }
             }
-            EnumTag::Internal { tag: tag }
+            TagType::Internal { tag: tag }
         }
         (Some((untagged_tokens, _)), Some((tag_tokens, _)), None) => {
             cx.error_spanned_by(
@@ -578,14 +717,14 @@ fn decide_tag(
                 tag_tokens,
                 "enum cannot be both untagged and internally tagged",
             );
-            EnumTag::External // doesn't matter, will error
+            TagType::External // doesn't matter, will error
         }
         (None, None, Some((content_tokens, _))) => {
             cx.error_spanned_by(
                 content_tokens,
                 "#[serde(tag = \"...\", content = \"...\")] must be used together",
             );
-            EnumTag::External
+            TagType::External
         }
         (Some((untagged_tokens, _)), None, Some((content_tokens, _))) => {
             cx.error_spanned_by(
@@ -596,9 +735,9 @@ fn decide_tag(
                 content_tokens,
                 "untagged enum cannot have #[serde(content = \"...\")]",
             );
-            EnumTag::External
+            TagType::External
         }
-        (None, Some((_, tag)), Some((_, content))) => EnumTag::Adjacent {
+        (None, Some((_, tag)), Some((_, content))) => TagType::Adjacent {
             tag: tag,
             content: content,
         },
@@ -615,7 +754,7 @@ fn decide_tag(
                 content_tokens,
                 "untagged enum cannot have #[serde(tag = \"...\", content = \"...\")]",
             );
-            EnumTag::External
+            TagType::External
         }
     }
 }
@@ -703,9 +842,7 @@ fn decide_identifier(
 /// Represents variant attribute information
 pub struct Variant {
     name: Name,
-    ser_renamed: bool,
-    de_renamed: bool,
-    rename_all: RenameRule,
+    rename_all_rules: RenameAllRules,
     ser_bound: Option<Vec<syn::WherePredicate>>,
     de_bound: Option<Vec<syn::WherePredicate>>,
     skip_deserializing: bool,
@@ -720,9 +857,11 @@ impl Variant {
     pub fn from_ast(cx: &Ctxt, variant: &syn::Variant) -> Self {
         let mut ser_name = Attr::none(cx, "rename");
         let mut de_name = Attr::none(cx, "rename");
+        let mut de_aliases = VecAttr::none(cx, "rename");
         let mut skip_deserializing = BoolAttr::none(cx, "skip_deserializing");
         let mut skip_serializing = BoolAttr::none(cx, "skip_serializing");
-        let mut rename_all = Attr::none(cx, "rename_all");
+        let mut rename_all_ser_rule = Attr::none(cx, "rename_all");
+        let mut rename_all_de_rule = Attr::none(cx, "rename_all");
         let mut ser_bound = Attr::none(cx, "bound");
         let mut de_bound = Attr::none(cx, "bound");
         let mut other = BoolAttr::none(cx, "other");
@@ -737,15 +876,26 @@ impl Variant {
                     Meta(NameValue(ref m)) if m.ident == "rename" => {
                         if let Ok(s) = get_lit_str(cx, &m.ident, &m.ident, &m.lit) {
                             ser_name.set(&m.ident, s.value());
-                            de_name.set(&m.ident, s.value());
+                            de_name.set_if_none(s.value());
+                            de_aliases.insert(&m.ident, s.value());
                         }
                     }
 
                     // Parse `#[serde(rename(serialize = "foo", deserialize = "bar"))]`
                     Meta(List(ref m)) if m.ident == "rename" => {
-                        if let Ok((ser, de)) = get_renames(cx, &m.nested) {
+                        if let Ok((ser, de)) = get_multiple_renames(cx, &m.nested) {
                             ser_name.set_opt(&m.ident, ser.map(syn::LitStr::value));
-                            de_name.set_opt(&m.ident, de.map(syn::LitStr::value));
+                            for de_value in de {
+                                de_name.set_if_none(de_value.value());
+                                de_aliases.insert(&m.ident, de_value.value());
+                            }
+                        }
+                    }
+
+                    // Parse `#[serde(alias = "foo")]`
+                    Meta(NameValue(ref m)) if m.ident == "alias" => {
+                        if let Ok(s) = get_lit_str(cx, &m.ident, &m.ident, &m.lit) {
+                            de_aliases.insert(&m.ident, s.value());
                         }
                     }
 
@@ -753,7 +903,10 @@ impl Variant {
                     Meta(NameValue(ref m)) if m.ident == "rename_all" => {
                         if let Ok(s) = get_lit_str(cx, &m.ident, &m.ident, &m.lit) {
                             match RenameRule::from_str(&s.value()) {
-                                Ok(rename_rule) => rename_all.set(&m.ident, rename_rule),
+                                Ok(rename_rule) => {
+                                    rename_all_ser_rule.set(&m.ident, rename_rule);
+                                    rename_all_de_rule.set(&m.ident, rename_rule);
+                                }
                                 Err(()) => cx.error_spanned_by(
                                     s,
                                     format!(
@@ -762,6 +915,42 @@ impl Variant {
                                         s.value()
                                     ),
                                 ),
+                            }
+                        }
+                    }
+
+                    // Parse `#[serde(rename_all(serialize = "foo", deserialize = "bar"))]`
+                    Meta(List(ref m)) if m.ident == "rename_all" => {
+                        if let Ok((ser, de)) = get_renames(cx, &m.nested) {
+                            if let Some(ser) = ser {
+                                match RenameRule::from_str(&ser.value()) {
+                                    Ok(rename_rule) => {
+                                        rename_all_ser_rule.set(&m.ident, rename_rule)
+                                    }
+                                    Err(()) => cx.error_spanned_by(
+                                        ser,
+                                        format!(
+                                            "unknown rename rule for #[serde(rename_all \
+                                             = {:?})]",
+                                            ser.value(),
+                                        ),
+                                    ),
+                                }
+                            }
+                            if let Some(de) = de {
+                                match RenameRule::from_str(&de.value()) {
+                                    Ok(rename_rule) => {
+                                        rename_all_de_rule.set(&m.ident, rename_rule)
+                                    }
+                                    Err(()) => cx.error_spanned_by(
+                                        de,
+                                        format!(
+                                            "unknown rename rule for #[serde(rename_all \
+                                             = {:?})]",
+                                            de.value(),
+                                        ),
+                                    ),
+                                }
                             }
                         }
                     }
@@ -864,18 +1053,12 @@ impl Variant {
             }
         }
 
-        let ser_name = ser_name.get();
-        let ser_renamed = ser_name.is_some();
-        let de_name = de_name.get();
-        let de_renamed = de_name.is_some();
         Variant {
-            name: Name {
-                serialize: ser_name.unwrap_or_else(|| unraw(&variant.ident)),
-                deserialize: de_name.unwrap_or_else(|| unraw(&variant.ident)),
+            name: Name::from_attrs(unraw(&variant.ident), ser_name, de_name, Some(de_aliases)),
+            rename_all_rules: RenameAllRules {
+                serialize: rename_all_ser_rule.get().unwrap_or(RenameRule::None),
+                deserialize: rename_all_de_rule.get().unwrap_or(RenameRule::None),
             },
-            ser_renamed: ser_renamed,
-            de_renamed: de_renamed,
-            rename_all: rename_all.get().unwrap_or(RenameRule::None),
             ser_bound: ser_bound.get(),
             de_bound: de_bound.get(),
             skip_deserializing: skip_deserializing.get(),
@@ -891,17 +1074,21 @@ impl Variant {
         &self.name
     }
 
-    pub fn rename_by_rule(&mut self, rule: &RenameRule) {
-        if !self.ser_renamed {
-            self.name.serialize = rule.apply_to_variant(&self.name.serialize);
+    pub fn aliases(&self) -> Vec<String> {
+        self.name.deserialize_aliases()
+    }
+
+    pub fn rename_by_rules(&mut self, rules: &RenameAllRules) {
+        if !self.name.serialize_renamed {
+            self.name.serialize = rules.serialize.apply_to_variant(&self.name.serialize);
         }
-        if !self.de_renamed {
-            self.name.deserialize = rule.apply_to_variant(&self.name.deserialize);
+        if !self.name.deserialize_renamed {
+            self.name.deserialize = rules.deserialize.apply_to_variant(&self.name.deserialize);
         }
     }
 
-    pub fn rename_all(&self) -> &RenameRule {
-        &self.rename_all
+    pub fn rename_all_rules(&self) -> &RenameAllRules {
+        &self.rename_all_rules
     }
 
     pub fn ser_bound(&self) -> Option<&[syn::WherePredicate]> {
@@ -936,8 +1123,6 @@ impl Variant {
 /// Represents field attribute information
 pub struct Field {
     name: Name,
-    ser_renamed: bool,
-    de_renamed: bool,
     skip_serializing: bool,
     skip_deserializing: bool,
     skip_serializing_if: Option<syn::ExprPath>,
@@ -982,6 +1167,7 @@ impl Field {
     ) -> Self {
         let mut ser_name = Attr::none(cx, "rename");
         let mut de_name = Attr::none(cx, "rename");
+        let mut de_aliases = VecAttr::none(cx, "rename");
         let mut skip_serializing = BoolAttr::none(cx, "skip_serializing");
         let mut skip_deserializing = BoolAttr::none(cx, "skip_deserializing");
         let mut skip_serializing_if = Attr::none(cx, "skip_serializing_if");
@@ -1015,15 +1201,26 @@ impl Field {
                     Meta(NameValue(ref m)) if m.ident == "rename" => {
                         if let Ok(s) = get_lit_str(cx, &m.ident, &m.ident, &m.lit) {
                             ser_name.set(&m.ident, s.value());
-                            de_name.set(&m.ident, s.value());
+                            de_name.set_if_none(s.value());
+                            de_aliases.insert(&m.ident, s.value());
                         }
                     }
 
                     // Parse `#[serde(rename(serialize = "foo", deserialize = "bar"))]`
                     Meta(List(ref m)) if m.ident == "rename" => {
-                        if let Ok((ser, de)) = get_renames(cx, &m.nested) {
+                        if let Ok((ser, de)) = get_multiple_renames(cx, &m.nested) {
                             ser_name.set_opt(&m.ident, ser.map(syn::LitStr::value));
-                            de_name.set_opt(&m.ident, de.map(syn::LitStr::value));
+                            for de_value in de {
+                                de_name.set_if_none(de_value.value());
+                                de_aliases.insert(&m.ident, de_value.value());
+                            }
+                        }
+                    }
+
+                    // Parse `#[serde(alias = "foo")]`
+                    Meta(NameValue(ref m)) if m.ident == "alias" => {
+                        if let Ok(s) = get_lit_str(cx, &m.ident, &m.ident, &m.lit) {
+                            de_aliases.insert(&m.ident, s.value());
                         }
                     }
 
@@ -1230,17 +1427,8 @@ impl Field {
             collect_lifetimes(&field.ty, &mut borrowed_lifetimes);
         }
 
-        let ser_name = ser_name.get();
-        let ser_renamed = ser_name.is_some();
-        let de_name = de_name.get();
-        let de_renamed = de_name.is_some();
         Field {
-            name: Name {
-                serialize: ser_name.unwrap_or_else(|| ident.clone()),
-                deserialize: de_name.unwrap_or(ident),
-            },
-            ser_renamed: ser_renamed,
-            de_renamed: de_renamed,
+            name: Name::from_attrs(ident, ser_name, de_name, Some(de_aliases)),
             skip_serializing: skip_serializing.get(),
             skip_deserializing: skip_deserializing.get(),
             skip_serializing_if: skip_serializing_if.get(),
@@ -1260,12 +1448,16 @@ impl Field {
         &self.name
     }
 
-    pub fn rename_by_rule(&mut self, rule: &RenameRule) {
-        if !self.ser_renamed {
-            self.name.serialize = rule.apply_to_field(&self.name.serialize);
+    pub fn aliases(&self) -> Vec<String> {
+        self.name.deserialize_aliases()
+    }
+
+    pub fn rename_by_rules(&mut self, rules: &RenameAllRules) {
+        if !self.name.serialize_renamed {
+            self.name.serialize = rules.serialize.apply_to_field(&self.name.serialize);
         }
-        if !self.de_renamed {
-            self.name.deserialize = rule.apply_to_field(&self.name.deserialize);
+        if !self.name.deserialize_renamed {
+            self.name.deserialize = rules.deserialize.apply_to_field(&self.name.deserialize);
         }
     }
 
@@ -1324,31 +1516,31 @@ impl Field {
 
 type SerAndDe<T> = (Option<T>, Option<T>);
 
-fn get_ser_and_de<'a, T, F>(
-    cx: &Ctxt,
+fn get_ser_and_de<'a, 'b, T, F>(
+    cx: &'b Ctxt,
     attr_name: &'static str,
     metas: &'a Punctuated<syn::NestedMeta, Token![,]>,
     f: F,
-) -> Result<SerAndDe<T>, ()>
+) -> Result<(VecAttr<'b, T>, VecAttr<'b, T>), ()>
 where
     T: 'a,
     F: Fn(&Ctxt, &Ident, &Ident, &'a syn::Lit) -> Result<T, ()>,
 {
-    let mut ser_meta = Attr::none(cx, attr_name);
-    let mut de_meta = Attr::none(cx, attr_name);
+    let mut ser_meta = VecAttr::none(cx, attr_name);
+    let mut de_meta = VecAttr::none(cx, attr_name);
     let attr_name = Ident::new(attr_name, Span::call_site());
 
     for meta in metas {
         match *meta {
             Meta(NameValue(ref meta)) if meta.ident == "serialize" => {
                 if let Ok(v) = f(cx, &attr_name, &meta.ident, &meta.lit) {
-                    ser_meta.set(&meta.ident, v);
+                    ser_meta.insert(&meta.ident, v);
                 }
             }
 
             Meta(NameValue(ref meta)) if meta.ident == "deserialize" => {
                 if let Ok(v) = f(cx, &attr_name, &meta.ident, &meta.lit) {
-                    de_meta.set(&meta.ident, v);
+                    de_meta.insert(&meta.ident, v);
                 }
             }
 
@@ -1366,21 +1558,31 @@ where
         }
     }
 
-    Ok((ser_meta.get(), de_meta.get()))
+    Ok((ser_meta, de_meta))
 }
 
 fn get_renames<'a>(
     cx: &Ctxt,
     items: &'a Punctuated<syn::NestedMeta, Token![,]>,
 ) -> Result<SerAndDe<&'a syn::LitStr>, ()> {
-    get_ser_and_de(cx, "rename", items, get_lit_str)
+    let (ser, de) = try!(get_ser_and_de(cx, "rename", items, get_lit_str));
+    Ok((try!(ser.at_most_one()), try!(de.at_most_one())))
+}
+
+fn get_multiple_renames<'a>(
+    cx: &Ctxt,
+    items: &'a Punctuated<syn::NestedMeta, Token![,]>,
+) -> Result<(Option<&'a syn::LitStr>, Vec<&'a syn::LitStr>), ()> {
+    let (ser, de) = try!(get_ser_and_de(cx, "rename", items, get_lit_str));
+    Ok((try!(ser.at_most_one()), de.get()))
 }
 
 fn get_where_predicates(
     cx: &Ctxt,
     items: &Punctuated<syn::NestedMeta, Token![,]>,
 ) -> Result<SerAndDe<Vec<syn::WherePredicate>>, ()> {
-    get_ser_and_de(cx, "bound", items, parse_lit_into_where)
+    let (ser, de) = try!(get_ser_and_de(cx, "bound", items, parse_lit_into_where));
+    Ok((try!(ser.at_most_one()), try!(de.at_most_one())))
 }
 
 pub fn get_serde_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {

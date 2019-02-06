@@ -4147,43 +4147,40 @@ fn build_filter_infer_profile() {
 
     p.cargo("build -v")
         .with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name foo src/lib.rs --color never --crate-type lib \
+            "[RUNNING] `rustc --crate-name foo src/lib.rs --color never --crate-type lib \
              --emit=dep-info,link[..]",
         ).with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
+            "[RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
              --emit=dep-info,link[..]",
         ).run();
 
     p.root().join("target").rm_rf();
     p.cargo("build -v --test=t1")
         .with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name foo src/lib.rs --color never --crate-type lib \
-             --emit=dep-info,link[..]",
+            "[RUNNING] `rustc --crate-name foo src/lib.rs --color never --crate-type lib \
+             --emit=dep-info,link -C debuginfo=2 [..]",
         ).with_stderr_contains(
-            "[RUNNING] `rustc --crate-name t1 tests/t1.rs --color never --emit=dep-info,link[..]",
+            "[RUNNING] `rustc --crate-name t1 tests/t1.rs --color never --emit=dep-info,link \
+            -C debuginfo=2 [..]",
         ).with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
-             --emit=dep-info,link[..]",
+            "[RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
+             --emit=dep-info,link -C debuginfo=2 [..]",
         ).run();
 
     p.root().join("target").rm_rf();
+    // Bench uses test profile without `--release`.
     p.cargo("build -v --bench=b1")
         .with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name foo src/lib.rs --color never --crate-type lib \
-             --emit=dep-info,link[..]",
+            "[RUNNING] `rustc --crate-name foo src/lib.rs --color never --crate-type lib \
+             --emit=dep-info,link -C debuginfo=2 [..]",
         ).with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name b1 benches/b1.rs --color never --emit=dep-info,link \
-             -C opt-level=3[..]",
-        ).with_stderr_contains(
-            "\
-             [RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
-             --emit=dep-info,link[..]",
+            "[RUNNING] `rustc --crate-name b1 benches/b1.rs --color never --emit=dep-info,link \
+            -C debuginfo=2 [..]",
+        )
+        .with_stderr_does_not_contain("opt-level")
+        .with_stderr_contains(
+            "[RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
+             --emit=dep-info,link -C debuginfo=2 [..]",
         ).run();
 }
 
@@ -4213,10 +4210,6 @@ fn targets_selected_all() {
         .with_stderr_contains("\
             [RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
             --emit=dep-info,link[..]")
-        // bench
-        .with_stderr_contains("\
-            [RUNNING] `rustc --crate-name foo src/main.rs --color never --emit=dep-info,link \
-            -C opt-level=3 --test [..]")
         // unit test
         .with_stderr_contains("\
             [RUNNING] `rustc --crate-name foo src/main.rs --color never --emit=dep-info,link \
@@ -4231,10 +4224,6 @@ fn all_targets_no_lib() {
         .with_stderr_contains("\
             [RUNNING] `rustc --crate-name foo src/main.rs --color never --crate-type bin \
             --emit=dep-info,link[..]")
-        // bench
-        .with_stderr_contains("\
-            [RUNNING] `rustc --crate-name foo src/main.rs --color never --emit=dep-info,link \
-            -C opt-level=3 --test [..]")
         // unit test
         .with_stderr_contains("\
             [RUNNING] `rustc --crate-name foo src/main.rs --color never --emit=dep-info,link \
@@ -4327,8 +4316,8 @@ fn target_filters_workspace() {
         .file("a/src/lib.rs", "")
         .file("a/examples/ex1.rs", "fn main() {}")
         .file("b/Cargo.toml", &basic_bin_manifest("b"))
+        .file("b/src/lib.rs", "")
         .file("b/src/main.rs", "fn main() {}")
-        .file("b/examples/ex1.rs", "fn main() {}")
         .build();
 
     ws.cargo("build -v --example ex")
@@ -4343,12 +4332,12 @@ Did you mean `ex1`?",
     ws.cargo("build -v --lib")
         .with_status(0)
         .with_stderr_contains("[RUNNING] `rustc [..]a/src/lib.rs[..]")
+        .with_stderr_contains("[RUNNING] `rustc [..]b/src/lib.rs[..]")
         .run();
 
     ws.cargo("build -v --example ex1")
         .with_status(0)
         .with_stderr_contains("[RUNNING] `rustc [..]a/examples/ex1.rs[..]")
-        .with_stderr_contains("[RUNNING] `rustc [..]b/examples/ex1.rs[..]")
         .run();
 }
 
@@ -4371,5 +4360,135 @@ fn target_filters_workspace_not_found() {
     ws.cargo("build -v --lib")
         .with_status(101)
         .with_stderr("[ERROR] no library targets found in packages: a, b")
+        .run();
+}
+
+#[cfg(unix)]
+#[test]
+fn signal_display() {
+    // Cause the compiler to crash with a signal.
+    let foo = project()
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            [dependencies]
+            pm = { path = "pm" }
+        "#,
+        )
+        .file(
+            "src/lib.rs",
+            r#"
+            #[macro_use]
+            extern crate pm;
+
+            #[derive(Foo)]
+            pub struct S;
+        "#,
+        )
+        .file(
+            "pm/Cargo.toml",
+            r#"
+            [package]
+            name = "pm"
+            version = "0.1.0"
+            [lib]
+            proc-macro = true
+        "#,
+        )
+        .file(
+            "pm/src/lib.rs",
+            r#"
+            extern crate proc_macro;
+            use proc_macro::TokenStream;
+
+            #[proc_macro_derive(Foo)]
+            pub fn derive(_input: TokenStream) -> TokenStream {
+                std::process::abort()
+            }
+        "#,
+        )
+        .build();
+
+    foo.cargo("build")
+        .with_stderr("\
+[COMPILING] pm [..]
+[COMPILING] foo [..]
+[ERROR] Could not compile `foo`.
+
+Caused by:
+  process didn't exit successfully: `rustc [..]` (signal: 6, SIGABRT: process abort signal)
+")
+        .with_status(101)
+        .run();
+}
+
+#[test]
+fn json_parse_fail() {
+    // Ensure when json parsing fails, and rustc exits with non-zero exit
+    // code, that a useful error message is displayed.
+    let foo = project()
+        .file(
+            "Cargo.toml",
+            r#"
+            [package]
+            name = "foo"
+            version = "0.1.0"
+            [dependencies]
+            pm = { path = "pm" }
+        "#,
+        )
+        .file(
+            "src/lib.rs",
+            r#"
+            #[macro_use]
+            extern crate pm;
+
+            #[derive(Foo)]
+            pub struct S;
+        "#,
+        )
+        .file(
+            "pm/Cargo.toml",
+            r#"
+            [package]
+            name = "pm"
+            version = "0.1.0"
+            [lib]
+            proc-macro = true
+        "#,
+        )
+        .file(
+            "pm/src/lib.rs",
+            r#"
+            extern crate proc_macro;
+            use proc_macro::TokenStream;
+
+            #[proc_macro_derive(Foo)]
+            pub fn derive(_input: TokenStream) -> TokenStream {
+                eprintln!("{{evil proc macro}}");
+                panic!("something went wrong");
+            }
+        "#,
+        )
+        .build();
+
+    foo.cargo("build --message-format=json")
+        .with_stderr(
+            "\
+[COMPILING] pm [..]
+[COMPILING] foo [..]
+[ERROR] Could not compile `foo`.
+
+Caused by:
+  compiler produced invalid json: `{evil proc macro}`
+
+Caused by:
+  failed to parse process output: `rustc [..]
+",
+        )
+        .with_status(101)
         .run();
 }

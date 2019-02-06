@@ -11,10 +11,8 @@
 /// input. This requires repetitive implementations of all the [`Deserializer`]
 /// trait methods.
 ///
-/// ```rust
-/// # #[macro_use]
-/// # extern crate serde;
-/// #
+/// ```edition2018
+/// # use serde::forward_to_deserialize_any;
 /// # use serde::de::{value, Deserializer, Visitor};
 /// #
 /// # struct MyDeserializer;
@@ -43,18 +41,14 @@
 /// #         tuple_struct map struct enum identifier ignored_any
 /// #     }
 /// # }
-/// #
-/// # fn main() {}
 /// ```
 ///
 /// The `forward_to_deserialize_any!` macro implements these simple forwarding
 /// methods so that they forward directly to [`Deserializer::deserialize_any`].
 /// You can choose which methods to forward.
 ///
-/// ```rust
-/// # #[macro_use]
-/// # extern crate serde;
-/// #
+/// ```edition2018
+/// # use serde::forward_to_deserialize_any;
 /// # use serde::de::{value, Deserializer, Visitor};
 /// #
 /// # struct MyDeserializer;
@@ -77,8 +71,6 @@
 ///         tuple_struct map struct enum identifier ignored_any
 ///     }
 /// }
-/// #
-/// # fn main() {}
 /// ```
 ///
 /// The macro assumes the convention that your `Deserializer` lifetime parameter
@@ -86,12 +78,10 @@
 /// called `V`. A different type parameter and a different lifetime can be
 /// specified explicitly if necessary.
 ///
-/// ```rust
-/// # #[macro_use]
-/// # extern crate serde;
-/// #
+/// ```edition2018
 /// # use std::marker::PhantomData;
 /// #
+/// # use serde::forward_to_deserialize_any;
 /// # use serde::de::{value, Deserializer, Visitor};
 /// #
 /// # struct MyDeserializer<V>(PhantomData<V>);
@@ -113,8 +103,6 @@
 ///     tuple_struct map struct enum identifier ignored_any
 /// }
 /// # }
-/// #
-/// # fn main() {}
 /// ```
 ///
 /// [`Deserializer`]: trait.Deserializer.html

@@ -1,11 +1,3 @@
-// Copyright 2017 Serde Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use serde::ser::Impossible;
 use serde::{self, Serialize};
 
@@ -77,6 +69,13 @@ impl serde::Serializer for Serializer {
         Ok(Value::Number(value.into()))
     }
 
+    #[cfg(feature = "arbitrary_precision")]
+    serde_if_integer128! {
+        fn serialize_i128(self, value: i128) -> Result<Value, Error> {
+            Ok(Value::Number(value.into()))
+        }
+    }
+
     #[inline]
     fn serialize_u8(self, value: u8) -> Result<Value, Error> {
         self.serialize_u64(value as u64)
@@ -95,6 +94,13 @@ impl serde::Serializer for Serializer {
     #[inline]
     fn serialize_u64(self, value: u64) -> Result<Value, Error> {
         Ok(Value::Number(value.into()))
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    serde_if_integer128! {
+        fn serialize_u128(self, value: u128) -> Result<Value, Error> {
+            Ok(Value::Number(value.into()))
+        }
     }
 
     #[inline]

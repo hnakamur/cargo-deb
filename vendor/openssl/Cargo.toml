@@ -12,7 +12,7 @@
 
 [package]
 name = "openssl"
-version = "0.10.15"
+version = "0.10.16"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 description = "OpenSSL bindings"
 readme = "README.md"
@@ -36,7 +36,7 @@ version = "1"
 version = "0.2"
 
 [dependencies.openssl-sys]
-version = "0.9.39"
+version = "0.9.40"
 [dev-dependencies.data-encoding]
 version = "2.0"
 
@@ -51,4 +51,4 @@ v101 = []
 v102 = []
 v110 = []
 v111 = []
-vendored = ["openssl-sys/vendored"]
+vendored = []

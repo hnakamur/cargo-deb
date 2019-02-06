@@ -113,11 +113,12 @@ use std::os;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::str;
-use std::time::Duration;
+use std::time::{self, Duration};
 use std::usize;
 
 use cargo;
 use cargo::util::{CargoResult, ProcessBuilder, ProcessError, Rustc};
+use filetime;
 use serde_json::{self, Value};
 use url::Url;
 
@@ -279,8 +280,19 @@ impl ProjectBuilder {
             self._file(Path::new("Cargo.toml"), &basic_manifest("foo", "0.0.1"))
         }
 
+        let past = time::SystemTime::now() - Duration::new(1, 0);
+        let ftime = filetime::FileTime::from_system_time(past);
+
         for file in self.files.iter() {
             file.mk();
+            if is_coarse_mtime() {
+                // Place the entire project 1 second in the past to ensure
+                // that if cargo is called multiple times, the 2nd call will
+                // see targets as "fresh". Without this, if cargo finishes in
+                // under 1 second, the second call will see the mtime of
+                // source == mtime of output and consider it dirty.
+                filetime::set_file_times(&file.path, ftime, ftime).unwrap();
+            }
         }
 
         for symlink in self.symlinks.iter() {
@@ -670,7 +682,7 @@ impl Execs {
         self.expect_json = Some(
             expected
                 .split("\n\n")
-                .map(|obj| obj.parse().unwrap())
+                .map(|line| line.parse().expect("line to be a valid JSON value"))
                 .collect(),
         );
         self
@@ -758,7 +770,7 @@ impl Execs {
             process.exec_with_streaming(
                 &mut |out| Ok(println!("{}", out)),
                 &mut |err| Ok(eprintln!("{}", err)),
-                false,
+                true,
             )
         } else {
             process.exec_with_output()
@@ -1176,8 +1188,10 @@ enum MatchKind {
 ///   See `substitute_macros` for a complete list of macros.
 pub fn lines_match(expected: &str, actual: &str) -> bool {
     // Let's not deal with / vs \ (windows...)
-    let expected = expected.replace("\\", "/");
-    let mut actual: &str = &actual.replace("\\", "/");
+    // First replace backslash-escaped backslashes with forward slashes
+    // which can occur in, for example, JSON output
+    let expected = expected.replace("\\\\", "/").replace("\\", "/");
+    let mut actual: &str = &actual.replace("\\\\", "/").replace("\\", "/");
     let expected = substitute_macros(&expected);
     for (i, part) in expected.split("[..]").enumerate() {
         match actual.find(part) {
@@ -1509,4 +1523,12 @@ pub fn git_process(s: &str) -> ProcessBuilder {
 
 pub fn sleep_ms(ms: u64) {
     ::std::thread::sleep(Duration::from_millis(ms));
+}
+
+/// Returns true if the local filesystem has low-resolution mtimes.
+pub fn is_coarse_mtime() -> bool {
+    // This should actually be a test that $CARGO_TARGET_DIR is on an HFS
+    // filesystem, (or any filesystem with low-resolution mtimes). However,
+    // that's tricky to detect, so for now just deal with CI.
+    cfg!(target_os = "macos") && env::var("CI").is_ok()
 }
