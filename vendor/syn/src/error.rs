@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use std;
 use std::fmt::{self, Display};
 use std::iter::FromIterator;
@@ -18,6 +10,8 @@ use quote::ToTokens;
 
 #[cfg(feature = "parsing")]
 use buffer::Cursor;
+#[cfg(all(procmacro2_semver_exempt, feature = "parsing"))]
+use private;
 use thread::ThreadBound;
 
 /// The result of a Syn parser.
@@ -59,11 +53,8 @@ impl Error {
     ///
     /// # Example
     ///
-    /// ```
-    /// #[macro_use]
-    /// extern crate syn;
-    ///
-    /// use syn::{Error, Ident, LitStr, Result};
+    /// ```edition2018
+    /// use syn::{Error, Ident, LitStr, Result, Token};
     /// use syn::parse::ParseStream;
     ///
     /// // Parses input that looks like `name = "string"` where the key must be
@@ -80,8 +71,6 @@ impl Error {
     ///     let s: LitStr = input.parse()?;
     ///     Ok(s)
     /// }
-    /// #
-    /// # fn main() {}
     /// ```
     pub fn new<T: Display>(span: Span, message: T) -> Self {
         Error {
@@ -184,7 +173,11 @@ pub fn new_at<T: Display>(scope: Span, cursor: Cursor, message: T) -> Error {
     if cursor.eof() {
         Error::new(scope, format!("unexpected end of input, {}", message))
     } else {
-        Error::new(cursor.span(), message)
+        #[cfg(procmacro2_semver_exempt)]
+        let span = private::open_span_of_group(cursor);
+        #[cfg(not(procmacro2_semver_exempt))]
+        let span = cursor.span();
+        Error::new(span, message)
     }
 }
 

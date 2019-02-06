@@ -62,7 +62,7 @@ impl Into<Uuid> for CFUUID {
             b.byte14,
             b.byte15,
         ];
-        Uuid::from_bytes(&bytes).unwrap()
+        Uuid::from_slice(&bytes).unwrap()
     }
 }
 

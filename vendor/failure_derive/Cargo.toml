@@ -12,12 +12,12 @@
 
 [package]
 name = "failure_derive"
-version = "0.1.3"
+version = "0.1.5"
 authors = ["Without Boats <woboats@gmail.com>"]
 build = "build.rs"
 description = "derives for the failure crate"
-homepage = "https://boats.gitlab.io/failure"
-documentation = "https://boats.gitlab.io/failure"
+homepage = "https://rust-lang-nursery.github.io/failure/"
+documentation = "https://docs.rs/failure"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/withoutboats/failure_derive"
 

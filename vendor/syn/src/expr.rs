@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use super::*;
 use proc_macro2::{Span, TokenStream};
 use punctuated::Punctuated;
@@ -27,7 +19,7 @@ ast_enum_of_structs! {
     /// This type is a syntax tree enum. In Syn this and other syntax tree enums
     /// are designed to be traversed using the following rebinding idiom.
     ///
-    /// ```
+    /// ```edition2018
     /// # use syn::Expr;
     /// #
     /// # fn example(expr: Expr) {
@@ -60,7 +52,7 @@ ast_enum_of_structs! {
     ///
     /// The pattern is similar if the input expression is borrowed:
     ///
-    /// ```
+    /// ```edition2018
     /// # use syn::Expr;
     /// #
     /// # fn example(expr: &Expr) {
@@ -74,7 +66,7 @@ ast_enum_of_structs! {
     ///
     /// This approach avoids repeating the variant names twice on every line.
     ///
-    /// ```
+    /// ```edition2018
     /// # use syn::{Expr, ExprMethodCall};
     /// #
     /// # fn example(expr: Expr) {
@@ -89,7 +81,7 @@ ast_enum_of_structs! {
     /// In general, the name to which a syntax tree enum variant is bound should
     /// be a suitable name for the complete syntax tree enum type.
     ///
-    /// ```
+    /// ```edition2018
     /// # use syn::{Expr, ExprField};
     /// #
     /// # fn example(discriminant: &ExprField) {
@@ -919,7 +911,7 @@ ast_struct! {
     ///
     /// As in:
     ///
-    /// ```rust
+    /// ```edition2018
     /// # fn f() -> bool {
     /// #     let n = 0;
     /// match n {
@@ -1783,6 +1775,7 @@ pub mod parsing {
             let_token: input.parse()?,
             pats: {
                 let mut pats = Punctuated::new();
+                input.parse::<Option<Token![|]>>()?;
                 let value: Pat = input.parse()?;
                 pats.push_value(value);
                 while input.peek(Token![|]) && !input.peek(Token![||]) && !input.peek(Token![|=]) {
@@ -2299,11 +2292,8 @@ pub mod parsing {
         ///
         /// # Example
         ///
-        /// ```
-        /// #[macro_use]
-        /// extern crate syn;
-        ///
-        /// use syn::{token, Attribute, Block, Ident, Result, Stmt};
+        /// ```edition2018
+        /// use syn::{braced, token, Attribute, Block, Ident, Result, Stmt, Token};
         /// use syn::parse::{Parse, ParseStream};
         ///
         /// // Parse a function with no generics or parameter list.
@@ -2345,8 +2335,6 @@ pub mod parsing {
         ///         })
         ///     }
         /// }
-        /// #
-        /// # fn main() {}
         /// ```
         pub fn parse_within(input: ParseStream) -> Result<Vec<Stmt>> {
             let mut stmts = Vec::new();

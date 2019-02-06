@@ -12,7 +12,7 @@
 
 [package]
 name = "serde_json"
-version = "1.0.33"
+version = "1.0.38"
 authors = ["Erick Tryzelaar <erick.tryzelaar@gmail.com>", "David Tolnay <dtolnay@gmail.com>"]
 include = ["Cargo.toml", "src/**/*.rs", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
 description = "A JSON serialization file format"
@@ -23,7 +23,7 @@ categories = ["encoding"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/serde-rs/json"
 [package.metadata.docs.rs]
-features = ["raw_value"]
+features = ["raw_value", "unbounded_depth"]
 
 [package.metadata.playground]
 features = ["raw_value"]
@@ -49,11 +49,15 @@ version = "0.10"
 [dev-dependencies.serde_derive]
 version = "1.0"
 
+[dev-dependencies.serde_stacker]
+version = "0.1"
+
 [features]
 arbitrary_precision = []
 default = []
 preserve_order = ["indexmap"]
 raw_value = []
+unbounded_depth = []
 [badges.appveyor]
 repository = "serde-rs/json"
 

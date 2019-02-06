@@ -1,11 +1,3 @@
-// Copyright 2017 Serde Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Serialize a Rust data structure into JSON data.
 
 use std::fmt;
@@ -995,10 +987,22 @@ where
 
     serde_if_integer128! {
         fn serialize_i128(self, value: i128) -> Result<()> {
-            self.ser
+            try!(self
+                .ser
+                .formatter
+                .begin_string(&mut self.ser.writer)
+                .map_err(Error::io));
+            try!(self
+                .ser
                 .formatter
                 .write_number_str(&mut self.ser.writer, &value.to_string())
-                .map_err(Error::io)
+                .map_err(Error::io));
+            try!(self
+                .ser
+                .formatter
+                .end_string(&mut self.ser.writer)
+                .map_err(Error::io));
+            Ok(())
         }
     }
 
@@ -1080,10 +1084,22 @@ where
 
     serde_if_integer128! {
         fn serialize_u128(self, value: u128) -> Result<()> {
-            self.ser
+            try!(self
+                .ser
+                .formatter
+                .begin_string(&mut self.ser.writer)
+                .map_err(Error::io));
+            try!(self
+                .ser
                 .formatter
                 .write_number_str(&mut self.ser.writer, &value.to_string())
-                .map_err(Error::io)
+                .map_err(Error::io));
+            try!(self
+                .ser
+                .formatter
+                .end_string(&mut self.ser.writer)
+                .map_err(Error::io));
+            Ok(())
         }
     }
 
@@ -1584,7 +1600,7 @@ impl CharEscape {
             self::RR => CharEscape::CarriageReturn,
             self::QU => CharEscape::Quote,
             self::BS => CharEscape::ReverseSolidus,
-            self::U => CharEscape::AsciiControl(byte),
+            self::UU => CharEscape::AsciiControl(byte),
             _ => unreachable!(),
         }
     }
@@ -2104,29 +2120,29 @@ const FF: u8 = b'f'; // \x0C
 const RR: u8 = b'r'; // \x0D
 const QU: u8 = b'"'; // \x22
 const BS: u8 = b'\\'; // \x5C
-const U: u8 = b'u'; // \x00...\x1F except the ones above
+const UU: u8 = b'u'; // \x00...\x1F except the ones above
+const __: u8 = 0;
 
 // Lookup table of escape sequences. A value of b'x' at index i means that byte
 // i is escaped as "\x" in JSON. A value of 0 means that byte i is not escaped.
-#[cfg_attr(rustfmt, rustfmt_skip)]
 static ESCAPE: [u8; 256] = [
-    //  1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
-    U,  U,  U,  U,  U,  U,  U,  U, BB, TT, NN,  U, FF, RR,  U,  U, // 0
-    U,  U,  U,  U,  U,  U,  U,  U,  U,  U,  U,  U,  U,  U,  U,  U, // 1
-    0,  0, QU,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 2
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 3
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 4
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, BS,  0,  0,  0, // 5
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 6
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 7
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 8
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 9
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // A
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // B
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // C
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // D
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // E
-    0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // F
+    //   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
+    UU, UU, UU, UU, UU, UU, UU, UU, BB, TT, NN, UU, FF, RR, UU, UU, // 0
+    UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, UU, // 1
+    __, __, QU, __, __, __, __, __, __, __, __, __, __, __, __, __, // 2
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 3
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 4
+    __, __, __, __, __, __, __, __, __, __, __, __, BS, __, __, __, // 5
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 6
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 7
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 8
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 9
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // A
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // B
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // C
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // D
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // E
+    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // F
 ];
 
 /// Serialize the given data structure as JSON into the IO stream.

@@ -25,5 +25,5 @@ repository = "https://github.com/alexcrichton/nghttp2-rs"
 doctest = false
 [dependencies.libc]
 version = "0.2"
-[build-dependencies.cc]
-version = "1.0.24"
+[build-dependencies.pkg-config]
+version = "0.3"

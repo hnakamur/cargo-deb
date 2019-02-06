@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 use super::*;
 use derive::{Data, DeriveInput};
 use proc_macro2::TokenStream;
@@ -770,6 +762,8 @@ pub mod parsing {
 
     use ext::IdentExt;
     use parse::{Parse, ParseStream, Result};
+    use proc_macro2::{Punct, Spacing, TokenTree};
+    use std::iter::FromIterator;
 
     impl Parse for Item {
         fn parse(input: ParseStream) -> Result<Self> {
@@ -903,17 +897,54 @@ pub mod parsing {
     // TODO: figure out the actual grammar; is body required to be braced?
     impl Parse for ItemMacro2 {
         fn parse(input: ParseStream) -> Result<Self> {
+            let attrs = input.call(Attribute::parse_outer)?;
+            let vis: Visibility = input.parse()?;
+            let macro_token: Token![macro] = input.parse()?;
+            let ident: Ident = input.parse()?;
+
+            let paren_token;
             let args;
+            let brace_token;
             let body;
+            let lookahead = input.lookahead1();
+            if lookahead.peek(token::Paren) {
+                let paren_content;
+                paren_token = parenthesized!(paren_content in input);
+                args = paren_content.parse()?;
+
+                let brace_content;
+                brace_token = braced!(brace_content in input);
+                body = brace_content.parse()?;
+            } else if lookahead.peek(token::Brace) {
+                // Hack: the ItemMacro2 syntax tree will need to change so that
+                // we can store None for the args.
+                //
+                // https://github.com/dtolnay/syn/issues/548
+                //
+                // For now, store some sentinel tokens that are otherwise
+                // illegal.
+                paren_token = token::Paren::default();
+                args = TokenStream::from_iter(vec![
+                    TokenTree::Punct(Punct::new('$', Spacing::Alone)),
+                    TokenTree::Punct(Punct::new('$', Spacing::Alone)),
+                ]);
+
+                let brace_content;
+                brace_token = braced!(brace_content in input);
+                body = brace_content.parse()?;
+            } else {
+                return Err(lookahead.error());
+            }
+
             Ok(ItemMacro2 {
-                attrs: input.call(Attribute::parse_outer)?,
-                vis: input.parse()?,
-                macro_token: input.parse()?,
-                ident: input.parse()?,
-                paren_token: parenthesized!(args in input),
-                args: args.parse()?,
-                brace_token: braced!(body in input),
-                body: body.parse()?,
+                attrs: attrs,
+                vis: vis,
+                macro_token: macro_token,
+                ident: ident,
+                paren_token: paren_token,
+                args: args,
+                brace_token: brace_token,
+                body: body,
             })
         }
     }
@@ -925,7 +956,13 @@ pub mod parsing {
                 vis: input.parse()?,
                 extern_token: input.parse()?,
                 crate_token: input.parse()?,
-                ident: input.parse()?,
+                ident: {
+                    if input.peek(Token![self]) {
+                        input.call(Ident::parse_any)?
+                    } else {
+                        input.parse()?
+                    }
+                },
                 rename: {
                     if input.peek(Token![as]) {
                         let as_token: Token![as] = input.parse()?;
@@ -2319,9 +2356,14 @@ mod printing {
             self.vis.to_tokens(tokens);
             self.macro_token.to_tokens(tokens);
             self.ident.to_tokens(tokens);
-            self.paren_token.surround(tokens, |tokens| {
-                self.args.to_tokens(tokens);
-            });
+
+            // Hack: see comment in impl Parse for ItemMacro2.
+            if self.args.to_string() != "$ $" {
+                self.paren_token.surround(tokens, |tokens| {
+                    self.args.to_tokens(tokens);
+                });
+            }
+
             self.brace_token.surround(tokens, |tokens| {
                 self.body.to_tokens(tokens);
             });

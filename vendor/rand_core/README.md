@@ -1,11 +1,12 @@
 # rand_core
 
 [![Build Status](https://travis-ci.org/rust-random/rand.svg)](https://travis-ci.org/rust-random/rand)
-[![Build Status](https://ci.appveyor.com/api/projects/status/github/rust-random/rand?svg=true)](https://ci.appveyor.com/project/dhardy/rand)
+[![Build Status](https://ci.appveyor.com/api/projects/status/github/rust-random/rand?svg=true)](https://ci.appveyor.com/project/rust-random/rand)
 [![Latest version](https://img.shields.io/crates/v/rand_core.svg)](https://crates.io/crates/rand_core)
-[![Documentation](https://docs.rs/rand_core/badge.svg)](https://docs.rs/rand_core)
-[![Minimum rustc version](https://img.shields.io/badge/rustc-1.22+-yellow.svg)](https://github.com/rust-random/rand#rust-version-requirements)
-[![License](https://img.shields.io/crates/l/rand_core.svg)](https://github.com/rust-random/rand/tree/master/rand_core#license)
+[![Book](https://img.shields.io/badge/book-master-yellow.svg)](https://rust-random.github.io/book/)
+[![API](https://img.shields.io/badge/api-master-yellow.svg)](https://rust-random.github.io/rand/rand_core)
+[![API](https://docs.rs/rand_core/badge.svg)](https://docs.rs/rand_core)
+[![Minimum rustc version](https://img.shields.io/badge/rustc-1.22+-lightgray.svg)](https://github.com/rust-random/rand#rust-version-requirements)
 
 Core traits and error types of the [rand] library, plus tools for implementing
 RNGs.
@@ -20,11 +21,11 @@ applications (including sampling from restricted ranges, conversion to floating
 point, list permutations and secure initialisation of RNGs). Most users should
 prefer to use the main [rand] crate.
 
-Documentation:
-[master branch](https://rust-random.github.io/rand/rand_core/index.html),
-[by release](https://docs.rs/rand_core)
+Links:
 
-[Changelog](CHANGELOG.md)
+-   [API documentation (master)](https://rust-random.github.io/rand/rand_core)
+-   [API documentation (docs.rs)](https://docs.rs/rand_core)
+-   [Changelog](CHANGELOG.md)
 
 [rand]: https://crates.io/crates/rand
 
@@ -43,13 +44,14 @@ The traits and error types are also available via `rand`.
 
 `rand_core` supports `no_std` and `alloc`-only configurations, as well as full
 `std` functionality. The differences between `no_std` and full `std` are small,
-comprising `RngCore` support for `Box<R>` types where `R: RngCore`, as well as
+comprising `RngCore` support for `Box<R>` types where `R: RngCore`,
+`std::io::Read` support for types supporting `RngCore`, and
 extensions to the `Error` type's functionality.
 
-Due to [rust-lang/cargo#1596](https://github.com/rust-lang/cargo/issues/1596),
-`rand_core` is built without `std` support by default. Since features are
-unioned across the whole dependency tree, any crate using `rand` with its
-default features will also enable `std` support in `rand_core`.
+The `std` feature is *not enabled by default*. This is primarily to avoid build
+problems where one crate implicitly requires `rand_core` with `std` support and
+another crate requires `rand` *without* `std` support. However, the `rand` crate
+continues to enable `std` support by default, both for itself and `rand_core`.
 
 The `serde1` feature can be used to derive `Serialize` and `Deserialize` for RNG
 implementations that use the `BlockRng` or `BlockRng64` wrappers.

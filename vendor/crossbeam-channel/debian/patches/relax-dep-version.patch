@@ -1,0 +1,13 @@
+Index: crossbeam-channel/Cargo.toml
+===================================================================
+--- crossbeam-channel.orig/Cargo.toml
++++ crossbeam-channel/Cargo.toml
+@@ -28,7 +28,7 @@ version = "0.6.5"
+ [dependencies.smallvec]
+ version = "0.6.2"
+ [dev-dependencies.rand]
+-version = "0.6"
++version = ">= 0.5, < 0.7"
+ 
+ [dev-dependencies.signal-hook]
+ version = "0.1.5"

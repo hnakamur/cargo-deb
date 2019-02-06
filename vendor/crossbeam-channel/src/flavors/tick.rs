@@ -2,34 +2,22 @@
 //!
 //! Messages cannot be sent into this kind of channel; they are materialized on demand.
 
-use std::num::Wrapping;
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use parking_lot::Mutex;
+use crossbeam_utils::atomic::AtomicCell;
 
-use internal::channel::RecvNonblocking;
-use internal::context::Context;
-use internal::select::{Operation, SelectHandle, Token};
+use context::Context;
+use err::{RecvTimeoutError, TryRecvError};
+use select::{Operation, SelectHandle, Token};
 
 /// Result of a receive operation.
 pub type TickToken = Option<Instant>;
 
-/// Channel state.
-struct Inner {
-    /// The instant at which the next message will be delivered.
-    deadline: Instant,
-
-    /// The index of the next message to be received.
-    index: Wrapping<usize>,
-}
-
 /// Channel that delivers messages periodically.
 pub struct Channel {
-    /// The state of the channel.
-    // TODO: Use `Arc<AtomicCell<Inner>>` here once we implement `AtomicCell`.
-    inner: Arc<Mutex<Inner>>,
+    /// The instant at which the next message will be delivered.
+    delivery_time: AtomicCell<Instant>,
 
     /// The time interval in which messages get delivered.
     duration: Duration,
@@ -40,72 +28,83 @@ impl Channel {
     #[inline]
     pub fn new(dur: Duration) -> Self {
         Channel {
-            inner: Arc::new(Mutex::new(Inner {
-                deadline: Instant::now() + dur,
-                index: Wrapping(0),
-            })),
+            delivery_time: AtomicCell::new(Instant::now() + dur),
             duration: dur,
         }
     }
 
-    /// Returns a unique identifier for the channel.
+    /// Attempts to receive a message without blocking.
     #[inline]
-    pub fn channel_id(&self) -> usize {
-        self.inner.as_ref() as *const Mutex<Inner> as usize
+    pub fn try_recv(&self) -> Result<Instant, TryRecvError> {
+        loop {
+            let now = Instant::now();
+            let delivery_time = self.delivery_time.load();
+
+            if now < delivery_time {
+                return Err(TryRecvError::Empty);
+            }
+
+            if self
+                .delivery_time
+                .compare_exchange(delivery_time, now + self.duration)
+                .is_ok()
+            {
+                return Ok(delivery_time);
+            }
+        }
     }
 
     /// Receives a message from the channel.
     #[inline]
-    pub fn recv(&self) -> Option<Instant> {
+    pub fn recv(&self, deadline: Option<Instant>) -> Result<Instant, RecvTimeoutError> {
         loop {
-            // Compute the time to sleep until the next message.
+            // Compute the time to sleep until the next message or the deadline.
             let offset = {
-                let mut inner = self.inner.lock();
+                let mut delivery_time = self.delivery_time.load();
                 let now = Instant::now();
 
-                // If the deadline has been reached, we can receive the next message.
-                if now >= inner.deadline {
-                    let msg = Some(inner.deadline);
-                    inner.deadline = now + self.duration;
-                    inner.index += Wrapping(1);
-                    return msg;
+                // Check if we can receive the next message.
+                if now >= delivery_time
+                    && self
+                        .delivery_time
+                        .compare_exchange(delivery_time, now + self.duration)
+                        .is_ok()
+                {
+                    return Ok(delivery_time);
                 }
 
-                inner.deadline - now
+                // Check if the operation deadline has been reached.
+                if let Some(d) = deadline {
+                    if now >= d {
+                        return Err(RecvTimeoutError::Timeout);
+                    }
+
+                    delivery_time.min(d) - now
+                } else {
+                    delivery_time - now
+                }
             };
 
             thread::sleep(offset);
         }
     }
 
-    /// Attempts to receive a message without blocking.
-    #[inline]
-    pub fn recv_nonblocking(&self) -> RecvNonblocking<Instant> {
-        let mut inner = self.inner.lock();
-        let now = Instant::now();
-
-        // If the deadline has been reached, we can receive the next message.
-        if now >= inner.deadline {
-            let msg = RecvNonblocking::Message(inner.deadline);
-            inner.deadline = now + self.duration;
-            inner.index += Wrapping(1);
-            msg
-        } else {
-            RecvNonblocking::Empty
-        }
-    }
-
     /// Reads a message from the channel.
     #[inline]
-    pub unsafe fn read(&self, token: &mut Token) -> Option<Instant> {
-        token.tick
+    pub unsafe fn read(&self, token: &mut Token) -> Result<Instant, ()> {
+        token.tick.ok_or(())
     }
 
     /// Returns `true` if the channel is empty.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        let inner = self.inner.lock();
-        Instant::now() < inner.deadline
+        Instant::now() < self.delivery_time.load()
+    }
+
+    /// Returns `true` if the channel is full.
+    #[inline]
+    pub fn is_full(&self) -> bool {
+        !self.is_empty()
     }
 
     /// Returns the number of messages in the channel.
@@ -125,47 +124,30 @@ impl Channel {
     }
 }
 
-impl Clone for Channel {
-    #[inline]
-    fn clone(&self) -> Channel {
-        Channel {
-            inner: self.inner.clone(),
-            duration: self.duration,
-        }
-    }
-}
-
 impl SelectHandle for Channel {
     #[inline]
-    fn try(&self, token: &mut Token) -> bool {
-        match self.recv_nonblocking() {
-            RecvNonblocking::Message(msg) => {
+    fn try_select(&self, token: &mut Token) -> bool {
+        match self.try_recv() {
+            Ok(msg) => {
                 token.tick = Some(msg);
                 true
             }
-            RecvNonblocking::Closed => {
+            Err(TryRecvError::Disconnected) => {
                 token.tick = None;
                 true
             }
-            RecvNonblocking::Empty => {
-                false
-            }
+            Err(TryRecvError::Empty) => false,
         }
-    }
-
-    #[inline]
-    fn retry(&self, token: &mut Token) -> bool {
-        self.try(token)
     }
 
     #[inline]
     fn deadline(&self) -> Option<Instant> {
-        Some(self.inner.lock().deadline)
+        Some(self.delivery_time.load())
     }
 
     #[inline]
-    fn register(&self, _token: &mut Token, _oper: Operation, _cx: &Context) -> bool {
-        true
+    fn register(&self, _oper: Operation, _cx: &Context) -> bool {
+        self.is_ready()
     }
 
     #[inline]
@@ -173,18 +155,19 @@ impl SelectHandle for Channel {
 
     #[inline]
     fn accept(&self, token: &mut Token, _cx: &Context) -> bool {
-        self.try(token)
+        self.try_select(token)
     }
 
     #[inline]
-    fn state(&self) -> usize {
-        // Return the index of the next message to be delivered to the channel.
-        let inner = self.inner.lock();
-        let index = if Instant::now() < inner.deadline {
-            inner.index
-        } else {
-            inner.index + Wrapping(1)
-        };
-        index.0
+    fn is_ready(&self) -> bool {
+        !self.is_empty()
     }
+
+    #[inline]
+    fn watch(&self, _oper: Operation, _cx: &Context) -> bool {
+        self.is_ready()
+    }
+
+    #[inline]
+    fn unwatch(&self, _oper: Operation) {}
 }

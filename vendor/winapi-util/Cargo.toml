@@ -12,7 +12,7 @@
 
 [package]
 name = "winapi-util"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Andrew Gallant <jamslam@gmail.com>"]
 description = "A dumping ground for high level safe wrappers over winapi."
 homepage = "https://github.com/BurntSushi/winapi-util"
@@ -24,4 +24,4 @@ license = "Unlicense/MIT"
 repository = "https://github.com/BurntSushi/winapi-util"
 [target."cfg(windows)".dependencies.winapi]
 version = "0.3"
-features = ["std", "consoleapi", "errhandlingapi", "fileapi", "minwindef", "processenv", "winbase", "wincon", "winerror"]
+features = ["std", "consoleapi", "errhandlingapi", "fileapi", "minwindef", "processenv", "winbase", "wincon", "winerror", "winnt"]

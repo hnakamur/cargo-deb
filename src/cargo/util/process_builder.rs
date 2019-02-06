@@ -5,6 +5,7 @@ use std::fmt;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
+use failure::Fail;
 use jobserver::Client;
 use shell_escape::escape;
 
@@ -202,7 +203,7 @@ impl ProcessBuilder {
         &self,
         on_stdout_line: &mut FnMut(&str) -> CargoResult<()>,
         on_stderr_line: &mut FnMut(&str) -> CargoResult<()>,
-        print_output: bool,
+        capture_output: bool,
     ) -> CargoResult<Output> {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -226,22 +227,32 @@ impl ProcessBuilder {
                         None => return,
                     }
                 };
-                let data = data.drain(..idx);
-                let dst = if is_out { &mut stdout } else { &mut stderr };
-                let start = dst.len();
-                dst.extend(data);
-                for line in String::from_utf8_lossy(&dst[start..]).lines() {
-                    if callback_error.is_some() {
-                        break;
-                    }
-                    let callback_result = if is_out {
-                        on_stdout_line(line)
+                { // scope for new_lines
+                    let new_lines = if capture_output {
+                        let dst = if is_out { &mut stdout } else { &mut stderr };
+                        let start = dst.len();
+                        let data = data.drain(..idx);
+                        dst.extend(data);
+                        &dst[start..]
                     } else {
-                        on_stderr_line(line)
+                        &data[..idx]
                     };
-                    if let Err(e) = callback_result {
-                        callback_error = Some(e);
+                    for line in String::from_utf8_lossy(new_lines).lines() {
+                        if callback_error.is_some() {
+                            break;
+                        }
+                        let callback_result = if is_out {
+                            on_stdout_line(line)
+                        } else {
+                            on_stderr_line(line)
+                        };
+                        if let Err(e) = callback_result {
+                            callback_error = Some(e);
+                        }
                     }
+                }
+                if !capture_output {
+                    data.drain(..idx);
                 }
             })?;
             child.wait()
@@ -260,20 +271,21 @@ impl ProcessBuilder {
         };
 
         {
-            let to_print = if print_output { Some(&output) } else { None };
-            if !output.status.success() {
-                return Err(process_error(
-                    &format!("process didn't exit successfully: {}", self),
-                    Some(output.status),
-                    to_print,
-                ).into());
-            } else if let Some(e) = callback_error {
+            let to_print = if capture_output { Some(&output) } else { None };
+            if let Some(e) = callback_error {
                 let cx = process_error(
                     &format!("failed to parse process output: {}", self),
                     Some(output.status),
                     to_print,
                 );
-                return Err(e.context(cx).into());
+                return Err(cx.context(e).into());
+            } else if !output.status.success() {
+                return Err(process_error(
+                    &format!("process didn't exit successfully: {}", self),
+                    Some(output.status),
+                    to_print,
+                )
+                .into());
             }
         }
 

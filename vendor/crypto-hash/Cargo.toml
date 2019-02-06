@@ -12,7 +12,7 @@
 
 [package]
 name = "crypto-hash"
-version = "0.3.1"
+version = "0.3.3"
 authors = ["Mark Lee"]
 exclude = [".*.yml", "ci/*"]
 description = "A wrapper for OS-level cryptographic hash functions"
@@ -23,10 +23,10 @@ license = "MIT"
 repository = "https://github.com/malept/crypto-hash"
 [dependencies.hex]
 version = "0.3"
-[target."cfg(not(any(target_os = \"windows\", target_os = \"macos\")))".dependencies.openssl]
-version = "0.10"
-[target."cfg(target_os = \"macos\")".dependencies.commoncrypto]
+[target."cfg(any(target_os = \"macos\", target_os = \"ios\"))".dependencies.commoncrypto]
 version = "0.2"
+[target."cfg(not(any(target_os = \"windows\", target_os = \"macos\", target_os = \"ios\")))".dependencies.openssl]
+version = "0.10"
 [target."cfg(target_os = \"windows\")".dependencies.winapi]
 version = "0.3"
 features = ["minwindef", "wincrypt"]

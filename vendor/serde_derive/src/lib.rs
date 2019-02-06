@@ -1,8 +1,7 @@
 //! This crate provides Serde's two derive macros.
 //!
-//! ```rust
-//! # #[macro_use]
-//! # extern crate serde_derive;
+//! ```edition2018
+//! # use serde_derive::{Serialize, Deserialize};
 //! #
 //! #[derive(Serialize, Deserialize)]
 //! # struct S;
@@ -14,10 +13,10 @@
 //!
 //! [https://serde.rs/derive.html]: https://serde.rs/derive.html
 
-#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.82")]
+#![doc(html_root_url = "https://docs.rs/serde_derive/1.0.87")]
 #![cfg_attr(feature = "cargo-clippy", allow(renamed_and_removed_lints))]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy, clippy_pedantic))]
-// Whitelisted clippy lints
+// Ignored clippy lints
 #![cfg_attr(
     feature = "cargo-clippy",
     allow(
@@ -26,10 +25,11 @@
         needless_pass_by_value,
         redundant_field_names,
         too_many_arguments,
+        trivially_copy_pass_by_ref,
         used_underscore_binding,
     )
 )]
-// Whitelisted clippy_pedantic lints
+// Ignored clippy_pedantic lints
 #![cfg_attr(
     feature = "cargo-clippy",
     allow(
@@ -40,9 +40,9 @@
         indexing_slicing,
         items_after_statements,
         match_same_arms,
+        module_name_repetitions,
         similar_names,
         single_match_else,
-        stutter,
         unseparated_literal_suffix,
         use_self,
     )
@@ -69,6 +69,7 @@ mod bound;
 mod fragment;
 
 mod de;
+mod dummy;
 mod pretend;
 mod ser;
 mod try;

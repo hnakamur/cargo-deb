@@ -23,10 +23,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]
 #![deny(warnings)]
-#![cfg_attr(
-    feature = "small-error",
-    feature(extern_types, allocator_api)
-)]
+#![cfg_attr(feature = "small-error", feature(extern_types, allocator_api))]
 
 macro_rules! with_std { ($($i:item)*) => ($(#[cfg(feature = "std")]$i)*) }
 macro_rules! without_std { ($($i:item)*) => ($(#[cfg(not(feature = "std"))]$i)*) }
@@ -109,6 +106,16 @@ with_std! {
 /// `std::error::Error`, and are also `Send`, `Sync`, and `'static`, implement
 /// `Fail` by a blanket impl.
 pub trait Fail: Display + Debug + Send + Sync + 'static {
+    /// Returns the "name" of the error.
+    /// 
+    /// This is typically the type name. Not all errors will implement
+    /// this. This method is expected to be most useful in situations
+    /// where errors need to be reported to external instrumentation systems 
+    /// such as crash reporters.
+    fn name(&self) -> Option<&str> {
+        None
+    }
+
     /// Returns a reference to the underlying cause of this failure, if it
     /// is an error that wraps other errors.
     ///
@@ -166,10 +173,7 @@ pub trait Fail: Display + Debug + Send + Sync + 'static {
     }
 
     #[doc(hidden)]
-    #[deprecated(
-        since = "0.1.2",
-        note = "please use the 'iter_chain()' method instead"
-    )]
+    #[deprecated(since = "0.1.2", note = "please use the 'iter_chain()' method instead")]
     fn causes(&self) -> Causes
     where
         Self: Sized,
@@ -259,10 +263,7 @@ impl Fail {
     }
 
     /// Deprecated alias to `iter_chain`.
-    #[deprecated(
-        since = "0.1.2",
-        note = "please use the 'iter_chain()' method instead"
-    )]
+    #[deprecated(since = "0.1.2", note = "please use the 'iter_chain()' method instead")]
     pub fn causes(&self) -> Causes {
         Causes { fail: Some(self) }
     }

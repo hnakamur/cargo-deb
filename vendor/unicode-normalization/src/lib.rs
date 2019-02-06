@@ -34,12 +34,14 @@
 //!
 //! ```toml
 //! [dependencies]
-//! unicode-normalization = "0.1.7"
+//! unicode-normalization = "0.1.8"
 //! ```
 
 #![deny(missing_docs, unsafe_code)]
 #![doc(html_logo_url = "https://unicode-rs.github.io/unicode-rs_sm.png",
        html_favicon_url = "https://unicode-rs.github.io/unicode-rs_sm.png")]
+
+extern crate smallvec;
 
 pub use tables::UNICODE_VERSION;
 pub use decompose::Decompositions;
@@ -47,10 +49,14 @@ pub use quick_check::{
     IsNormalized,
     is_nfc,
     is_nfc_quick,
+    is_nfkc,
+    is_nfkc_quick,
     is_nfc_stream_safe,
     is_nfc_stream_safe_quick,
     is_nfd,
     is_nfd_quick,
+    is_nfkd,
+    is_nfkd_quick,
     is_nfd_stream_safe,
     is_nfd_stream_safe_quick,
 };

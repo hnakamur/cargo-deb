@@ -15,13 +15,13 @@
 //! [`Uniform`].
 //!
 //! This distribution is provided with support for several primitive types
-//! (all integer and floating-point types) as well as `std::time::Duration`,
+//! (all integer and floating-point types) as well as [`std::time::Duration`],
 //! and supports extension to user-defined types via a type-specific *back-end*
 //! implementation.
 //!
 //! The types [`UniformInt`], [`UniformFloat`] and [`UniformDuration`] are the
 //! back-ends supporting sampling from primitive integer and floating-point
-//! ranges as well as from `std::time::Duration`; these types do not normally
+//! ranges as well as from [`std::time::Duration`]; these types do not normally
 //! need to be used directly (unless implementing a derived back-end).
 //!
 //! # Example usage
@@ -100,18 +100,16 @@
 //! let x = uniform.sample(&mut thread_rng());
 //! ```
 //!
-//! [`Uniform`]: struct.Uniform.html
-//! [`Rng::gen_range`]: ../../trait.Rng.html#method.gen_range
-//! [`SampleUniform`]: trait.SampleUniform.html
-//! [`UniformSampler`]: trait.UniformSampler.html
-//! [`UniformInt`]: struct.UniformInt.html
-//! [`UniformFloat`]: struct.UniformFloat.html
-//! [`UniformDuration`]: struct.UniformDuration.html
-//! [`SampleBorrow::borrow`]: trait.SampleBorrow.html#method.borrow
+//! [`SampleUniform`]: crate::distributions::uniform::SampleUniform
+//! [`UniformSampler`]: crate::distributions::uniform::UniformSampler
+//! [`UniformInt`]: crate::distributions::uniform::UniformInt
+//! [`UniformFloat`]: crate::distributions::uniform::UniformFloat
+//! [`UniformDuration`]: crate::distributions::uniform::UniformDuration
+//! [`SampleBorrow::borrow`]: crate::distributions::uniform::SampleBorrow::borrow
 
 #[cfg(feature = "std")]
 use std::time::Duration;
-#[cfg(all(not(feature = "std"), rust_1_25))]
+#[cfg(all(not(feature = "std"), rustc_1_25))]
 use core::time::Duration;
 
 use Rng;
@@ -165,10 +163,8 @@ use packed_simd::*;
 /// }
 /// ```
 ///
-/// [`Uniform::new`]: struct.Uniform.html#method.new
-/// [`Uniform::new_inclusive`]: struct.Uniform.html#method.new_inclusive
-/// [`new`]: struct.Uniform.html#method.new
-/// [`new_inclusive`]: struct.Uniform.html#method.new_inclusive
+/// [`new`]: Uniform::new
+/// [`new_inclusive`]: Uniform::new_inclusive
 #[derive(Clone, Copy, Debug)]
 pub struct Uniform<X: SampleUniform> {
     inner: X::Sampler,
@@ -206,9 +202,7 @@ impl<X: SampleUniform> Distribution<X> for Uniform<X> {
 /// See the [module documentation] on how to implement [`Uniform`] range
 /// sampling for a custom type.
 ///
-/// [`UniformSampler`]: trait.UniformSampler.html
-/// [module documentation]: index.html
-/// [`Uniform`]: struct.Uniform.html
+/// [module documentation]: crate::distributions::uniform
 pub trait SampleUniform: Sized {
     /// The `UniformSampler` implementation supporting type `X`.
     type Sampler: UniformSampler<X = Self>;
@@ -222,9 +216,8 @@ pub trait SampleUniform: Sized {
 /// Implementation of [`sample_single`] is optional, and is only useful when
 /// the implementation can be faster than `Self::new(low, high).sample(rng)`.
 ///
-/// [module documentation]: index.html
-/// [`Uniform`]: struct.Uniform.html
-/// [`sample_single`]: trait.UniformSampler.html#method.sample_single
+/// [module documentation]: crate::distributions::uniform
+/// [`sample_single`]: UniformSampler::sample_single
 pub trait UniformSampler: Sized {
     /// The type sampled by this implementation.
     type X;
@@ -277,7 +270,7 @@ impl<X: SampleUniform> From<::core::ops::Range<X>> for Uniform<X> {
     }
 }
 
-#[cfg(rust_1_27)]
+#[cfg(rustc_1_27)]
 impl<X: SampleUniform> From<::core::ops::RangeInclusive<X>> for Uniform<X> {
     fn from(r: ::core::ops::RangeInclusive<X>) -> Uniform<X> {
         Uniform::new_inclusive(r.start(), r.end())
@@ -288,11 +281,11 @@ impl<X: SampleUniform> From<::core::ops::RangeInclusive<X>> for Uniform<X> {
 /// only for SampleUniform and references to SampleUniform in
 /// order to resolve ambiguity issues.
 ///
-/// [`Borrow`]: https://doc.rust-lang.org/std/borrow/trait.Borrow.html
+/// [`Borrow`]: std::borrow::Borrow
 pub trait SampleBorrow<Borrowed> {
     /// Immutably borrows from an owned value. See [`Borrow::borrow`]
     ///
-    /// [`Borrow::borrow`]: https://doc.rust-lang.org/std/borrow/trait.Borrow.html#tymethod.borrow
+    /// [`Borrow::borrow`]: std::borrow::Borrow::borrow
     fn borrow(&self) -> &Borrowed;
 }
 impl<Borrowed> SampleBorrow<Borrowed> for Borrowed where Borrowed: SampleUniform {
@@ -345,9 +338,6 @@ impl<'a, Borrowed> SampleBorrow<Borrowed> for &'a Borrowed where Borrowed: Sampl
 /// An alternative to using a modulus is widening multiply: After a widening
 /// multiply by `range`, the result is in the high word. Then comparing the low
 /// word against `zone` makes sure our distribution is uniform.
-///
-/// [`UniformSampler`]: trait.UniformSampler.html
-/// [`Uniform`]: struct.Uniform.html
 #[derive(Clone, Copy, Debug)]
 pub struct UniformInt<X> {
     low: X,
@@ -452,8 +442,9 @@ macro_rules! uniform_int_impl {
                         let ints_to_reject = (unsigned_max - range + 1) % range;
                         unsigned_max - ints_to_reject
                     } else {
-                        // conservative but fast approximation
-                       range << range.leading_zeros()
+                        // conservative but fast approximation. `- 1` is necessary to allow the
+                        // same comparison without bias.
+                        (range << range.leading_zeros()).wrapping_sub(1)
                     };
 
                 loop {
@@ -472,7 +463,7 @@ uniform_int_impl! { i8, i8, u8, i32, u32 }
 uniform_int_impl! { i16, i16, u16, i32, u32 }
 uniform_int_impl! { i32, i32, u32, i32, u32 }
 uniform_int_impl! { i64, i64, u64, i64, u64 }
-#[cfg(rust_1_26)]
+#[cfg(all(rustc_1_26, not(target_os = "emscripten")))]
 uniform_int_impl! { i128, i128, u128, u128, u128 }
 uniform_int_impl! { isize, isize, usize, isize, usize }
 uniform_int_impl! { u8, i8, u8, i32, u32 }
@@ -480,7 +471,7 @@ uniform_int_impl! { u16, i16, u16, i32, u32 }
 uniform_int_impl! { u32, i32, u32, i32, u32 }
 uniform_int_impl! { u64, i64, u64, i64, u64 }
 uniform_int_impl! { usize, isize, usize, isize, usize }
-#[cfg(rust_1_26)]
+#[cfg(all(rustc_1_26, not(target_os = "emscripten")))]
 uniform_int_impl! { u128, u128, u128, i128, u128 }
 
 #[cfg(all(feature = "simd_support", feature = "nightly"))]
@@ -645,11 +636,9 @@ uniform_simd_int_impl! {
 /// multiply and addition. Values produced this way have what equals 22 bits of
 /// random digits for an `f32`, and 52 for an `f64`.
 ///
-/// [`UniformSampler`]: trait.UniformSampler.html
-/// [`new`]: trait.UniformSampler.html#tymethod.new
-/// [`new_inclusive`]: trait.UniformSampler.html#tymethod.new_inclusive
-/// [`Uniform`]: struct.Uniform.html
-/// [`Standard`]: ../struct.Standard.html
+/// [`new`]: UniformSampler::new
+/// [`new_inclusive`]: UniformSampler::new_inclusive
+/// [`Standard`]: crate::distributions::Standard
 #[derive(Clone, Copy, Debug)]
 pub struct UniformFloat<X> {
     low: X,
@@ -832,17 +821,14 @@ uniform_float_impl! { f64x8, u64x8, f64, u64, 64 - 52 }
 ///
 /// Unless you are implementing [`UniformSampler`] for your own types, this type
 /// should not be used directly, use [`Uniform`] instead.
-///
-/// [`UniformSampler`]: trait.UniformSampler.html
-/// [`Uniform`]: struct.Uniform.html
-#[cfg(any(feature = "std", rust_1_25))]
+#[cfg(any(feature = "std", rustc_1_25))]
 #[derive(Clone, Copy, Debug)]
 pub struct UniformDuration {
     mode: UniformDurationMode,
     offset: u32,
 }
 
-#[cfg(any(feature = "std", rust_1_25))]
+#[cfg(any(feature = "std", rustc_1_25))]
 #[derive(Debug, Copy, Clone)]
 enum UniformDurationMode {
     Small {
@@ -859,12 +845,12 @@ enum UniformDurationMode {
     }
 }
 
-#[cfg(any(feature = "std", rust_1_25))]
+#[cfg(any(feature = "std", rustc_1_25))]
 impl SampleUniform for Duration {
     type Sampler = UniformDuration;
 }
 
-#[cfg(any(feature = "std", rust_1_25))]
+#[cfg(any(feature = "std", rustc_1_25))]
 impl UniformSampler for UniformDuration {
     type X = Duration;
 
@@ -989,7 +975,7 @@ mod tests {
     fn test_integers() {
         use core::{i8, i16, i32, i64, isize};
         use core::{u8, u16, u32, u64, usize};
-        #[cfg(rust_1_26)]
+        #[cfg(all(rustc_1_26, not(target_os = "emscripten")))]
         use core::{i128, u128};
 
         let mut rng = ::test::rng(251);
@@ -1053,7 +1039,7 @@ mod tests {
         }
         t!(i8, i16, i32, i64, isize,
            u8, u16, u32, u64, usize);
-        #[cfg(rust_1_26)]
+        #[cfg(all(rustc_1_26, not(target_os = "emscripten")))]
         t!(i128, u128);
 
         #[cfg(all(feature = "simd_support", feature = "nightly"))]
@@ -1208,11 +1194,11 @@ mod tests {
 
 
     #[test]
-    #[cfg(any(feature = "std", rust_1_25))]
+    #[cfg(any(feature = "std", rustc_1_25))]
     fn test_durations() {
         #[cfg(feature = "std")]
         use std::time::Duration;
-        #[cfg(all(not(feature = "std"), rust_1_25))]
+        #[cfg(all(not(feature = "std"), rustc_1_25))]
         use core::time::Duration;
 
         let mut rng = ::test::rng(253);
@@ -1283,7 +1269,7 @@ mod tests {
         assert_eq!(r.inner.scale, 5.0);
     }
 
-    #[cfg(rust_1_27)]
+    #[cfg(rustc_1_27)]
     #[test]
     fn test_uniform_from_std_range_inclusive() {
         let r = Uniform::from(2u32..=6);

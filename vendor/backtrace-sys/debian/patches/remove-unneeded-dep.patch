@@ -1,0 +1,22 @@
+From ac340f78a08a9a54090fdd1c9b53ddb88794d181 Mon Sep 17 00:00:00 2001
+From: Wolfgang Silbermayr <wolfgang@silbermayr.at>
+Date: Fri, 11 Jan 2019 09:45:24 +0100
+Subject: [PATCH] Remove unneeded dep
+
+---
+ Cargo.toml | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index f47ab6d..85ca93e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -23,5 +23,3 @@ repository = "https://github.com/alexcrichton/backtrace-rs"
+ [dependencies.libc]
+ version = "0.2"
+ default-features = false
+-[build-dependencies.cc]
+-version = "1.0"
+-- 
+2.20.1
+

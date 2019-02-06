@@ -1,5 +1,5 @@
 use internals::ast::{Container, Data, Field, Style};
-use internals::attr::{EnumTag, Identifier};
+use internals::attr::{Identifier, TagType};
 use internals::{Ctxt, Derive};
 use syn::{Member, Type};
 
@@ -127,7 +127,7 @@ fn check_identifier(cx: &Ctxt, cont: &Container) {
             }
 
             // Variant with `other` attribute cannot appear in untagged enum
-            (_, Identifier::No, true, &EnumTag::None) => {
+            (_, Identifier::No, true, &TagType::None) => {
                 cx.error_spanned_by(
                     variant.original,
                     "#[serde(other)] cannot appear on untagged enum",
@@ -276,8 +276,8 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
     };
 
     let tag = match *cont.attrs.tag() {
-        EnumTag::Internal { ref tag } => tag.as_str(),
-        EnumTag::External | EnumTag::Adjacent { .. } | EnumTag::None => return,
+        TagType::Internal { ref tag } => tag.as_str(),
+        TagType::External | TagType::Adjacent { .. } | TagType::None => return,
     };
 
     let diagnose_conflict = || {
@@ -295,11 +295,17 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
                     let check_de = !field.attrs.skip_deserializing();
                     let name = field.attrs.name();
                     let ser_name = name.serialize_name();
-                    let de_name = name.deserialize_name();
 
-                    if check_ser && ser_name == tag || check_de && de_name == tag {
+                    if check_ser && ser_name == tag {
                         diagnose_conflict();
                         return;
+                    }
+
+                    for de_name in field.attrs.aliases() {
+                        if check_de && de_name == tag {
+                            diagnose_conflict();
+                            return;
+                        }
                     }
                 }
             }
@@ -312,11 +318,11 @@ fn check_internal_tag_field_name_conflict(cx: &Ctxt, cont: &Container) {
 /// contents tag must differ, for the same reason.
 fn check_adjacent_tag_conflict(cx: &Ctxt, cont: &Container) {
     let (type_tag, content_tag) = match *cont.attrs.tag() {
-        EnumTag::Adjacent {
+        TagType::Adjacent {
             ref tag,
             ref content,
         } => (tag, content),
-        EnumTag::Internal { .. } | EnumTag::External | EnumTag::None => return,
+        TagType::Internal { .. } | TagType::External | TagType::None => return,
     };
 
     if type_tag == content_tag {

@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 
 use core::{Dependency, PackageId, Registry, Summary};
 use failure::{Error, Fail};
 use semver;
-use util::config::Config;
 use util::lev_distance::lev_distance;
+use util::{CargoError, Config};
 
 use super::context::Context;
 use super::types::{Candidate, ConflictReason};
@@ -49,12 +49,31 @@ impl fmt::Display for ResolveError {
     }
 }
 
+pub type ActivateResult<T> = Result<T, ActivateError>;
+
+pub enum ActivateError {
+    Fatal(CargoError),
+    Conflict(PackageId, ConflictReason),
+}
+
+impl From<::failure::Error> for ActivateError {
+    fn from(t: ::failure::Error) -> Self {
+        ActivateError::Fatal(t)
+    }
+}
+
+impl From<(PackageId, ConflictReason)> for ActivateError {
+    fn from(t: (PackageId, ConflictReason)) -> Self {
+        ActivateError::Conflict(t.0, t.1)
+    }
+}
+
 pub(super) fn activation_error(
     cx: &Context,
     registry: &mut Registry,
     parent: &Summary,
     dep: &Dependency,
-    conflicting_activations: &HashMap<PackageId, ConflictReason>,
+    conflicting_activations: &BTreeMap<PackageId, ConflictReason>,
     candidates: &[Candidate],
     config: Option<&Config>,
 ) -> ResolveError {
@@ -63,7 +82,7 @@ pub(super) fn activation_error(
         ResolveError::new(
             err,
             graph
-                .path_to_top(parent.package_id())
+                .path_to_top(&parent.package_id())
                 .into_iter()
                 .cloned()
                 .collect(),
@@ -73,7 +92,7 @@ pub(super) fn activation_error(
     if !candidates.is_empty() {
         let mut msg = format!("failed to select a version for `{}`.", dep.package_name());
         msg.push_str("\n    ... required by ");
-        msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
+        msg.push_str(&describe_path(&graph.path_to_top(&parent.package_id())));
 
         msg.push_str("\nversions that meet the requirements `");
         msg.push_str(&dep.version_req().to_string());
@@ -185,7 +204,7 @@ pub(super) fn activation_error(
             registry.describe_source(dep.source_id()),
         );
         msg.push_str("required by ");
-        msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
+        msg.push_str(&describe_path(&graph.path_to_top(&parent.package_id())));
 
         // If we have a path dependency with a locked version, then this may
         // indicate that we updated a sub-package and forgot to run `cargo
@@ -239,7 +258,7 @@ pub(super) fn activation_error(
             msg.push_str("\n");
         }
         msg.push_str("required by ");
-        msg.push_str(&describe_path(&graph.path_to_top(parent.package_id())));
+        msg.push_str(&describe_path(&graph.path_to_top(&parent.package_id())));
 
         msg
     };

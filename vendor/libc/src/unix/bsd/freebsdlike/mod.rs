@@ -82,13 +82,6 @@ s! {
         pub sa_mask: sigset_t,
     }
 
-    pub struct stack_t {
-        // In FreeBSD 11 and later, ss_sp is actually a void*
-        pub ss_sp: *mut ::c_char,
-        pub ss_size: ::size_t,
-        pub ss_flags: ::c_int,
-    }
-
     pub struct sched_param {
         pub sched_priority: ::c_int,
     }
@@ -664,10 +657,13 @@ pub const IP_RECVDSTADDR: ::c_int = 7;
 pub const IP_SENDSRCADDR: ::c_int = IP_RECVDSTADDR;
 pub const IP_ADD_MEMBERSHIP: ::c_int = 12;
 pub const IP_DROP_MEMBERSHIP: ::c_int = 13;
+pub const IP_RECVIF: ::c_int = 20;
 pub const IPV6_JOIN_GROUP: ::c_int = 12;
 pub const IPV6_LEAVE_GROUP: ::c_int = 13;
 pub const IPV6_RECVPKTINFO: ::c_int = 36;
 pub const IPV6_PKTINFO: ::c_int = 46;
+pub const IPV6_RECVTCLASS: ::c_int = 57;
+pub const IPV6_TCLASS: ::c_int = 61;
 
 pub const TCP_NOPUSH:    ::c_int = 4;
 pub const TCP_NOOPT:     ::c_int = 8;

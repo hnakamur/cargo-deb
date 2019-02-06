@@ -1,11 +1,3 @@
-// Copyright 2018 Syn Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
 //! Tokens representing Rust punctuation, keywords, and delimiters.
 //!
 //! The type names in this module can be difficult to keep straight, so we
@@ -20,11 +12,8 @@
 //!
 //! [`ItemStatic`]: ../struct.ItemStatic.html
 //!
-//! ```
-//! # #[macro_use]
-//! # extern crate syn;
-//! #
-//! # use syn::{Attribute, Expr, Ident, Type, Visibility};
+//! ```edition2018
+//! # use syn::{Attribute, Expr, Ident, Token, Type, Visibility};
 //! #
 //! pub struct ItemStatic {
 //!     pub attrs: Vec<Attribute>,
@@ -38,8 +27,6 @@
 //!     pub expr: Box<Expr>,
 //!     pub semi_token: Token![;],
 //! }
-//! #
-//! # fn main() {}
 //! ```
 //!
 //! # Parsing
@@ -53,9 +40,7 @@
 //! [`bracketed!`]: ../macro.bracketed.html
 //! [`braced!`]: ../macro.braced.html
 //!
-//! ```
-//! # extern crate syn;
-//! #
+//! ```edition2018
 //! use syn::{Attribute, Result};
 //! use syn::parse::{Parse, ParseStream};
 //! #
@@ -82,8 +67,6 @@
 //!         # unimplemented!()
 //!     }
 //! }
-//! #
-//! # fn main() {}
 //! ```
 
 use std;

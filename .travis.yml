@@ -22,6 +22,7 @@ matrix:
     - env: TARGET=x86_64-apple-darwin
            ALT=i686-apple-darwin
       os: osx
+      osx_image: xcode9.2
       if: branch != master OR type = pull_request
 
     - env: TARGET=x86_64-unknown-linux-gnu
@@ -35,7 +36,7 @@ matrix:
     # increased every 6 weeks or so when the first PR to use a new feature.
     - env: TARGET=x86_64-unknown-linux-gnu
            ALT=i686-unknown-linux-gnu
-      rust: 1.28.0
+      rust: 1.31.0
       script:
         - rustup toolchain install nightly
         - cargo +nightly generate-lockfile -Z minimal-versions

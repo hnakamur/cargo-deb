@@ -11,6 +11,7 @@ use std::thread;
 use support::paths::{self, CargoPathExt};
 use support::sleep_ms;
 use support::{basic_lib_manifest, basic_manifest, git, main_file, path2url, project};
+use support::Project;
 
 #[test]
 fn cargo_compile_simple_git_dep() {
@@ -1090,6 +1091,18 @@ fn two_deps_only_update_one() {
         ).file("src/main.rs", "fn main() {}")
         .build();
 
+    fn oid_to_short_sha(oid: git2::Oid) -> String {
+        oid.to_string()[..8].to_string()
+    }
+    fn git_repo_head_sha(p: &Project) -> String {
+        let repo = git2::Repository::open(p.root()).unwrap();
+        let head = repo.head().unwrap().target().unwrap();
+        oid_to_short_sha(head)
+    }
+
+    println!("dep1 head sha: {}", git_repo_head_sha(&git1));
+    println!("dep2 head sha: {}", git_repo_head_sha(&git2));
+
     p.cargo("build")
         .with_stderr(
             "[UPDATING] git repository `[..]`\n\
@@ -1106,7 +1119,8 @@ fn two_deps_only_update_one() {
         .unwrap();
     let repo = git2::Repository::open(&git1.root()).unwrap();
     git::add(&repo);
-    git::commit(&repo);
+    let oid = git::commit(&repo);
+    println!("dep1 head sha: {}", oid_to_short_sha(oid));
 
     p.cargo("update -p dep1")
         .with_stderr(&format!(
@@ -2624,4 +2638,49 @@ fn use_the_cli() {
 ";
 
     project.cargo("build -v").with_stderr(stderr).run();
+}
+
+#[test]
+fn templatedir_doesnt_cause_problems() {
+    let git_project2 = git::new("dep2", |project| {
+        project
+            .file("Cargo.toml", &basic_manifest("dep2", "0.5.0"))
+            .file("src/lib.rs", "")
+    }).unwrap();
+    let git_project = git::new("dep1", |project| {
+        project
+            .file("Cargo.toml", &basic_manifest("dep1", "0.5.0"))
+            .file("src/lib.rs", "")
+    }).unwrap();
+    let p = project()
+        .file(
+            "Cargo.toml",
+            &format!(r#"
+                [project]
+                name = "fo"
+                version = "0.5.0"
+                authors = []
+
+                [dependencies]
+                dep1 = {{ git = '{}' }}
+            "#, git_project.url()),
+        ).file("src/main.rs", "fn main() {}")
+        .build();
+
+    File::create(paths::home().join(".gitconfig"))
+        .unwrap()
+        .write_all(
+            &format!(r#"
+                [init]
+                templatedir = {}
+            "#, git_project2.url()
+                .to_file_path()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace("\\", "/")
+            ).as_bytes(),
+        ).unwrap();
+
+    p.cargo("build").run();
 }
