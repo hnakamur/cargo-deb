@@ -1,8 +1,8 @@
-cargo (0.33.0-1) UNRELEASED; urgency=medium
+cargo (0.33.0-1) unstable; urgency=medium
 
   * New upstream release.
 
- -- Ximin Luo <infinity0@debian.org>  Tue, 05 Feb 2019 19:59:19 -0800
+ -- Ximin Luo <infinity0@debian.org>  Tue, 05 Feb 2019 20:52:47 -0800
 
 cargo (0.32.0-2~exp1) experimental; urgency=medium
 
