@@ -75,7 +75,7 @@ for i in *; do
 done; $x ); do
 	echo >&2 "================================================================================"
 	echo >&2 "$0: You are now in a sub-shell!"
-	echo >&2 "$0: Fix the failed patches, then exit the sub-shell by pressing ctrl-D ONCE."
+	echo >&2 "$0: Fix the failed patches in debcargo-conf/, then exit the sub-shell by pressing ctrl-D ONCE."
 	echo >&2 "$0: If you need to abort this process, press ctrl-D then quickly ctrl-C."
 	if [ -f "${SRCDIR:-$PWD}/debian/debcargo-conf.patch" ]; then
 		echo >&2 "$0: Previous patch changes exist, to apply them run:"
@@ -92,15 +92,17 @@ pruned_paths | while read x; do echo >&2 "$0: removing, because debcargo-conf pa
 # remove excluded files
 ( cd vendor
 for i in *; do (
+	shopt -s globstar # needed for double-glob to work in excludes
 	cd $i
 	if [ -e ../../debcargo-conf/src/$i/debian/rules ]; then
-		continue
+		echo >&2 "$0: the debcargo-conf for crate $i has a custom rules file, but applying excludes anyway"
+		echo >&2 "$0: you may want to examine this situation more closely"
 	fi
 	if grep -q excludes ../../debcargo-conf/src/$i/debian/debcargo.toml 2>/dev/null; then
 		sed -nre 's/.*excludes\s*=\s*(\[[^]]*\]).*/\1/p' \
 		  ../../debcargo-conf/src/$i/debian/debcargo.toml \
 		  | python -c "import ast, sys; x=ast.literal_eval(sys.stdin.read()); print('\n'.join((i[:-3] if i.endswith('/**') else i) for i in x));" \
-		  | while read x; do echo >&2 "$0: removing, since it's excluded by debcargo-conf: vendor/$i/$x"; rm -rf "$x"; done
+		  | while read x; do echo >&2 "$0: removing, since it's excluded by debcargo-conf: vendor/$i/$x"; rm -rf $x; done
 	fi
 ); done; )
 

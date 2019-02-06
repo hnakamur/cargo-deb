@@ -24,7 +24,6 @@ if [ -z "$1" ]
 fi;
 
 BOOTSTRAP_PY=$(find "${PWD}" -name bootstrap.py -type f)
-VENDOR_FILTER=$(find "${PWD}/debian" -name vendor-tarball-filter.txt -type f)
 VENDOR_SUS_WHITELIST=$(find "${PWD}/debian" -name vendor-tarball-unsuspicious.txt -type f)
 
 # Download cargo tarball
@@ -44,20 +43,14 @@ export GIT_COMMITTER_EMAIL="${GIT_AUTHOR_EMAIL}"
 
 SRCDIR="$SRCDIR" "$SRCDIR/debian/scripts/debian-cargo-vendor"
 
-# Clean embedded libs and update checksums
-grep -v '^#' ${VENDOR_FILTER} | xargs  -I% sh -c 'rm -rf vendor/%'
-
-# Report any suspicious files
 cp -R vendor vendor-scan
-grep -v '^#' ${VENDOR_SUS_WHITELIST} | xargs  -I% sh -c 'rm -rf vendor-scan/%'
-echo "Checking for suspicious files..."
-# The following shell snippet is a bit more strict than suspicious-source(1)
-find vendor-scan -type f -and -not -name '.cargo-checksum.json' -exec file '{}' \; | \
-  sed -e 's/\btext\b\(.*\), with very long lines/verylongtext\1/g' | \
-  grep -v '\b\(text\|empty\)\b' || true
-echo "The above files (if any) seem suspicious, please audit them."
-echo "If good, add them to ${VENDOR_SUS_WHITELIST}."
-echo "If bad, add them to ${VENDOR_FILTER} and/or the relevant debcargo.toml in debcargo-conf.git"
+
+( cd vendor-scan
+"$SRCDIR/debian/scripts/audit-vendor-source" \
+  "$VENDOR_SUS_WHITELIST" \
+  "the 'excludes' key of the relevant debcargo.toml in debcargo-conf.git"
+)
+
 rm -rf vendor-scan
 
 # Pack it up, reproducibly

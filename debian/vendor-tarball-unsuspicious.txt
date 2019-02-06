@@ -3,17 +3,14 @@
 
 # test data
 flate2/tests/
-tar/tests/archives/
-term/tests/data/
-toml/tests/
+idna/tests/punycode_tests.json
 num/ci/
 openssl/test/
 schannel/test/*
-libnghttp2-sys/nghttp2/fuzz/corpus/*/*
-libnghttp2-sys/nghttp2/tests/testdata/*
-libnghttp2-sys/nghttp2/integration-tests/*
-libnghttp2-sys/nghttp2/src/test.*
-libnghttp2-sys/nghttp2/src/ca.*
+tar/tests/archives/
+term/tests/data/
+toml/tests/
+url/tests/*.json
 
 # misc support data
 failure/CODE_OF_CONDUCT.md
@@ -24,8 +21,6 @@ hamcrest/LICENSE-*
 */README.md
 
 # individual files, manually audited:
-backtrace-sys/src/libbacktrace/config/libtool.m4
-backtrace-sys/src/libbacktrace/configure
 clap/CHANGELOG.md
 clap/CONTRIBUTORS.md
 clap/.github/CONTRIBUTING.md
@@ -42,6 +37,7 @@ idna/src/uts46_mapping_table.rs
 idna/tests/IdnaTest.txt
 itoa/performance.png
 lazy_static/src/lib.rs
+libz-sys/src/smoke.c
 miniz-sys/miniz.c
 num/doc/favicon.ico
 num/doc/rust-logo-128x128-blk-v2.png
@@ -59,15 +55,8 @@ term/scripts/id_rsa.enc
 unicode-normalization/src/tables.rs
 url/github.png
 vec_map/Cargo.toml
+walkdir/compare/nftw.c
 winapi/README.md
 winapi/src/lib.rs
 winapi/src/winnt.rs
-libnghttp2-sys/nghttp2/doc/*.1
-libnghttp2-sys/nghttp2/m4/ax_boost_base.m4
-libnghttp2-sys/nghttp2/doc/bash_completion/*
-libnghttp2-sys/nghttp2/third-party/neverbleed/README.md
-libnghttp2-sys/nghttp2/third-party/mruby/*
 proptest/src/regex-contrib/crates_regex.rs
-
-# documentation themes
-libnghttp2-sys/nghttp2/doc/_themes/sphinx_rtd_theme/*
