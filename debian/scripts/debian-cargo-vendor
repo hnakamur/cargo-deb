@@ -54,10 +54,8 @@ for i in *; do
 	# script to deal with - just use the upstream version. example: backtrace-sys
 	# TODO: deal with those better, especially backtrace-sys
 	if [ -e ../../debcargo-conf/src/$i/debian/rules ]; then
-		echo >&2 "$0: not patching $i because its debcargo-conf has a custom rules file"
+		echo >&2 "$0: the debcargo-conf for crate $i has a custom rules file, but applying patches anyway"
 		echo >&2 "$0: you may want to examine this situation more closely"
-		cd ..
-		continue
 	fi
 	if [ -d ../../debcargo-conf/src/$i/debian/patches ]; then
 		echo >&2 "$0: patching $i"
@@ -70,6 +68,13 @@ for i in *; do
 		0|2) true;;
 		*) echo >&2 "$0: patching $i failed <<<<<<<<<<<<<<<<<<<<<<<<"; x=false;;
 		esac
+	fi
+	if [ -f ../../debcargo-conf/src/$i/debian/build.rs ]; then
+		echo >&2 "$0: overwriting build.rs with our custom one"
+		if [ ! -f build.rs.orig ]; then
+			cp -f build.rs build.rs.orig
+		fi
+		cp -f ../../debcargo-conf/src/$i/debian/build.rs build.rs
 	fi
 	cd ..
 done; $x ); do
