@@ -1,3 +1,9 @@
+cargo (0.33.0-1ppa1~ubuntu18.04.1) bionic; urgency=medium
+
+  * Backport to Ubuntu 18.04 LTS
+
+ -- Hiroaki Nakamura <hnakamur@gmail.com>  Sat, 20 Apr 2019 08:46:01 +0900
+
 cargo (0.33.0-1) unstable; urgency=medium
 
   * New upstream release.
